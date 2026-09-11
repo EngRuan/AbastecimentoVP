@@ -1344,7 +1344,7 @@ body.preview-motorista #view-lancamentos::before{
         <table id="lanc-table">
           <thead>
             <tr>
-              <th>Data</th><th>Data Lanç.</th><th>NF</th><th>Posto</th><th>Produto</th>
+              <th>Data</th><th>Data Lanç.</th><th>NF</th><th>Requisição</th><th>Posto</th><th>Produto</th>
               <th class="num">Qtd</th><th class="num">Preç.Unit</th><th class="num">Preç.Total</th>
               <th>Motorista</th><th>Equip.</th><th class="num">Km/Hor</th><th class="num">Km/L</th><th></th>
             </tr>
@@ -1422,6 +1422,12 @@ body.preview-motorista #view-lancamentos::before{
       <div id="lista-usuarios" style="margin-top:14px;"></div>
     </div>
 
+    <div class="card" id="card-cruzamento-motoristas" style="display:none;">
+      <h2>🔎 Nomes de motorista sem cadastro</h2>
+      <p class="helper">Nomes que aparecem em lançamentos antigos mas não batem com nenhum Nome ou Apelido já cadastrado. Pode ser gente nova pra cadastrar, ou um apelido/abreviação de alguém que já existe (nesse caso, só edita o cadastro dela e preenche o Apelido certinho).</p>
+      <div id="lista-cruzamento-motoristas" style="margin-top:12px;"></div>
+    </div>
+
     <div class="card">
       <h2>Dias bloqueados pra motorista</h2>
       <p class="helper">Motorista (nível 1) não consegue lançar abastecimento nos dias marcados aqui — não afeta Admin/Gestor/Dono/Auxiliar, que continuam lançando qualquer dia.</p>
@@ -1448,6 +1454,10 @@ body.preview-motorista #view-lancamentos::before{
           <div class="field">
             <label>Nome*</label>
             <input type="text" id="u-nome" placeholder="Nome completo" required>
+          </div>
+          <div class="field">
+            <label>Apelido (nome curto)</label>
+            <input type="text" id="u-apelido" placeholder="Ex: Tião (pra Sebastião)">
           </div>
           <div class="field">
             <label>Empresa</label>
@@ -1511,9 +1521,17 @@ body.preview-motorista #view-lancamentos::before{
   <!-- ======================= FROTA (nível 3+: admin/gestor/dono) ======================= -->
   <section class="view" id="view-frota">
     <div class="card">
-      <h2>🚗 Frota — próprios, alugados e terceirizados</h2>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+        <h2 style="margin:0;">🚗 Frota — próprios, alugados e terceirizados</h2>
+        <button type="button" class="btn secondary" id="btn-pdf-frota">📄 Exportar PDF da Frota</button>
+      </div>
       <p class="helper">Cadastra cada equipamento. "Próprio" = da Tripoloni. "Alugado" = a Tripoloni paga aluguel por ele. "Terceirizado" = pertence a outra empresa prestando serviço pra Tripoloni. Alugados entram no relatório com o custo do aluguel rateado pro período filtrado (combustível + aluguel = custo total real de cada veículo).</p>
       <div id="lista-veiculos" style="margin-top:14px;"></div>
+    </div>
+    <div class="card" id="card-cruzamento-frota" style="display:none;">
+      <h2>🔎 Equipamentos sem cadastro na Frota</h2>
+      <p class="helper">Esses equipamentos já aparecem em lançamentos antigos mas ainda não têm ficha cadastrada. Cadastra os que valem a pena (frota ativa) ou ignora os que já saíram/não existem mais.</p>
+      <div id="lista-cruzamento-frota" style="margin-top:12px;"></div>
     </div>
     <div class="card">
       <h2 id="veiculo-form-title">Adicionar veículo</h2>
@@ -1643,6 +1661,11 @@ body.preview-motorista #view-lancamentos::before{
       <h2>⛽ Postos cadastrados</h2>
       <p class="helper">Cadastra os postos que a frota usa, com CNPJ e endereço. Isso é o que alimenta a lista de Posto na hora de lançar (em vez de digitar toda vez).</p>
       <div id="lista-postos" style="margin-top:14px;"></div>
+    </div>
+    <div class="card" id="card-cruzamento-postos" style="display:none;">
+      <h2>🔎 Postos sem cadastro</h2>
+      <p class="helper">Nomes de posto que já aparecem em lançamentos antigos mas ainda não têm ficha cadastrada.</p>
+      <div id="lista-cruzamento-postos" style="margin-top:12px;"></div>
     </div>
     <div class="card">
       <h2 id="posto-form-title">Adicionar posto</h2>
@@ -2015,7 +2038,7 @@ function compareDataDesc(a, b){
 
   const kmA = (a.kmHor !== null && a.kmHor !== undefined && !isNaN(a.kmHor)) ? Number(a.kmHor) : -Infinity;
   const kmB = (b.kmHor !== null && b.kmHor !== undefined && !isNaN(b.kmHor)) ? Number(b.kmHor) : -Infinity;
-  return kmA - kmB;
+  return kmB - kmA; // mais recente primeiro em tudo (igual a data) — km maior = leitura mais nova
 }
 
 /* ---------------------------------------------------------------------
@@ -2199,7 +2222,11 @@ function initLogin(){
     console.warn('prompt() falhou (normal em alguns navegadores):', errPrompt);
   }
 
-  initDriveTokenClient();
+  try{
+    initDriveTokenClient();
+  }catch(errDrive){
+    console.warn('initDriveTokenClient falhou (login continua funcionando sem isso):', errDrive);
+  }
 }
 
 function handleCredentialResponse(response){
@@ -2259,11 +2286,14 @@ async function autenticarComToken(idToken, silencioso){
     renderLancTable();
     renderAprovacoes();
     renderListaUsuarios();
+    renderCruzamentoMotoristas();
     renderListaPendentes();
     renderConfigDias();
     renderAuditoria();
     renderListaVeiculos();
     renderListaPostos();
+    renderCruzamentoFrota();
+    renderCruzamentoPostos();
     renderListaEmpresas();
   }catch(err){
     console.error(err);
@@ -2557,6 +2587,135 @@ function populateCondutorSelect(){
   sel.value = valorAtual;
 }
 
+/* Cruza os equipamentos/postos que já aparecem no histórico de
+   lançamentos com o que já foi cadastrado — mostra só o que falta
+   cadastrar, ordenado por quantos lançamentos tem (o que aparece mais
+   vale mais a pena cadastrar primeiro). */
+function renderCruzamentoMotoristas(){
+  const card = document.getElementById('card-cruzamento-motoristas');
+  const box = document.getElementById('lista-cruzamento-motoristas');
+  if(!card || !box) return;
+  const cadastrados = new Set();
+  USUARIOS.forEach(u=>{
+    if(u.nome) cadastrados.add(u.nome.toUpperCase());
+    if(u.apelido) cadastrados.add(u.apelido.toUpperCase());
+  });
+  const contagem = {};
+  DB.forEach(r=>{ if(r.motorista) contagem[r.motorista] = (contagem[r.motorista]||0)+1; });
+  const faltando = Object.keys(contagem).filter(m=>!cadastrados.has(m.toUpperCase())).sort((a,b)=>contagem[b]-contagem[a]);
+  if(faltando.length===0){ card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  box.innerHTML = faltando.map(m=>`
+    <div class="usuario-item" data-motorista="${escapeHtml(m)}">
+      <div><div class="nome">${escapeHtml(m)}</div><div class="detalhe">${contagem[m]} lançamento(s) no histórico</div></div>
+      <div class="btn-row">
+        <button class="btn secondary" data-cadastrar-motorista="${escapeHtml(m)}">+ Cadastrar como pessoa nova</button>
+        <button class="btn ghost" data-vincular-apelido="${escapeHtml(m)}">🔗 É apelido de alguém já cadastrado</button>
+      </div>
+    </div>`).join('');
+  box.querySelectorAll('[data-cadastrar-motorista]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      resetFormUsuario();
+      document.getElementById('u-nome').value = btn.dataset.cadastrarMotorista;
+      document.getElementById('form-usuario').scrollIntoView({behavior:'smooth'});
+    });
+  });
+  box.querySelectorAll('[data-vincular-apelido]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const nomeParaAchar = window.prompt(`"${btn.dataset.vincularApelido}" é apelido de quem? Digita o NOME COMPLETO já cadastrado (tem que bater certinho):`, '');
+      if(!nomeParaAchar) return;
+      const alvo = USUARIOS.find(u=>(u.nome||'').toUpperCase()===nomeParaAchar.trim().toUpperCase());
+      if(!alvo){ toast('Não achei ninguém cadastrado com esse nome exato.'); return; }
+      editarUsuario(alvo.email);
+      document.getElementById('u-apelido').value = btn.dataset.vincularApelido;
+      toast('Confirma e clica em "Salvar alterações" pra vincular o apelido.');
+    });
+  });
+}
+
+function renderCruzamentoFrota(){
+  const card = document.getElementById('card-cruzamento-frota');
+  const box = document.getElementById('lista-cruzamento-frota');
+  if(!card || !box) return;
+  const cadastrados = new Set(VEICULOS.map(v=>v.equipamento));
+  const contagem = {};
+  DB.forEach(r=>{ if(r.equipamento) contagem[r.equipamento] = (contagem[r.equipamento]||0)+1; });
+  const faltando = Object.keys(contagem).filter(e=>!cadastrados.has(e)).sort((a,b)=>contagem[b]-contagem[a]);
+  if(faltando.length===0){ card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  box.innerHTML = faltando.map(e=>`
+    <div class="usuario-item" data-equip="${escapeHtml(e)}">
+      <div><div class="nome">${escapeHtml(e)}</div><div class="detalhe">${contagem[e]} lançamento(s) no histórico</div></div>
+      <div class="btn-row"><button class="btn secondary" data-cadastrar-equip="${escapeHtml(e)}">+ Cadastrar</button></div>
+    </div>`).join('');
+  box.querySelectorAll('[data-cadastrar-equip]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      resetFormVeiculo();
+      document.getElementById('v-equipamento').value = btn.dataset.cadastrarEquip;
+      document.getElementById('form-veiculo').scrollIntoView({behavior:'smooth'});
+    });
+  });
+}
+
+function renderCruzamentoPostos(){
+  const card = document.getElementById('card-cruzamento-postos');
+  const box = document.getElementById('lista-cruzamento-postos');
+  if(!card || !box) return;
+  const cadastrados = new Set(POSTOS.map(p=>p.nome));
+  const contagem = {};
+  DB.forEach(r=>{ if(r.posto) contagem[r.posto] = (contagem[r.posto]||0)+1; });
+  const faltando = Object.keys(contagem).filter(p=>!cadastrados.has(p)).sort((a,b)=>contagem[b]-contagem[a]);
+  if(faltando.length===0){ card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  box.innerHTML = faltando.map(p=>`
+    <div class="usuario-item" data-posto="${escapeHtml(p)}">
+      <div><div class="nome">${escapeHtml(p)}</div><div class="detalhe">${contagem[p]} lançamento(s) no histórico</div></div>
+      <div class="btn-row"><button class="btn secondary" data-cadastrar-posto="${escapeHtml(p)}">+ Cadastrar</button></div>
+    </div>`).join('');
+  box.querySelectorAll('[data-cadastrar-posto]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      resetFormPosto();
+      document.getElementById('p-nome').value = btn.dataset.cadastrarPosto;
+      document.getElementById('form-posto').scrollIntoView({behavior:'smooth'});
+    });
+  });
+}
+
+function gerarPdfFrota(){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:'pt', format:'a4'});
+  const margin = 40;
+  doc.addImage(`data:image/png;base64,${LOGO_B64}`, 'PNG', margin, 30, 110, 32);
+  doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.setTextColor(0,38,116);
+  doc.text('Frota — Tripoloni Construtora', margin+125, 45);
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(90,90,90);
+  doc.text(`Gerado em ${new Date().toLocaleString('pt-BR')} · ${VEICULOS.length} veículo(s) cadastrado(s)`, margin+125, 60);
+
+  const NOMES_TIPO_VEICULO = { proprio:'Próprio', alugado:'Alugado', terceirizado:'Terceirizado' };
+  const ordenados = [...VEICULOS].sort((a,b)=>(a.equipamento||'').localeCompare(b.equipamento||'','pt-BR'));
+  const body = ordenados.map(v=>[
+    v.equipamento||'—',
+    NOMES_TIPO_VEICULO[v.tipo]||v.tipo||'—',
+    [v.marca,v.modelo].filter(Boolean).join(' ')||'—',
+    v.placa||'—',
+    v.ano||'—',
+    v.empresaVinculada||'—',
+    nomeCondutor(v)||'—',
+    v.valorAluguel ? fmtMoney(v.valorAluguel)+'/'+(v.periodoAluguel||'mensal') : '—',
+    v.desmobilizado==='sim' ? 'Sim' : 'Não',
+  ]);
+  doc.autoTable({
+    startY: 88,
+    head:[['Equipamento','Tipo','Marca/Modelo','Placa','Ano','Empresa','Condutor Principal','Aluguel','Desmobilizado']],
+    body,
+    theme:'striped',
+    headStyles:{fillColor:[0,38,116]},
+    styles:{fontSize:7.5},
+    margin:{left:margin, right:margin}
+  });
+  doc.save('Frota_Tripoloni.pdf');
+}
+
 function renderListaVeiculos(){
   const box = document.getElementById('lista-veiculos');
   if(!box) return;
@@ -2660,6 +2819,7 @@ async function removerVeiculoUI(equipamento){
     if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao remover.'); return; }
     VEICULOS = VEICULOS.filter(v=>v.equipamento!==equipamento);
     renderListaVeiculos();
+    renderCruzamentoFrota();
     toast('Veículo removido.');
   }catch(err){
     console.error(err);
@@ -2746,6 +2906,7 @@ async function removerPostoUI(nome){
     if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao remover.'); return; }
     POSTOS = POSTOS.filter(p=>p.nome!==nome);
     renderListaPostos();
+    renderCruzamentoPostos();
     toast('Posto removido.');
   }catch(err){ console.error(err); toast('Falha ao remover: ' + err.message); }
 }
@@ -2771,6 +2932,7 @@ function initPostosTab(){
       toast(editandoPostoNome ? 'Posto atualizado.' : 'Posto adicionado.');
       resetFormPosto();
       renderListaPostos();
+      renderCruzamentoPostos();
     }catch(err){ console.error(err); toast('Falha ao salvar: ' + err.message); }
   });
   document.getElementById('btn-cancelar-posto').addEventListener('click', resetFormPosto);
@@ -2870,6 +3032,7 @@ function initEmpresasTab(){
 }
 
 function initVeiculosTab(){
+  document.getElementById('btn-pdf-frota').addEventListener('click', gerarPdfFrota);
   document.getElementById('form-veiculo').addEventListener('submit', async e=>{
     e.preventDefault();
     const dados = {
@@ -2912,6 +3075,7 @@ function initVeiculosTab(){
       toast(editandoVeiculoEquip ? 'Veículo atualizado.' : 'Veículo adicionado.');
       resetFormVeiculo();
       renderListaVeiculos();
+      renderCruzamentoFrota();
     }catch(err){
       console.error(err);
       toast('Falha ao salvar: ' + err.message);
@@ -2950,7 +3114,8 @@ function initUsuariosTab(){
     const dados = {
       email: document.getElementById('u-email').value.trim().toLowerCase(),
       emailOriginal: editandoUsuarioEmail || null,
-      nome: document.getElementById('u-nome').value.trim(),
+      nome: document.getElementById('u-nome').value.trim().toUpperCase(),
+      apelido: document.getElementById('u-apelido').value.trim().toUpperCase(),
       empresa: document.getElementById('u-empresa').value.trim(),
       papel: document.getElementById('u-papel').value,
       cargo: document.getElementById('u-cargo').value.trim(),
@@ -2972,6 +3137,7 @@ function initUsuariosTab(){
       toast(editandoUsuarioEmail ? 'Usuário atualizado.' : 'Usuário adicionado.');
       resetFormUsuario();
       renderListaUsuarios();
+      renderCruzamentoMotoristas();
     }catch(err){
       console.error(err);
       toast('Falha ao salvar: ' + err.message);
@@ -3005,6 +3171,7 @@ function editarUsuario(email){
   document.getElementById('u-email').disabled = false;
   document.getElementById('u-email').value = ehSemLogin(u.email) ? '' : u.email;
   document.getElementById('u-nome').value = u.nome || '';
+  document.getElementById('u-apelido').value = u.apelido || '';
   document.getElementById('u-empresa').value = u.empresa || '';
   document.getElementById('u-papel').value = (u.papel === 'dono') ? 'admin' : (u.papel || 'motorista');
   document.getElementById('u-cargo').value = u.cargo || '';
@@ -3050,6 +3217,7 @@ async function removerUsuarioUI(email){
     USUARIOS = json.usuarios || USUARIOS.filter(u=>u.email!==email);
     toast('Usuário removido.');
     renderListaUsuarios();
+    renderCruzamentoMotoristas();
   }catch(err){
     console.error(err);
     toast('Falha ao remover: ' + err.message);
@@ -3078,7 +3246,7 @@ function renderListaUsuarios(){
     <div class="usuario-item" data-email="${escapeHtml(u.email)}">
       <div>
         <div class="nome">${escapeHtml(u.nome||u.email)} <span class="badge-papel ${nivel>=3?'admin':''}">${NOMES_PAPEL[u.papel]||u.papel} · nível ${nivel}</span></div>
-        <div class="detalhe">${ehSemLogin(u.email) ? '🔓 sem login ainda' : escapeHtml(u.email)}${u.empresa?' · '+escapeHtml(u.empresa):''}${u.cargo?' · '+escapeHtml(u.cargo):''}${u.setor?' · setor '+escapeHtml(u.setor):''}${u.equipamento?' · '+escapeHtml(u.equipamento):''}${u.limiteDiario?' · limite '+escapeHtml(String(u.limiteDiario))+'/dia':''}${u.obra?' · obra '+escapeHtml(String(u.obra)):''}</div>
+        <div class="detalhe">${ehSemLogin(u.email) ? '🔓 sem login ainda' : escapeHtml(u.email)}${u.apelido?' · apelido: '+escapeHtml(u.apelido):''}${u.empresa?' · '+escapeHtml(u.empresa):''}${u.cargo?' · '+escapeHtml(u.cargo):''}${u.setor?' · setor '+escapeHtml(u.setor):''}${u.equipamento?' · '+escapeHtml(u.equipamento):''}${u.limiteDiario?' · limite '+escapeHtml(String(u.limiteDiario))+'/dia':''}${u.obra?' · obra '+escapeHtml(String(u.obra)):''}</div>
       </div>
       <div class="btn-row">
         ${gerenciavel ? `
@@ -3343,11 +3511,14 @@ async function pullFromSheetsSilencioso(){
     renderDashboard();
     renderAprovacoes();
     renderListaUsuarios();
+    renderCruzamentoMotoristas();
     renderListaPendentes();
     renderConfigDias();
     renderAuditoria();
     renderListaVeiculos();
     renderListaPostos();
+    renderCruzamentoFrota();
+    renderCruzamentoPostos();
     renderListaEmpresas();
   }catch(err){ console.warn('Falha ao atualizar em segundo plano:', err); }
 }
@@ -4805,7 +4976,7 @@ function renderLancTable(){
   const tbody = document.querySelector('#lanc-table tbody');
   let rows = [...DB].sort(compareDataDesc);
   if(search){
-    rows = rows.filter(r => [r.motorista,r.equipamento,r.posto,r.produto].join(' ').toUpperCase().includes(search));
+    rows = rows.filter(r => [r.motorista,r.equipamento,r.posto,r.produto,r.requisicao].join(' ').toUpperCase().includes(search));
   }
   document.getElementById('lanc-count').textContent = rows.length;
   tbody.innerHTML = rows.slice(0,400).map(r=>`
@@ -4813,6 +4984,7 @@ function renderLancTable(){
       <td>${fmtDate(r.data)}</td>
       <td>${r.dataLancamento?fmtDate(r.dataLancamento):'—'}</td>
       <td>${r.nf ?? '—'}</td>
+      <td>${escapeHtml(r.requisicao||'—')}</td>
       <td>${escapeHtml(r.posto||'—')}</td>
       <td><span class="tag">${escapeHtml(r.produto||'—')}</span></td>
       <td class="num">${fmtNum(r.quantidade,1)}</td>
@@ -4827,7 +4999,7 @@ function renderLancTable(){
         <button onclick="editRecord('${r.id}')" title="Editar">✏️</button>
         <button class="del" onclick="deleteRecord('${r.id}')" title="Excluir">🗑️</button>` : ''}
       </td>
-    </tr>`).join('') || `<tr><td colspan="13" class="empty-state">Nenhum lançamento encontrado.</td></tr>`;
+    </tr>`).join('') || `<tr><td colspan="14" class="empty-state">Nenhum lançamento encontrado.</td></tr>`;
 }
 
 /* ---------------------------------------------------------------------
@@ -5710,11 +5882,14 @@ async function pullFromSheets(){
     renderDashboard();
     renderAprovacoes();
     renderListaUsuarios();
+    renderCruzamentoMotoristas();
     renderListaPendentes();
     renderConfigDias();
     renderAuditoria();
     renderListaVeiculos();
     renderListaPostos();
+    renderCruzamentoFrota();
+    renderCruzamentoPostos();
     renderListaEmpresas();
     logSync(`${DB.length} registros importados do Sheets.`);
     toast('Dados atualizados a partir do Sheets.');
