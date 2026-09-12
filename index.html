@@ -989,7 +989,8 @@ td.num, th.num{text-align:right;font-variant-numeric:tabular-nums;}
 .usuario-item .badge-papel.admin{background:#fff3e0;color:#9a6700;}
 
 /* ---------- Tela enxuta pro motorista (login com Google) ---------- */
-body.motorista-simples .hide-motorista, body.preview-motorista .hide-motorista{display:none !important;}
+body.form-simplificado .hide-motorista, body.preview-motorista .hide-motorista{display:none !important;}
+body.motorista-simples .hide-so-nivel1, body.preview-motorista .hide-so-nivel1{display:none !important;}
 body.motorista-simples nav.tabs{display:none !important;}
 body.motorista-simples #btn-cancel-edit{display:none !important;}
 body.preview-motorista #view-lancamentos::before{
@@ -1194,6 +1195,23 @@ body.preview-motorista #view-lancamentos::before{
 
   <!-- ======================= LANÇAMENTOS ======================= -->
   <section class="view" id="view-lancamentos">
+    <div class="card" id="card-selecao-requisicao" style="display:none;">
+      <h2>🎫 Escolhe a requisição pra usar</h2>
+      <p class="helper">Você só consegue lançar abastecimento com uma requisição já emitida pelo administrador/gestor — escolhe qual vai usar agora. O equipamento já vem travado da requisição escolhida.</p>
+      <div id="lista-requisicoes-motorista"></div>
+      <p class="helper" id="msg-sem-requisicao" style="display:none;color:var(--bad);font-weight:600;">⚠️ Você não tem nenhuma requisição aberta no momento. Fala com o administrador ou gestor de contrato pra emitir uma antes de abastecer.</p>
+      <div id="area-auto-emissao" style="display:none;margin-top:12px;">
+        <div class="form-grid">
+          <div class="field">
+            <label>Equipamento</label>
+            <select id="req-auto-equipamento"><option value="">Selecione</option></select>
+          </div>
+        </div>
+        <div class="btn-row" style="margin-top:10px;">
+          <button type="button" class="btn" id="btn-auto-emitir-requisicao">🎫 Emitir requisição pra mim</button>
+        </div>
+      </div>
+    </div>
     <div class="card">
       <div class="perfil-bar hide-motorista" id="perfil-bar">
         <div class="perfil-info">
@@ -1214,7 +1232,7 @@ body.preview-motorista #view-lancamentos::before{
           <input type="file" id="file-ocr-requisicao" accept="image/*" capture="environment" style="display:none;">
         </div>
       </div>
-      <button type="button" class="btn ghost" id="btn-pedir-liberacao-extra" style="display:none;margin-bottom:10px;">🔓 Já sei que vou precisar de mais um hoje — pedir liberação extra</button>
+      <button type="button" class="btn ghost" id="btn-pedir-liberacao-extra" style="display:none !important;margin-bottom:10px;">🔓 Já sei que vou precisar de mais um hoje — pedir liberação extra</button>
       <div class="calc-preview info" id="ocr-status-cupom" style="display:none;"></div>
       <details id="ocr-raw-wrap-cupom" style="display:none;margin-bottom:10px;">
         <summary style="cursor:pointer;font-size:12.5px;color:var(--gray);font-weight:600;">Ver texto completo lido do cupom fiscal</summary>
@@ -1316,7 +1334,7 @@ body.preview-motorista #view-lancamentos::before{
       </form>
     </div>
 
-    <div class="card hide-motorista">
+    <div class="card hide-so-nivel1">
       <h2>Base de lançamentos <span class="count" id="lanc-count">0</span></h2>
       <div class="filters" style="margin-bottom:12px;">
         <div class="field" style="min-width:220px;">
@@ -1418,7 +1436,7 @@ body.preview-motorista #view-lancamentos::before{
   <section class="view" id="view-usuarios">
     <div class="card">
       <h2>Usuários cadastrados</h2>
-      <p class="helper">Nome é o único campo obrigatório — o Email pode ficar em branco pra cadastrar uma pessoa que ainda não tem login (fica como "sem login ainda" na lista, útil pra já vincular em Condutor Principal, relatórios, etc.); quando ela tiver conta Google, edita e completa o email depois. Só quem tiver email de verdade consegue entrar no app. Hierarquia por NÍVEL numérico (quanto maior, mais acesso): <b>Dono=5</b>, <b>Gestor de Contrato=4</b>, <b>Admin=3</b>, <b>Auxiliar=2</b>, <b>Motorista=1</b>. Só dá pra criar/editar/remover conta com nível MENOR que o seu — nunca igual ou maior (ex: Admin nível 3 não mexe em outro Admin nem em Gestor nível 4; só o Dono nível 5 mexe em qualquer um). "Cargo" é só o título do trabalho da pessoa (ex: "Engenheiro Civil"), não muda o nível de acesso. "Equipamentos autorizados" trava o motorista pra só conseguir abastecer essas VPs (separadas por vírgula) — deixa em branco pra não restringir. "Limite/dia" é quantos abastecimentos o motorista pode lançar por dia antes de precisar pedir liberação — deixa em branco pra usar o padrão (2). "Obra" pode ser preenchida pra qualquer pessoa (é só referência), mas só é OBRIGATÓRIA de ser única pra Gestor de Contrato — o sistema não deixa cadastrar dois gestores na mesma obra.</p>
+      <p class="helper">Nome é o único campo obrigatório — o Email pode ficar em branco pra cadastrar uma pessoa que ainda não tem login (fica como "sem login ainda" na lista, útil pra já vincular em Condutor Principal, relatórios, etc.); quando ela tiver conta Google, edita e completa o email depois. Só quem tiver email de verdade consegue entrar no app. O acesso é só por NÍVEL numérico (o "Cargo" já diz o título de trabalho da pessoa — o nível é só o que ela pode fazer no sistema): <b>Nível 5</b> acesso total. <b>Nível 4</b> tudo, menos Sincronização. <b>Nível 3</b> aprova, emite requisição pra qualquer motorista, lança manualmente — sem acesso a Cadastro (Usuários/Frota/Postos/Empresas). <b>Nível 2</b> vê Dashboard/Relatório e emite requisição só pra si mesmo. <b>Nível 1</b> só lança abastecimento com requisição que alguém emitiu pra ele. Só dá pra criar/editar/remover conta com nível MENOR que o seu — nunca igual ou maior (ex: Nível 3 não mexe em outro Nível 3 nem em Nível 4; só o Nível 5 mexe em qualquer um). "Equipamentos autorizados" trava a pessoa pra só conseguir abastecer essas VPs (separadas por vírgula) — deixa em branco pra não restringir. "Obra" pode ser preenchida pra qualquer pessoa (é só referência), mas só é OBRIGATÓRIA de ser única pra Nível 4 — o sistema não deixa cadastrar dois níveis 4 na mesma obra.</p>
       <div id="lista-usuarios" style="margin-top:14px;"></div>
     </div>
 
@@ -1430,7 +1448,7 @@ body.preview-motorista #view-lancamentos::before{
 
     <div class="card">
       <h2>Dias bloqueados pra motorista</h2>
-      <p class="helper">Motorista (nível 1) não consegue lançar abastecimento nos dias marcados aqui — não afeta Admin/Gestor/Dono/Auxiliar, que continuam lançando qualquer dia.</p>
+      <p class="helper">Nível 1 não consegue lançar abastecimento nos dias marcados aqui — não afeta níveis 2 a 5, que continuam lançando qualquer dia.</p>
       <div class="btn-row" id="dias-bloqueados-checks" style="margin:12px 0;flex-wrap:wrap;">
         <label style="display:flex;align-items:center;gap:5px;"><input type="checkbox" value="0" class="chk-dia-bloqueado"> Domingo</label>
         <label style="display:flex;align-items:center;gap:5px;"><input type="checkbox" value="1" class="chk-dia-bloqueado"> Segunda</label>
@@ -1472,19 +1490,19 @@ body.preview-motorista #view-lancamentos::before{
           <div class="field">
             <label>Papel (nível de acesso)*</label>
             <select id="u-papel">
-              <option value="motorista">Motorista (nível 1)</option>
-              <option value="auxiliar">Auxiliar (nível 2)</option>
-              <option value="admin">Admin (nível 3)</option>
-              <option value="gestor">Gestor de Contrato (nível 4)</option>
+              <option value="motorista">Nível 1</option>
+              <option value="auxiliar">Nível 2</option>
+              <option value="admin">Nível 3</option>
+              <option value="gestor">Nível 4</option>
             </select>
           </div>
           <div class="field">
             <label>Equipamentos autorizados</label>
             <input type="text" id="u-equipamento" placeholder="Ex: VP0555, VP0557">
           </div>
-          <div class="field">
-            <label>Limite/dia</label>
-            <input type="number" id="u-limite" placeholder="deixa vazio = padrão (2); 0 = sem limite" min="0" step="1">
+          <div class="field" style="display:none;">
+            <label>Limite/dia (não usado mais — substituído pelo sistema de Requisição)</label>
+            <input type="number" id="u-limite" min="0" step="1">
           </div>
           <div class="field">
             <label>Obra</label>
@@ -1790,15 +1808,42 @@ body.preview-motorista #view-lancamentos::before{
 
   <!-- ======================= APROVAÇÕES (nível 3+: admin/gestor/dono) ======================= -->
   <section class="view" id="view-aprovacoes">
+    <div class="card">
+      <h2>🎫 Emitir requisição</h2>
+      <p class="helper">Emite uma requisição nova pro motorista ANTES dele ir abastecer — é assim que ele consegue lançar (sem requisição aberta, o app bloqueia sozinho). Escolhe o motorista e o equipamento, o número sai na hora.</p>
+      <div class="form-grid" style="margin-top:10px;">
+        <div class="field">
+          <label>Motorista</label>
+          <select id="req-motorista"><option value="">Selecione</option></select>
+        </div>
+        <div class="field">
+          <label>Equipamento</label>
+          <select id="req-equipamento"><option value="">Selecione</option></select>
+        </div>
+        <div class="field">
+          <label>Posto (opcional)</label>
+          <input type="text" id="req-posto" placeholder="Se já souber onde vai abastecer">
+        </div>
+      </div>
+      <div class="btn-row" style="margin-top:14px;">
+        <button type="button" class="btn" id="btn-emitir-requisicao">+ Emitir requisição</button>
+      </div>
+      <h2 style="margin-top:22px;">Requisições emitidas</h2>
+      <div class="filters" style="margin:12px 0;">
+        <div class="field">
+          <label>Mostrar</label>
+          <select id="req-filtro-status">
+            <option value="aberta">Só abertas</option>
+            <option value="todas">Todas</option>
+          </select>
+        </div>
+      </div>
+      <div id="lista-requisicoes-admin"></div>
+    </div>
     <div class="card" id="card-pendentes">
       <h2>📥 Lançamentos aguardando revisão</h2>
       <p class="helper">Lançamentos que motoristas mandaram pela tela simplificada — confere os dados, digita a Nota Fiscal e confirma pra ir pra planilha oficial. "NF sugerida" é o que a leitura do cupom achou sozinha (se achou) — confere antes de confirmar.</p>
       <div id="lista-pendentes"></div>
-    </div>
-    <div class="card">
-      <h2>Solicitações de liberação (limite diário)</h2>
-      <p class="helper">Motoristas que bateram o limite diário de abastecimentos aparecem aqui pedindo liberação.</p>
-      <div id="lista-aprovacoes"></div>
     </div>
   </section>
 
@@ -1896,6 +1941,8 @@ let VEICULOS = [];           // cadastro de frota — próprio × alugado
 let POSTOS = [];              // cadastro de postos de combustível
 let EMPRESAS = [];            // cadastro de empresas (própria/locadora/terceirizada)
 let HISTORICO_MOBILIZACAO = []; // eventos de desmobilizou/remobilizou por equipamento, nunca apaga
+let REQUISICOES_EMITIDAS = [];  // requisições emitidas pelo admin — motorista só lança com uma aberta no nome dele
+let REQUISICAO_SELECIONADA = null; // a requisição que o motorista escolheu usar nesse lançamento
 let cupomLidoNestaSessao = false; // motorista só pode salvar depois de ler o cupom (ver checarPodeSalvar)
 
 /* O Apps Script deveria sempre responder em JSON, mas se algo deu errado
@@ -2272,6 +2319,7 @@ async function autenticarComToken(idToken, silencioso){
     POSTOS = json.postos || [];
     EMPRESAS = json.empresas || [];
     HISTORICO_MOBILIZACAO = json.historicoMobilizacao || [];
+    REQUISICOES_EMITIDAS = json.requisicoesEmitidas || [];
     recalcularTodasMedias();
     saveDB();
 
@@ -2295,6 +2343,8 @@ async function autenticarComToken(idToken, silencioso){
     renderCruzamentoFrota();
     renderCruzamentoPostos();
     renderListaEmpresas();
+    populateReqSelects();
+    renderListaRequisicoesAdmin();
   }catch(err){
     console.error(err);
     localStorage.removeItem(ID_TOKEN_KEY);
@@ -2339,7 +2389,7 @@ function sairDoApp(){
    Usuários/Sincronização/Visão do Motorista; Auxiliar (2) só tem
    Dashboard+Lançamentos (lançamento manual completo, sem aprovar nada);
    Motorista (1) tem a tela enxuta própria. */
-const NOMES_PAPEL = { dono:'dono', gestor:'gestor de contrato', admin:'admin', auxiliar:'auxiliar', motorista:'motorista' };
+const NOMES_PAPEL = { dono:'nível 5', gestor:'nível 4', admin:'nível 3', auxiliar:'nível 2', motorista:'nível 1' };
 const NIVEL_PAPEL = { dono:5, gestor:4, admin:3, auxiliar:2, motorista:1 };
 function aplicarPapelNaUI(){
   const pill = document.getElementById('usuario-pill');
@@ -2348,31 +2398,52 @@ function aplicarPapelNaUI(){
   document.getElementById('btn-sair-app').addEventListener('click', sairDoApp);
 
   const nivel = NIVEL_PAPEL[USUARIO_ATUAL.papel] || 0;
-  const vePapelDeGestao = nivel >= 3; // relatório, aprovações, usuários, sincronização, visão do motorista
+  const veCadastro = nivel >= 4;      // usuários, frota, postos, empresas
+  const veConfigAuditoria = nivel >= 4; // auditoria (config, menos sync)
+  const veSync = nivel >= 5;          // só nível 5
+  const veAprovacoes = nivel >= 3;    // aprovações + visão do motorista (testar como)
+  const veRelatorio = nivel >= 2;     // nível 2 também vê dashboard/relatório
 
   document.querySelectorAll('nav.tabs button').forEach(btn=>{
-    if(btn.dataset.tab === 'relatorio' || btn.dataset.tab === 'aprovacoes' || btn.dataset.tab === 'sync' || btn.dataset.tab === 'usuarios' || btn.dataset.tab === 'auditoria' || btn.dataset.tab === 'frota' || btn.dataset.tab === 'postos' || btn.dataset.tab === 'empresas' || btn.dataset.tab === 'lancamentos-preview'){
-      btn.style.display = vePapelDeGestao ? '' : 'none';
+    const tab = btn.dataset.tab;
+    if(tab === 'usuarios' || tab === 'frota' || tab === 'postos' || tab === 'empresas'){
+      btn.style.display = veCadastro ? '' : 'none';
+    } else if(tab === 'auditoria'){
+      btn.style.display = veConfigAuditoria ? '' : 'none';
+    } else if(tab === 'sync'){
+      btn.style.display = veSync ? '' : 'none';
+    } else if(tab === 'aprovacoes' || tab === 'lancamentos-preview'){
+      btn.style.display = veAprovacoes ? '' : 'none';
+    } else if(tab === 'relatorio'){
+      btn.style.display = veRelatorio ? '' : 'none';
     }
   });
 
   const cardPendentes = document.getElementById('card-pendentes');
-  if(cardPendentes) cardPendentes.style.display = vePapelDeGestao ? 'block' : 'none';
+  if(cardPendentes) cardPendentes.style.display = veAprovacoes ? 'block' : 'none';
 
   // motorista tem uma tela BEM enxuta: sem nav, só o formulário de
   // lançamento com o essencial (o resto vem do perfil dele automático).
-  // Auxiliar NÃO entra aqui — ele usa o formulário completo/manual, só
-  // não vê Aprovações/Usuários/Sincronização/Relatório (já escondidos
-  // acima pelo nível).
+  // Auxiliar (nível 2) usa o MESMO formulário restrito (foto/requisição
+  // própria), mas continua vendo o menu inteiro (Dashboard/Relatório).
   if(USUARIO_ATUAL.papel === 'motorista'){
     document.body.classList.add('motorista-simples');
+    document.body.classList.add('form-simplificado');
     document.getElementById('form-title').textContent = 'Novo abastecimento';
-    document.getElementById('btn-pedir-liberacao-extra').style.display = 'inline-block';
     prepararCamposParaMotorista();
+    renderSelecaoRequisicaoMotorista();
     ativarTab('lancamentos');
+  } else if(USUARIO_ATUAL.papel === 'auxiliar'){
+    document.body.classList.remove('motorista-simples');
+    document.body.classList.add('form-simplificado');
+    document.getElementById('form-title').textContent = 'Novo abastecimento';
+    prepararCamposParaMotorista();
+    renderSelecaoRequisicaoMotorista();
   } else {
     document.body.classList.remove('motorista-simples');
-    document.getElementById('btn-pedir-liberacao-extra').style.display = 'none';
+    document.body.classList.remove('form-simplificado');
+    const cardSelReq = document.getElementById('card-selecao-requisicao');
+    if(cardSelReq) cardSelReq.style.display = 'none';
   }
 }
 
@@ -2380,6 +2451,60 @@ function aplicarPapelNaUI(){
    vira uma lista (não texto livre) e Equipamento já vem travado no que
    está autorizado no perfil dele (se só tiver 1, trava; se tiver mais de
    1, ele escolhe entre os autorizados). */
+/* Mostra a lista de requisições abertas do motorista, pra ele escolher
+   qual vai usar nesse lançamento — sem escolher uma, o formulário não
+   deixa salvar (enviarLancamentoMotorista bloqueia). */
+function renderSelecaoRequisicaoMotorista(){
+  const card = document.getElementById('card-selecao-requisicao');
+  const box = document.getElementById('lista-requisicoes-motorista');
+  const msgVazio = document.getElementById('msg-sem-requisicao');
+  const areaAuto = document.getElementById('area-auto-emissao');
+  if(!card || !box) return;
+  const ehFluxoRestrito = USUARIO_ATUAL && (USUARIO_ATUAL.papel === 'motorista' || USUARIO_ATUAL.papel === 'auxiliar');
+  if(!ehFluxoRestrito){ card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  const ehAuxiliar = USUARIO_ATUAL.papel === 'auxiliar';
+  if(areaAuto){
+    areaAuto.style.display = ehAuxiliar ? 'block' : 'none';
+    if(ehAuxiliar){
+      const sel = document.getElementById('req-auto-equipamento');
+      if(sel && sel.options.length <= 1){
+        const equips = VEICULOS.length>0 ? VEICULOS.map(v=>v.equipamento).sort() : distinctValues('equipamento');
+        sel.innerHTML = '<option value="">Selecione</option>' + equips.map(e=>`<option value="${escapeHtml(e)}">${escapeHtml(e)}</option>`).join('');
+      }
+    }
+  }
+  const abertas = REQUISICOES_EMITIDAS.filter(r=>r.status==='aberta');
+  if(abertas.length===0){
+    box.innerHTML = '';
+    msgVazio.style.display = 'block';
+    REQUISICAO_SELECIONADA = null;
+    return;
+  }
+  msgVazio.style.display = 'none';
+  box.innerHTML = abertas.map(r=>`
+    <div class="usuario-item" data-id="${escapeHtml(r.id)}" style="${REQUISICAO_SELECIONADA && REQUISICAO_SELECIONADA.id===r.id ? 'border-color:var(--navy);background:var(--navy-light);' : ''}">
+      <div><div class="nome">Nº ${escapeHtml(String(r.numero))} — ${escapeHtml(r.equipamento)}</div><div class="detalhe">${r.posto?'Posto sugerido: '+escapeHtml(r.posto):'sem posto pré-definido'}</div></div>
+      <div class="btn-row"><button type="button" class="btn ${REQUISICAO_SELECIONADA && REQUISICAO_SELECIONADA.id===r.id ? '' : 'secondary'}" data-escolher-req="${escapeHtml(r.id)}">${REQUISICAO_SELECIONADA && REQUISICAO_SELECIONADA.id===r.id ? '✅ Selecionada' : 'Usar essa'}</button></div>
+    </div>`).join('');
+  box.querySelectorAll('[data-escolher-req]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const req = abertas.find(r=>r.id===btn.dataset.escolherReq);
+      REQUISICAO_SELECIONADA = req || null;
+      if(req){
+        const equipEl = document.getElementById('l-equipamento');
+        if(equipEl){ equipEl.value = req.equipamento; equipEl.readOnly = true; equipEl.dispatchEvent(new Event('input')); }
+        if(req.posto){
+          document.getElementById('l-posto').value = req.posto;
+          const postoSelect = document.getElementById('l-posto-select');
+          if(postoSelect) postoSelect.value = req.posto;
+        }
+      }
+      renderSelecaoRequisicaoMotorista();
+    });
+  });
+}
+
 function prepararCamposParaMotorista(){
   // "Motorista" continua no HTML como campo obrigatório pro admin, mas
   // fica ESCONDIDO nessa tela — um campo required escondido trava o
@@ -2402,7 +2527,7 @@ function prepararCamposParaMotorista(){
   // outra, pra não abrir brecha de lançar retroativo/adiantado.
   const dataEl = document.getElementById('l-data');
   if(dataEl && !dataEl.value) dataEl.value = todayStr();
-  if(dataEl && USUARIO_ATUAL && USUARIO_ATUAL.papel === 'motorista') dataEl.readOnly = true;
+  if(dataEl && USUARIO_ATUAL && (USUARIO_ATUAL.papel === 'motorista' || USUARIO_ATUAL.papel === 'auxiliar')) dataEl.readOnly = true;
 
   const permitidos = equipamentosPermitidosDoUsuario();
   const equipEl = document.getElementById('l-equipamento');
@@ -2432,6 +2557,12 @@ function prepararCamposParaMotorista(){
    revisão (aba Pendentes) e só vira oficial quando o admin conferir e
    digitar a Nota Fiscal (ver card-pendentes na aba Aprovações). */
 async function enviarLancamentoMotorista(){
+  if(!REQUISICAO_SELECIONADA){
+    mostrarStatusSalvamento('⚠️ Escolhe uma requisição antes de lançar (lá em cima).', 'erro');
+    document.getElementById('card-selecao-requisicao')?.scrollIntoView({behavior:'smooth'});
+    return;
+  }
+
   const kmEl = document.getElementById('l-kmhor');
   const qEl = document.getElementById('l-quantidade');
   const puEl = document.getElementById('l-precounit');
@@ -2440,6 +2571,7 @@ async function enviarLancamentoMotorista(){
   const q = numBR(qEl.value);
 
   const dados = {
+    requisicaoId: REQUISICAO_SELECIONADA.id,
     data: document.getElementById('l-data').value,
     equipamento: document.getElementById('l-equipamento').value.trim().toUpperCase() || null,
     produto: document.getElementById('l-produto').value,
@@ -2462,13 +2594,11 @@ async function enviarLancamentoMotorista(){
     });
     const json = await parseJsonResponse(resp);
     if(json.status !== 'ok'){
-      if(json.limiteAtingido){
-        mostrarStatusSalvamento('⚠️ Limite diário atingido — esse lançamento não foi enviado.', 'erro');
-        await tratarLimiteAtingido();
-      } else if(json.precisaAutorizacao){
-        mostrarStatusSalvamento('⚠️ ' + (json.mensagem || 'Precisa de autorização prévia.'), 'erro');
-        const ok = await confirmModal('Pedir liberação?', 'Quantidade zerada precisa de autorização prévia do admin. Quer pedir liberação agora? Depois de aprovado, envia esse lançamento de novo.');
-        if(ok) await pedirLiberacao(document.getElementById('l-data').value || todayStr());
+      if(json.semRequisicao){
+        mostrarStatusSalvamento('⚠️ ' + (json.mensagem || 'Essa requisição não é mais válida.'), 'erro');
+        REQUISICAO_SELECIONADA = null;
+        await pullFromSheetsSilencioso(); // atualiza a lista de requisições abertas
+        renderSelecaoRequisicaoMotorista();
       } else {
         mostrarStatusSalvamento('❌ ' + (json.mensagem || 'Falha ao enviar.'), 'erro');
       }
@@ -2481,19 +2611,15 @@ async function enviarLancamentoMotorista(){
       document.getElementById('ocr-status-'+t).style.display = 'none';
       document.getElementById('ocr-raw-wrap-'+t).style.display = 'none';
     });
+    REQUISICAO_SELECIONADA = null;
     resetForm(true);
     prepararCamposParaMotorista();
-    if(json.requisicao){
-      mostrarStatusSalvamento(`✅ Enviado! Requisição Nº <b>${escapeHtml(String(json.requisicao))}</b> gerada automaticamente. Só falta o admin confirmar a Nota Fiscal.`, 'ok');
-    } else if(json.usouLiberacaoExtra){
-      mostrarStatusSalvamento('✅ Enviado! Como esse passou do limite normal (usando a liberação extra), o admin vai gerar o número de requisição manualmente antes de confirmar.', 'ok');
-    } else {
-      mostrarStatusSalvamento('✅ Enviado! Aguardando o admin conferir e confirmar antes de entrar na planilha oficial.', 'ok');
-    }
-    // atualiza os pendentes/dados locais — importante principalmente pra
-    // quem está testando pela "Visão do Motorista" (admin), senão o item
-    // que acabou de mandar não aparece na aba Aprovações até recarregar
-    pullFromSheetsSilencioso();
+    mostrarStatusSalvamento(`✅ Enviado! Requisição Nº <b>${escapeHtml(String(json.requisicao))}</b>. Só falta o admin confirmar a Nota Fiscal.`, 'ok');
+    // atualiza os pendentes/dados/requisições locais — importante
+    // principalmente pra quem está testando pela "Visão do Motorista"
+    // (admin), senão o item que acabou de mandar não aparece até recarregar
+    await pullFromSheetsSilencioso();
+    renderSelecaoRequisicaoMotorista();
   }catch(err){
     console.error(err);
     mostrarStatusSalvamento('❌ Falha ao enviar: ' + err.message, 'erro');
@@ -2506,10 +2632,10 @@ async function enviarLancamentoMotorista(){
    tem essa restrição. */
 function podeEditarRegistro(r){
   if(!USUARIO_ATUAL) return true;
-  // dono/gestor/admin editam qualquer lançamento; auxiliar também (faz
-  // digitação/correção manual pra qualquer motorista, igual admin) —
-  // só motorista fica restrito ao próprio nome
-  if(USUARIO_ATUAL.papel !== 'motorista') return true;
+  // nível 3+ edita qualquer lançamento; nível 1 e 2 (motorista/auxiliar)
+  // ficam restritos ao próprio nome — não fazem mais lançamento manual
+  // pra outra pessoa, isso agora é só de nível 3 pra cima
+  if(USUARIO_ATUAL.papel !== 'motorista' && USUARIO_ATUAL.papel !== 'auxiliar') return true;
   return normalizarNomeCliente(r.motorista) === normalizarNomeCliente(USUARIO_ATUAL.nome);
 }
 function normalizarNomeCliente(s){
@@ -2825,6 +2951,96 @@ async function removerVeiculoUI(equipamento){
     console.error(err);
     toast('Falha ao remover: ' + err.message);
   }
+}
+
+/* ---------------------------------------------------------------------
+   Requisições — admin/gestor emite ANTES do motorista ir abastecer.
+--------------------------------------------------------------------- */
+function populateReqSelects(){
+  const selMot = document.getElementById('req-motorista');
+  const selEquip = document.getElementById('req-equipamento');
+  if(!selMot || !selEquip) return;
+  const motoristas = USUARIOS.filter(u=>u.papel==='motorista').sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR'));
+  selMot.innerHTML = '<option value="">Selecione</option>' + motoristas.map(u=>`<option value="${escapeHtml(u.email)}">${escapeHtml(u.nome||u.email)}</option>`).join('');
+  const equips = VEICULOS.length>0 ? VEICULOS.map(v=>v.equipamento).sort() : distinctValues('equipamento');
+  selEquip.innerHTML = '<option value="">Selecione</option>' + equips.map(e=>`<option value="${escapeHtml(e)}">${escapeHtml(e)}</option>`).join('');
+}
+
+async function autoEmitirRequisicaoUI(){
+  const equipamento = document.getElementById('req-auto-equipamento').value;
+  if(!equipamento){ toast('Escolhe o equipamento.'); return; }
+  try{
+    const resp = await fetch(SYNC_URL, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'emitirRequisicao', dados:{motoristaEmail: USUARIO_ATUAL.email, equipamento}, idToken: ID_TOKEN })
+    });
+    const json = await parseJsonResponse(resp);
+    if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao emitir.'); return; }
+    REQUISICOES_EMITIDAS = json.requisicoesEmitidas || REQUISICOES_EMITIDAS;
+    renderSelecaoRequisicaoMotorista();
+    toast(`Requisição Nº ${json.numero} emitida pra você!`);
+  }catch(err){ console.error(err); toast('Falha ao emitir: ' + err.message); }
+}
+
+async function emitirRequisicaoUI(){
+  const motoristaEmail = document.getElementById('req-motorista').value;
+  const equipamento = document.getElementById('req-equipamento').value;
+  const posto = document.getElementById('req-posto').value.trim().toUpperCase();
+  if(!motoristaEmail || !equipamento){ toast('Escolhe o motorista e o equipamento.'); return; }
+  try{
+    const resp = await fetch(SYNC_URL, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'emitirRequisicao', dados:{motoristaEmail, equipamento, posto}, idToken: ID_TOKEN })
+    });
+    const json = await parseJsonResponse(resp);
+    if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao emitir.'); return; }
+    REQUISICOES_EMITIDAS = json.requisicoesEmitidas || REQUISICOES_EMITIDAS;
+    document.getElementById('req-posto').value = '';
+    renderListaRequisicoesAdmin();
+    toast(`Requisição Nº ${json.numero} emitida!`);
+  }catch(err){ console.error(err); toast('Falha ao emitir: ' + err.message); }
+}
+
+async function cancelarRequisicaoUI(id){
+  const ok = await confirmModal('Cancelar requisição', 'Isso cancela a requisição — o motorista não vai mais conseguir usar esse número. Continuar?');
+  if(!ok) return;
+  try{
+    const resp = await fetch(SYNC_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ action:'cancelarRequisicao', id, idToken: ID_TOKEN }) });
+    const json = await parseJsonResponse(resp);
+    if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao cancelar.'); return; }
+    REQUISICOES_EMITIDAS = json.requisicoesEmitidas || REQUISICOES_EMITIDAS;
+    renderListaRequisicoesAdmin();
+    toast('Requisição cancelada.');
+  }catch(err){ console.error(err); toast('Falha ao cancelar: ' + err.message); }
+}
+
+function renderListaRequisicoesAdmin(){
+  const box = document.getElementById('lista-requisicoes-admin');
+  if(!box) return;
+  const filtro = document.getElementById('req-filtro-status')?.value || 'aberta';
+  const lista = (filtro==='aberta' ? REQUISICOES_EMITIDAS.filter(r=>r.status==='aberta') : REQUISICOES_EMITIDAS)
+    .sort((a,b)=>(b.criadoEm||'').localeCompare(a.criadoEm||''));
+  if(lista.length===0){ box.innerHTML = `<p class="helper">Nenhuma requisição ${filtro==='aberta'?'aberta':''} no momento.</p>`; return; }
+  const NOMES_STATUS = { aberta:'Aberta', usada:'Usada', cancelada:'Cancelada' };
+  box.innerHTML = lista.map(r=>`
+    <div class="aprov-item" data-id="${escapeHtml(r.id)}">
+      <div class="info">
+        <b>Nº ${escapeHtml(String(r.numero))}</b> — ${escapeHtml(r.motoristaNome||r.motoristaEmail)} · ${escapeHtml(r.equipamento)}${r.posto?' · '+escapeHtml(r.posto):''}
+        <br><span style="color:var(--gray);">${NOMES_STATUS[r.status]||r.status}${r.usadaEm?' em '+new Date(r.usadaEm).toLocaleString('pt-BR'):''}</span>
+      </div>
+      ${r.status==='aberta' ? `<button class="btn ghost" data-cancelar-req="${escapeHtml(r.id)}">🗑️ Cancelar</button>` : ''}
+    </div>`).join('');
+  box.querySelectorAll('[data-cancelar-req]').forEach(btn=>{
+    btn.addEventListener('click', ()=>cancelarRequisicaoUI(btn.dataset.cancelarReq));
+  });
+}
+
+function initRequisicoesTab(){
+  document.getElementById('btn-emitir-requisicao').addEventListener('click', emitirRequisicaoUI);
+  document.getElementById('req-filtro-status').addEventListener('change', renderListaRequisicoesAdmin);
+  document.getElementById('btn-auto-emitir-requisicao').addEventListener('click', autoEmitirRequisicaoUI);
 }
 
 function populateEmpresaVinculadaSelect(){
@@ -3504,6 +3720,7 @@ async function pullFromSheetsSilencioso(){
     POSTOS = json.postos || POSTOS;
     EMPRESAS = json.empresas || EMPRESAS;
     HISTORICO_MOBILIZACAO = json.historicoMobilizacao || HISTORICO_MOBILIZACAO;
+    REQUISICOES_EMITIDAS = json.requisicoesEmitidas || REQUISICOES_EMITIDAS;
     recalcularTodasMedias();
     saveDB();
     populateFilterSelects();
@@ -3520,6 +3737,9 @@ async function pullFromSheetsSilencioso(){
     renderCruzamentoFrota();
     renderCruzamentoPostos();
     renderListaEmpresas();
+    populateReqSelects();
+    renderListaRequisicoesAdmin();
+    renderSelecaoRequisicaoMotorista();
   }catch(err){ console.warn('Falha ao atualizar em segundo plano:', err); }
 }
 
@@ -3556,7 +3776,7 @@ const PRODUTOS_COMBUSTIVEL = new Set(['DIESEL','ETANOL','GASOLINA','DIESEL S-10'
    (vem do campo "equipamento" da aba Usuarios, separado por vírgula).
    Lista vazia = sem restrição (não impede nada). */
 function equipamentosPermitidosDoUsuario(){
-  if(!USUARIO_ATUAL || USUARIO_ATUAL.papel !== 'motorista' || !USUARIO_ATUAL.equipamento) return [];
+  if(!USUARIO_ATUAL || (USUARIO_ATUAL.papel !== 'motorista' && USUARIO_ATUAL.papel !== 'auxiliar') || !USUARIO_ATUAL.equipamento) return [];
   return String(USUARIO_ATUAL.equipamento).split(',').map(s=>s.trim().toUpperCase()).filter(Boolean);
 }
 
@@ -3651,7 +3871,7 @@ function ativarTab(nomeTab){
   // pré-visualização (admin testando como se fosse motorista) — só entra
   // nesse modo se realmente NÃO for um motorista de verdade logado (esse
   // já tem sua própria tela enxuta sempre ativa)
-  const jaEhMotoristaDeVerdade = USUARIO_ATUAL && USUARIO_ATUAL.papel === 'motorista';
+  const jaEhMotoristaDeVerdade = USUARIO_ATUAL && (USUARIO_ATUAL.papel === 'motorista' || USUARIO_ATUAL.papel === 'auxiliar');
   if(!jaEhMotoristaDeVerdade){
     document.body.classList.toggle('preview-motorista', modoPreview);
     if(modoPreview){
@@ -4727,7 +4947,7 @@ function initFormLancamento(){
     const medias = registros.filter(r => typeof r.mediaKmL === 'number' && r.mediaKmL > 0);
     const mediaGeral = medias.length ? medias.reduce((s,r)=>s+r.mediaKmL,0)/medias.length : null;
 
-    const ehMotorista = USUARIO_ATUAL && USUARIO_ATUAL.papel === 'motorista';
+    const ehMotorista = USUARIO_ATUAL && (USUARIO_ATUAL.papel === 'motorista' || USUARIO_ATUAL.papel === 'auxiliar');
     let ultimoTexto = '';
     if(!ehMotorista){
       const comKm = registros.filter(r => r.kmHor !== null && r.kmHor !== undefined && !isNaN(r.kmHor));
@@ -4751,7 +4971,7 @@ function initFormLancamento(){
     // motorista não vê esse cálculo — a "distância desde a leitura
     // anterior" revela o km anterior por conta (basta subtrair do km que
     // ele acabou de digitar), o mesmo problema do "última leitura" acima.
-    if(USUARIO_ATUAL && USUARIO_ATUAL.papel === 'motorista'){ box.style.display = 'none'; return; }
+    if(USUARIO_ATUAL && (USUARIO_ATUAL.papel === 'motorista' || USUARIO_ATUAL.papel === 'auxiliar')){ box.style.display = 'none'; return; }
     const km = numBR(kmhor.value);
     const q = numBR(qtd.value);
     const res = calcMediaKmL(equip.value, dataInp.value, isNaN(km)?null:km, q, produto.value, editingId);
@@ -4768,7 +4988,7 @@ function initFormLancamento(){
 
     // motorista de verdade OU admin testando na "Visão do Motorista" —
     // os dois passam pelo mesmo fluxo restrito, pra o teste ser fiel
-    const emModoMotorista = (USUARIO_ATUAL && USUARIO_ATUAL.papel === 'motorista') || document.body.classList.contains('preview-motorista');
+    const emModoMotorista = (USUARIO_ATUAL && (USUARIO_ATUAL.papel === 'motorista' || USUARIO_ATUAL.papel === 'auxiliar')) || document.body.classList.contains('preview-motorista');
 
     // só pode salvar um lançamento NOVO depois de ler o cupom por foto
     // nesse formulário — quem não é motorista (fora do modo preview) não
@@ -5875,6 +6095,7 @@ async function pullFromSheets(){
     POSTOS = json.postos || POSTOS;
     EMPRESAS = json.empresas || EMPRESAS;
     HISTORICO_MOBILIZACAO = json.historicoMobilizacao || HISTORICO_MOBILIZACAO;
+    REQUISICOES_EMITIDAS = json.requisicoesEmitidas || REQUISICOES_EMITIDAS;
     recalcularTodasMedias();
     saveDB();
     populateFilterSelects();
@@ -5891,6 +6112,8 @@ async function pullFromSheets(){
     renderCruzamentoFrota();
     renderCruzamentoPostos();
     renderListaEmpresas();
+    populateReqSelects();
+    renderListaRequisicoesAdmin();
     logSync(`${DB.length} registros importados do Sheets.`);
     toast('Dados atualizados a partir do Sheets.');
   }catch(err){
@@ -5926,6 +6149,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   initVeiculosTab();
   initPostosTab();
   initEmpresasTab();
+  initRequisicoesTab();
   initSyncTab();
 
   document.getElementById('btn-pedir-liberacao-extra').addEventListener('click', async ()=>{
