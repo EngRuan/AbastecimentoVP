@@ -1206,6 +1206,17 @@ body.preview-motorista #view-lancamentos::before{
             <label>Equipamento</label>
             <select id="req-auto-equipamento"><option value="">Selecione</option></select>
           </div>
+          <div class="field">
+            <label>Posto*</label>
+            <select id="req-auto-posto">
+              <option value="">Selecione</option>
+              <option value="__externo__">Outro (não cadastrado)</option>
+            </select>
+          </div>
+          <div class="field" id="req-auto-posto-externo-wrap" style="display:none;">
+            <label>Nome do posto externo</label>
+            <input type="text" id="req-auto-posto-externo" placeholder="Digita o nome do posto">
+          </div>
         </div>
         <div class="btn-row" style="margin-top:10px;">
           <button type="button" class="btn" id="btn-auto-emitir-requisicao">🎫 Emitir requisição pra mim</button>
@@ -1255,7 +1266,7 @@ body.preview-motorista #view-lancamentos::before{
             <label>Nota Fiscal / Doc.</label>
             <input type="text" id="l-nf" placeholder="Nº NF ou código">
           </div>
-          <div class="field">
+          <div class="field hide-motorista">
             <label>Posto</label>
             <div class="autocomplete" data-ac="posto" id="l-posto-wrap">
               <input type="text" id="l-posto" placeholder="Ex: POSTO CESINHA" autocomplete="off">
@@ -1810,7 +1821,7 @@ body.preview-motorista #view-lancamentos::before{
   <section class="view" id="view-aprovacoes">
     <div class="card">
       <h2>🎫 Emitir requisição</h2>
-      <p class="helper">Emite uma requisição nova pro motorista ANTES dele ir abastecer — é assim que ele consegue lançar (sem requisição aberta, o app bloqueia sozinho). Escolhe o motorista e o equipamento, o número sai na hora.</p>
+      <p class="helper">Emite uma requisição nova pro motorista ANTES dele ir abastecer — é assim que ele consegue lançar (sem requisição aberta, o app bloqueia sozinho). Motorista, equipamento e posto são obrigatórios — o motorista não escolhe mais o posto, ele vem definido aqui.</p>
       <div class="form-grid" style="margin-top:10px;">
         <div class="field">
           <label>Motorista</label>
@@ -1821,8 +1832,19 @@ body.preview-motorista #view-lancamentos::before{
           <select id="req-equipamento"><option value="">Selecione</option></select>
         </div>
         <div class="field">
-          <label>Posto (opcional)</label>
-          <input type="text" id="req-posto" placeholder="Se já souber onde vai abastecer">
+          <label>Posto*</label>
+          <select id="req-posto">
+            <option value="">Selecione</option>
+            <option value="__externo__">Outro (não cadastrado)</option>
+          </select>
+        </div>
+        <div class="field" id="req-posto-externo-wrap" style="display:none;">
+          <label>Nome do posto externo</label>
+          <input type="text" id="req-posto-externo" placeholder="Digita o nome do posto">
+        </div>
+        <div class="field">
+          <label>Km/Hor esperado (opcional)</label>
+          <input type="text" inputmode="decimal" id="req-km-esperado" placeholder="Vem sugerido pela última leitura">
         </div>
       </div>
       <div class="btn-row" style="margin-top:14px;">
@@ -2461,7 +2483,8 @@ function renderSelecaoRequisicaoMotorista(){
   const areaAuto = document.getElementById('area-auto-emissao');
   if(!card || !box) return;
   const ehFluxoRestrito = USUARIO_ATUAL && (USUARIO_ATUAL.papel === 'motorista' || USUARIO_ATUAL.papel === 'auxiliar');
-  if(!ehFluxoRestrito){ card.style.display = 'none'; return; }
+  const ehPreview = document.body.classList.contains('preview-motorista');
+  if(!ehFluxoRestrito && !ehPreview){ card.style.display = 'none'; return; }
   card.style.display = 'block';
   const ehAuxiliar = USUARIO_ATUAL.papel === 'auxiliar';
   if(areaAuto){
@@ -2471,6 +2494,13 @@ function renderSelecaoRequisicaoMotorista(){
       if(sel && sel.options.length <= 1){
         const equips = VEICULOS.length>0 ? VEICULOS.map(v=>v.equipamento).sort() : distinctValues('equipamento');
         sel.innerHTML = '<option value="">Selecione</option>' + equips.map(e=>`<option value="${escapeHtml(e)}">${escapeHtml(e)}</option>`).join('');
+      }
+      const selPosto = document.getElementById('req-auto-posto');
+      if(selPosto && selPosto.options.length <= 2){
+        selPosto.innerHTML = '<option value="">Selecione</option>' +
+          [...POSTOS].sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR')).map(p=>`<option value="${escapeHtml(p.nome)}">${escapeHtml(p.nome)}</option>`).join('') +
+          '<option value="__externo__">Outro (não cadastrado)</option>';
+        selPosto.onchange = ()=>{ document.getElementById('req-auto-posto-externo-wrap').style.display = selPosto.value==='__externo__' ? 'block' : 'none'; };
       }
     }
   }
@@ -2484,7 +2514,7 @@ function renderSelecaoRequisicaoMotorista(){
   msgVazio.style.display = 'none';
   box.innerHTML = abertas.map(r=>`
     <div class="usuario-item" data-id="${escapeHtml(r.id)}" style="${REQUISICAO_SELECIONADA && REQUISICAO_SELECIONADA.id===r.id ? 'border-color:var(--navy);background:var(--navy-light);' : ''}">
-      <div><div class="nome">Nº ${escapeHtml(String(r.numero))} — ${escapeHtml(r.equipamento)}</div><div class="detalhe">${r.posto?'Posto sugerido: '+escapeHtml(r.posto):'sem posto pré-definido'}</div></div>
+      <div><div class="nome">Nº ${escapeHtml(String(r.numero))} — ${escapeHtml(r.equipamento)}</div><div class="detalhe">Posto: ${escapeHtml(r.posto||'—')}${r.kmEsperado?' · Km/Hor esperado: '+escapeHtml(String(r.kmEsperado)):''}</div></div>
       <div class="btn-row"><button type="button" class="btn ${REQUISICAO_SELECIONADA && REQUISICAO_SELECIONADA.id===r.id ? '' : 'secondary'}" data-escolher-req="${escapeHtml(r.id)}">${REQUISICAO_SELECIONADA && REQUISICAO_SELECIONADA.id===r.id ? '✅ Selecionada' : 'Usar essa'}</button></div>
     </div>`).join('');
   box.querySelectorAll('[data-escolher-req]').forEach(btn=>{
@@ -2499,6 +2529,11 @@ function renderSelecaoRequisicaoMotorista(){
           const postoSelect = document.getElementById('l-posto-select');
           if(postoSelect) postoSelect.value = req.posto;
         }
+        // Km/Hor vem sugerido da requisição — o motorista pode mudar,
+        // mas se mudar o servidor registra na Auditoria (ver
+        // "alterou_km_requisicao")
+        const kmEl = document.getElementById('l-kmhor');
+        if(kmEl && req.kmEsperado){ kmEl.value = req.kmEsperado; kmEl.dispatchEvent(new Event('input')); }
       }
       renderSelecaoRequisicaoMotorista();
     });
@@ -2964,16 +2999,42 @@ function populateReqSelects(){
   selMot.innerHTML = '<option value="">Selecione</option>' + motoristas.map(u=>`<option value="${escapeHtml(u.email)}">${escapeHtml(u.nome||u.email)}</option>`).join('');
   const equips = VEICULOS.length>0 ? VEICULOS.map(v=>v.equipamento).sort() : distinctValues('equipamento');
   selEquip.innerHTML = '<option value="">Selecione</option>' + equips.map(e=>`<option value="${escapeHtml(e)}">${escapeHtml(e)}</option>`).join('');
+
+  const postosOptions = '<option value="">Selecione</option>' +
+    [...POSTOS].sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR')).map(p=>`<option value="${escapeHtml(p.nome)}">${escapeHtml(p.nome)}</option>`).join('') +
+    '<option value="__externo__">Outro (não cadastrado)</option>';
+  const selPosto = document.getElementById('req-posto');
+  if(selPosto) selPosto.innerHTML = postosOptions;
+  const selPostoAuto = document.getElementById('req-auto-posto');
+  if(selPostoAuto) selPostoAuto.innerHTML = postosOptions;
+
+  // sugere o Km/Hor esperado assim que escolhe o equipamento — pega a
+  // última leitura conhecida daquele equipamento no histórico
+  selEquip.onchange = ()=>{
+    const kmEl = document.getElementById('req-km-esperado');
+    if(kmEl && selEquip.value){
+      const max = maiorKmRegistrado(selEquip.value);
+      if(max !== null) kmEl.value = max;
+    }
+  };
+  [ ['req-posto','req-posto-externo-wrap'], ['req-auto-posto','req-auto-posto-externo-wrap'] ].forEach(([selId,wrapId])=>{
+    const sel = document.getElementById(selId);
+    const wrap = document.getElementById(wrapId);
+    if(sel && wrap) sel.onchange = ()=>{ wrap.style.display = sel.value==='__externo__' ? 'block' : 'none'; };
+  });
 }
 
 async function autoEmitirRequisicaoUI(){
   const equipamento = document.getElementById('req-auto-equipamento').value;
+  const postoSel = document.getElementById('req-auto-posto').value;
+  const posto = (postoSel === '__externo__' ? document.getElementById('req-auto-posto-externo').value.trim() : postoSel).toUpperCase();
   if(!equipamento){ toast('Escolhe o equipamento.'); return; }
+  if(!posto){ toast('Escolhe o posto (ou digita o nome, se for externo).'); return; }
   try{
     const resp = await fetch(SYNC_URL, {
       method:'POST',
       headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({ action:'emitirRequisicao', dados:{motoristaEmail: USUARIO_ATUAL.email, equipamento}, idToken: ID_TOKEN })
+      body: JSON.stringify({ action:'emitirRequisicao', dados:{motoristaEmail: USUARIO_ATUAL.email, equipamento, posto}, idToken: ID_TOKEN })
     });
     const json = await parseJsonResponse(resp);
     if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao emitir.'); return; }
@@ -2986,18 +3047,24 @@ async function autoEmitirRequisicaoUI(){
 async function emitirRequisicaoUI(){
   const motoristaEmail = document.getElementById('req-motorista').value;
   const equipamento = document.getElementById('req-equipamento').value;
-  const posto = document.getElementById('req-posto').value.trim().toUpperCase();
+  const postoSel = document.getElementById('req-posto').value;
+  const posto = (postoSel === '__externo__' ? document.getElementById('req-posto-externo').value.trim() : postoSel).toUpperCase();
+  const kmEsperado = document.getElementById('req-km-esperado').value.trim();
   if(!motoristaEmail || !equipamento){ toast('Escolhe o motorista e o equipamento.'); return; }
+  if(!posto){ toast('Escolhe o posto (ou digita o nome, se for externo).'); return; }
   try{
     const resp = await fetch(SYNC_URL, {
       method:'POST',
       headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({ action:'emitirRequisicao', dados:{motoristaEmail, equipamento, posto}, idToken: ID_TOKEN })
+      body: JSON.stringify({ action:'emitirRequisicao', dados:{motoristaEmail, equipamento, posto, kmEsperado}, idToken: ID_TOKEN })
     });
     const json = await parseJsonResponse(resp);
     if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao emitir.'); return; }
     REQUISICOES_EMITIDAS = json.requisicoesEmitidas || REQUISICOES_EMITIDAS;
     document.getElementById('req-posto').value = '';
+    document.getElementById('req-posto-externo').value = '';
+    document.getElementById('req-posto-externo-wrap').style.display = 'none';
+    document.getElementById('req-km-esperado').value = '';
     renderListaRequisicoesAdmin();
     toast(`Requisição Nº ${json.numero} emitida!`);
   }catch(err){ console.error(err); toast('Falha ao emitir: ' + err.message); }
@@ -6136,32 +6203,40 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   SYNC_URL = DEFAULT_SYNC_URL || localStorage.getItem(SYNC_URL_KEY) || '';
   localStorage.setItem(SYNC_URL_KEY, SYNC_URL);
 
-  initTabs();
-  initDashboardControls();
-  initFormLancamento();
-  initPerfis();
-  initAutocompletes();
-  initMultiSelects();
-  initImportExport();
-  initOcr();
-  initReportTab();
-  initUsuariosTab();
-  initVeiculosTab();
-  initPostosTab();
-  initEmpresasTab();
-  initRequisicoesTab();
-  initSyncTab();
-
-  document.getElementById('btn-pedir-liberacao-extra').addEventListener('click', async ()=>{
-    const ok = await confirmModal('Pedir liberação extra', 'Isso avisa o admin que você vai precisar de mais um abastecimento hoje, além do limite normal. Continuar?');
-    if(!ok) return;
-    await pedirLiberacao(todayStr());
-  });
-
-  // não carrega dados nem renderiza nada ainda — isso só acontece depois
-  // do login (ver autenticarComToken), porque o Apps Script exige um
-  // idToken válido pra dizer quais dados essa pessoa pode ver.
+  // O LOGIN RODA PRIMEIRO, ANTES DE QUALQUER OUTRA COISA — se alguma das
+  // funções de inicialização abaixo travar por qualquer motivo (em
+  // especial em navegadores mais exigentes tipo Safari), o JavaScript
+  // para tudo que vem depois do erro; sem essa reordenação, isso já
+  // impediu até o BOTÃO de login de aparecer. Com o login primeiro, a
+  // pessoa sempre consegue pelo menos entrar, mesmo que algo mais abaixo
+  // tenha dado problema.
   initLogin();
+
+  try{
+    initTabs();
+    initDashboardControls();
+    initFormLancamento();
+    initPerfis();
+    initAutocompletes();
+    initMultiSelects();
+    initImportExport();
+    initOcr();
+    initReportTab();
+    initUsuariosTab();
+    initVeiculosTab();
+    initPostosTab();
+    initEmpresasTab();
+    initRequisicoesTab();
+    initSyncTab();
+
+    document.getElementById('btn-pedir-liberacao-extra').addEventListener('click', async ()=>{
+      const ok = await confirmModal('Pedir liberação extra', 'Isso avisa o admin que você vai precisar de mais um abastecimento hoje, além do limite normal. Continuar?');
+      if(!ok) return;
+      await pedirLiberacao(todayStr());
+    });
+  }catch(errInit){
+    console.error('Falha ao inicializar parte da interface (login já está funcionando à parte):', errInit);
+  }
 });
 
 
