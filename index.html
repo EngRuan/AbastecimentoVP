@@ -568,6 +568,31 @@ nav.tabs button{
 nav.tabs button:hover{color:#fff;}
 nav.tabs button.active{color:#fff;border-bottom-color:#ffffff;}
 
+.nav-group{position:relative;display:flex;align-items:stretch;}
+.nav-group-toggle{
+  appearance:none; border:none; background:transparent;
+  color:rgba(255,255,255,.65); padding:12px 16px; font-size:13.5px; font-weight:600;
+  cursor:pointer; border-bottom:3px solid transparent; white-space:nowrap;
+  transition:color .15s, border-color .15s; font-family:inherit;
+}
+.nav-group-toggle:hover{color:#fff;}
+.nav-group.open .nav-group-toggle{color:#fff;}
+.nav-group.tem-ativo .nav-group-toggle{color:#fff;border-bottom-color:#ffffff;}
+.nav-dropdown{
+  position:absolute; top:100%; left:0; min-width:220px; z-index:50;
+  background:var(--navy-dark); border:1px solid rgba(255,255,255,.15); border-top:none;
+  box-shadow:0 8px 18px rgba(0,0,0,.35);
+  display:none; flex-direction:column; padding:4px;
+}
+.nav-group.open .nav-dropdown{display:flex;}
+.nav-dropdown button{
+  appearance:none; border:none; background:transparent; text-align:left;
+  color:rgba(255,255,255,.8); padding:10px 14px; font-size:13.5px; font-weight:600;
+  cursor:pointer; white-space:nowrap; border-radius:6px; font-family:inherit;
+}
+.nav-dropdown button:hover{background:rgba(255,255,255,.1); color:#fff;}
+.nav-dropdown button.active{background:var(--navy-light); color:var(--navy);}
+
 main{
   max-width:1320px;
   margin:0 auto;
@@ -1066,16 +1091,37 @@ body.preview-motorista #view-lancamentos::before{
 
 <nav class="tabs no-print">
   <button data-tab="dashboard" class="active">📊 Dashboard</button>
-  <button data-tab="lancamentos">📋 Lançamentos</button>
-  <button data-tab="lancamentos-preview" id="btn-tab-preview">📱 Visão do Motorista</button>
-  <button data-tab="relatorio">📄 Relatório PDF</button>
+  <div class="nav-group" id="navgroup-abastecimentos">
+    <button type="button" class="nav-group-toggle">⛽ Abastecimentos ▾</button>
+    <div class="nav-dropdown">
+      <button data-tab="lancamentos">📋 Lançamentos</button>
+      <button data-tab="lancamentos-preview" id="btn-tab-preview">📱 Visão do Motorista</button>
+    </div>
+  </div>
+  <div class="nav-group" id="navgroup-relatorios">
+    <button type="button" class="nav-group-toggle">📄 Relatórios ▾</button>
+    <div class="nav-dropdown">
+      <button data-tab="relatorio">📄 Relatório PDF</button>
+    </div>
+  </div>
   <button data-tab="aprovacoes">✅ Aprovações</button>
-  <button data-tab="usuarios">👥 Usuários</button>
-  <button data-tab="auditoria">🕵️ Auditoria</button>
-  <button data-tab="frota">🚗 Frota</button>
-  <button data-tab="postos">⛽ Postos</button>
-  <button data-tab="empresas">🏢 Empresas</button>
-  <button data-tab="sync">⚙️ Sincronização</button>
+  <div class="nav-group" id="navgroup-cadastro">
+    <button type="button" class="nav-group-toggle">🗂️ Cadastro ▾</button>
+    <div class="nav-dropdown">
+      <button data-tab="usuarios">👥 Usuários</button>
+      <button data-tab="frota">🚗 Frota</button>
+      <button data-tab="postos">⛽ Postos</button>
+      <button data-tab="empresas">🏢 Empresas</button>
+    </div>
+  </div>
+  <div class="nav-group" id="navgroup-config">
+    <button type="button" class="nav-group-toggle">⚙️ Configurações ▾</button>
+    <div class="nav-dropdown">
+      <button data-tab="auditoria">🕵️ Auditoria</button>
+      <button data-tab="sync">⚙️ Sincronização</button>
+    </div>
+  </div>
+
 </nav>
 
 <main>
@@ -2426,7 +2472,7 @@ function aplicarPapelNaUI(){
   const veAprovacoes = nivel >= 3;    // aprovações + visão do motorista (testar como)
   const veRelatorio = nivel >= 2;     // nível 2 também vê dashboard/relatório
 
-  document.querySelectorAll('nav.tabs button').forEach(btn=>{
+  document.querySelectorAll('nav.tabs button[data-tab]').forEach(btn=>{
     const tab = btn.dataset.tab;
     if(tab === 'usuarios' || tab === 'frota' || tab === 'postos' || tab === 'empresas'){
       btn.style.display = veCadastro ? '' : 'none';
@@ -2439,6 +2485,14 @@ function aplicarPapelNaUI(){
     } else if(tab === 'relatorio'){
       btn.style.display = veRelatorio ? '' : 'none';
     }
+  });
+
+  // esconde o grupo inteiro (o título do dropdown) quando ninguém dentro
+  // dele sobrou visível — senão fica um botão de categoria "morto" sem
+  // nada dentro pra essa pessoa
+  document.querySelectorAll('.nav-group').forEach(grupo=>{
+    const temAlgumVisivel = [...grupo.querySelectorAll('button[data-tab]')].some(b=>b.style.display !== 'none');
+    grupo.style.display = temAlgumVisivel ? '' : 'none';
   });
 
   const cardPendentes = document.getElementById('card-pendentes');
@@ -3528,7 +3582,7 @@ function renderListaUsuarios(){
     return `
     <div class="usuario-item" data-email="${escapeHtml(u.email)}">
       <div>
-        <div class="nome">${escapeHtml(u.nome||u.email)} <span class="badge-papel ${nivel>=3?'admin':''}">${NOMES_PAPEL[u.papel]||u.papel} · nível ${nivel}</span></div>
+        <div class="nome">${escapeHtml(u.nome||u.email)} <span class="badge-papel ${nivel>=3?'admin':''}">${NOMES_PAPEL[u.papel]||u.papel}</span></div>
         <div class="detalhe">${ehSemLogin(u.email) ? '🔓 sem login ainda' : escapeHtml(u.email)}${u.apelido?' · apelido: '+escapeHtml(u.apelido):''}${u.empresa?' · '+escapeHtml(u.empresa):''}${u.cargo?' · '+escapeHtml(u.cargo):''}${u.setor?' · setor '+escapeHtml(u.setor):''}${u.equipamento?' · '+escapeHtml(u.equipamento):''}${u.limiteDiario?' · limite '+escapeHtml(String(u.limiteDiario))+'/dia':''}${u.obra?' · obra '+escapeHtml(String(u.obra)):''}</div>
       </div>
       <div class="btn-row">
@@ -3921,8 +3975,28 @@ function recalcularTodasMedias(){
    Tabs
 --------------------------------------------------------------------- */
 function initTabs(){
-  document.querySelectorAll('nav.tabs button').forEach(btn=>{
+  document.querySelectorAll('nav.tabs button[data-tab]').forEach(btn=>{
     btn.addEventListener('click', ()=> ativarTab(btn.dataset.tab));
+  });
+  initNavGroups();
+}
+
+/* Os itens de nav agora ficam agrupados em categorias (Abastecimentos,
+   Relatórios, Cadastro, Configurações) que abrem um dropdown ao clicar
+   no título do grupo — só um grupo aberto por vez, fecha ao clicar fora
+   ou ao escolher um item. */
+function initNavGroups(){
+  document.querySelectorAll('.nav-group-toggle').forEach(toggle=>{
+    toggle.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      const grupo = toggle.closest('.nav-group');
+      const jaAberto = grupo.classList.contains('open');
+      document.querySelectorAll('.nav-group.open').forEach(g=>g.classList.remove('open'));
+      if(!jaAberto) grupo.classList.add('open');
+    });
+  });
+  document.addEventListener('click', ()=>{
+    document.querySelectorAll('.nav-group.open').forEach(g=>g.classList.remove('open'));
   });
 }
 
@@ -3930,7 +4004,11 @@ function ativarTab(nomeTab){
   const modoPreview = nomeTab === 'lancamentos-preview';
   const nomeReal = modoPreview ? 'lancamentos' : nomeTab;
 
-  document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===nomeTab));
+  document.querySelectorAll('nav.tabs button[data-tab]').forEach(b=>b.classList.toggle('active', b.dataset.tab===nomeTab));
+  document.querySelectorAll('.nav-group').forEach(g=>{
+    g.classList.remove('open');
+    g.classList.toggle('tem-ativo', !!g.querySelector('button[data-tab="'+nomeTab+'"]'));
+  });
   document.querySelectorAll('main .view').forEach(v=>v.classList.remove('active'));
   const view = document.getElementById('view-'+nomeReal);
   if(view) view.classList.add('active');
