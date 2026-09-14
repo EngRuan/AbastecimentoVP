@@ -574,23 +574,30 @@ nav.tabs button.active{color:#fff;border-bottom-color:#ffffff;}
   color:rgba(255,255,255,.65); padding:12px 16px; font-size:13.5px; font-weight:600;
   cursor:pointer; border-bottom:3px solid transparent; white-space:nowrap;
   transition:color .15s, border-color .15s; font-family:inherit;
+  display:flex; align-items:center; gap:6px;
 }
+.nav-group-toggle::after{
+  content:''; width:7px; height:7px; margin-top:-3px;
+  border-right:2px solid currentColor; border-bottom:2px solid currentColor;
+  transform:rotate(45deg); transition:transform .15s; opacity:.8;
+}
+.nav-group.open .nav-group-toggle::after{transform:rotate(225deg); margin-top:3px;}
 .nav-group-toggle:hover{color:#fff;}
 .nav-group.open .nav-group-toggle{color:#fff;}
 .nav-group.tem-ativo .nav-group-toggle{color:#fff;border-bottom-color:#ffffff;}
 .nav-dropdown{
-  position:absolute; top:100%; left:0; min-width:220px; z-index:50;
-  background:var(--navy-dark); border:1px solid rgba(255,255,255,.15); border-top:none;
-  box-shadow:0 8px 18px rgba(0,0,0,.35);
-  display:none; flex-direction:column; padding:4px;
+  position:absolute; top:calc(100% + 6px); left:0; min-width:230px; z-index:50;
+  background:var(--white); border:1px solid var(--line); border-radius:10px;
+  box-shadow:0 12px 28px rgba(0,20,73,.25);
+  display:none; flex-direction:column; padding:6px;
 }
 .nav-group.open .nav-dropdown{display:flex;}
 .nav-dropdown button{
   appearance:none; border:none; background:transparent; text-align:left;
-  color:rgba(255,255,255,.8); padding:10px 14px; font-size:13.5px; font-weight:600;
-  cursor:pointer; white-space:nowrap; border-radius:6px; font-family:inherit;
+  color:var(--ink); padding:10px 14px; font-size:13.5px; font-weight:600;
+  cursor:pointer; white-space:nowrap; border-radius:7px; font-family:inherit;
 }
-.nav-dropdown button:hover{background:rgba(255,255,255,.1); color:#fff;}
+.nav-dropdown button:hover{background:var(--paper);}
 .nav-dropdown button.active{background:var(--navy-light); color:var(--navy);}
 
 main{
@@ -1092,21 +1099,21 @@ body.preview-motorista #view-lancamentos::before{
 <nav class="tabs no-print">
   <button data-tab="dashboard" class="active">📊 Dashboard</button>
   <div class="nav-group" id="navgroup-abastecimentos">
-    <button type="button" class="nav-group-toggle">⛽ Abastecimentos ▾</button>
+    <button type="button" class="nav-group-toggle">⛽ Abastecimentos</button>
     <div class="nav-dropdown">
       <button data-tab="lancamentos">📋 Lançamentos</button>
       <button data-tab="lancamentos-preview" id="btn-tab-preview">📱 Visão do Motorista</button>
     </div>
   </div>
   <div class="nav-group" id="navgroup-relatorios">
-    <button type="button" class="nav-group-toggle">📄 Relatórios ▾</button>
+    <button type="button" class="nav-group-toggle">📄 Relatórios</button>
     <div class="nav-dropdown">
       <button data-tab="relatorio">📄 Relatório PDF</button>
     </div>
   </div>
   <button data-tab="aprovacoes">✅ Aprovações</button>
   <div class="nav-group" id="navgroup-cadastro">
-    <button type="button" class="nav-group-toggle">🗂️ Cadastro ▾</button>
+    <button type="button" class="nav-group-toggle">🗂️ Cadastro</button>
     <div class="nav-dropdown">
       <button data-tab="usuarios">👥 Usuários</button>
       <button data-tab="frota">🚗 Frota</button>
@@ -1115,7 +1122,7 @@ body.preview-motorista #view-lancamentos::before{
     </div>
   </div>
   <div class="nav-group" id="navgroup-config">
-    <button type="button" class="nav-group-toggle">⚙️ Configurações ▾</button>
+    <button type="button" class="nav-group-toggle">⚙️ Configurações</button>
     <div class="nav-dropdown">
       <button data-tab="auditoria">🕵️ Auditoria</button>
       <button data-tab="sync">⚙️ Sincronização</button>
