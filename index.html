@@ -1322,7 +1322,7 @@ body.preview-motorista #view-lancamentos::before{
         <div class="btn-row">
           <button type="button" class="btn secondary" id="btn-ocr-cupom">📷 Foto 1: Cupom fiscal (litros/valor)</button>
           <input type="file" id="file-ocr-cupom" accept="image/*" capture="environment" style="display:none;">
-          <button type="button" class="btn secondary hide-motorista" id="btn-ocr-requisicao">📷 Foto 2: Requisição (equipamento/motorista)</button>
+          <button type="button" class="btn secondary" id="btn-ocr-requisicao" style="display:none !important;">📷 Foto 2: Requisição (equipamento/motorista)</button>
           <input type="file" id="file-ocr-requisicao" accept="image/*" capture="environment" style="display:none;">
         </div>
       </div>
@@ -1332,8 +1332,8 @@ body.preview-motorista #view-lancamentos::before{
         <summary style="cursor:pointer;font-size:12.5px;color:var(--gray);font-weight:600;">Ver texto completo lido do cupom fiscal</summary>
         <pre id="ocr-raw-text-cupom" style="white-space:pre-wrap;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12px;margin-top:6px;max-height:180px;overflow:auto;"></pre>
       </details>
-      <div class="calc-preview info" id="ocr-status-requisicao" style="display:none;"></div>
-      <details id="ocr-raw-wrap-requisicao" style="display:none;margin-bottom:10px;">
+      <div class="calc-preview info" id="ocr-status-requisicao" style="display:none !important;"></div>
+      <details id="ocr-raw-wrap-requisicao" style="display:none !important;">
         <summary style="cursor:pointer;font-size:12.5px;color:var(--gray);font-weight:600;">Ver texto completo lido da requisição</summary>
         <pre id="ocr-raw-text-requisicao" style="white-space:pre-wrap;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12px;margin-top:6px;max-height:180px;overflow:auto;"></pre>
       </details>
@@ -1356,7 +1356,7 @@ body.preview-motorista #view-lancamentos::before{
             </div>
             <select id="l-posto-select" style="display:none;"></select>
           </div>
-          <div class="field hide-motorista">
+          <div class="field hide-motorista" style="display:none !important;">
             <label>Requisição</label>
             <input type="text" id="l-requisicao" placeholder="Nº requisição">
           </div>
