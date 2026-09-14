@@ -1069,6 +1069,7 @@ body.preview-motorista #view-lancamentos::before{
     <p class="helper">Entre com sua conta Google pra continuar.</p>
     <div id="google-signin-btn" style="display:flex;justify-content:center;margin-top:18px;"></div>
     <p class="helper" id="login-status" style="margin-top:16px;"></p>
+    <a href="#" id="link-login-alternativo" class="btn secondary" style="display:none;margin-top:12px;text-decoration:none;">🔗 Entrar por link direto do Google</a>
   </div>
 </div>
 
@@ -2276,6 +2277,45 @@ function iniciarRenovacaoAutomaticaDoToken(){
   }, 45 * 60 * 1000); // a cada 45 min — o token dura ~60min, dá folga
 }
 
+/* Caminho alternativo de login — usado quando o script do Google
+   (accounts.google.com/gsi/client) não carrega de jeito nenhum (algum
+   bloqueador de rastreamento/anúncio no navegador, comum em Safari
+   iPhone). Em vez de depender desse script, manda a pessoa DIRETO pro
+   Google via link normal (sem JavaScript no meio — muito mais difícil
+   de ser bloqueado), e o Google devolve pra essa mesma página com o
+   token colado na URL. */
+function linkLoginAlternativo(){
+  const redirectUri = window.location.origin + window.location.pathname;
+  const nonce = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,'0')).join('');
+  const params = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID,
+    redirect_uri: redirectUri,
+    response_type: 'id_token',
+    scope: 'openid email profile',
+    nonce: nonce,
+    prompt: 'select_account',
+  });
+  return 'https://accounts.google.com/o/oauth2/v2/auth?' + params.toString();
+}
+
+/* Confere se acabamos de voltar do redirect do Google (o token vem
+   colado depois de "#" na URL) — se sim, já autentica sozinho, sem a
+   pessoa precisar fazer mais nada. Roda ANTES de tentar o caminho
+   normal, logo no início da página. */
+function checarLoginPorRedirect(){
+  if(window.location.hash && window.location.hash.indexOf('id_token=') !== -1){
+    const params = new URLSearchParams(window.location.hash.substring(1));
+    const idToken = params.get('id_token');
+    if(idToken){
+      // limpa o token da URL visível/histórico assim que pega ele
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+      autenticarComToken(idToken, false);
+      return true;
+    }
+  }
+  return false;
+}
+
 function initLogin(){
   // mostra a tela de "entrando..." com base no que ficou salvo da última
   // vez, pra sensação de app instantâneo, enquanto confirma de verdade
@@ -2290,7 +2330,12 @@ function initLogin(){
     return;
   }
   if(typeof google === 'undefined' || !google.accounts){
-    document.getElementById('login-status').textContent = 'Não consegui carregar o login do Google — confira sua internet e recarregue a página.';
+    document.getElementById('login-status').textContent = 'Não consegui carregar o login do Google — confira sua internet, ou tenta o link alternativo abaixo (se algum bloqueador de anúncio/rastreamento estiver travando o carregamento, esse link direto costuma passar por cima disso).';
+    const linkAlt = document.getElementById('link-login-alternativo');
+    if(linkAlt){
+      linkAlt.href = linkLoginAlternativo();
+      linkAlt.style.display = 'inline-block';
+    }
     return;
   }
 
@@ -6329,7 +6374,8 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   // impediu até o BOTÃO de login de aparecer. Com o login primeiro, a
   // pessoa sempre consegue pelo menos entrar, mesmo que algo mais abaixo
   // tenha dado problema.
-  initLogin();
+  const veioDoRedirect = checarLoginPorRedirect();
+  if(!veioDoRedirect) initLogin();
 
   try{
     initTabs();
