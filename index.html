@@ -1070,6 +1070,22 @@ body.preview-motorista #view-lancamentos::before{
     <div id="google-signin-btn" style="display:flex;justify-content:center;margin-top:18px;"></div>
     <p class="helper" id="login-status" style="margin-top:16px;"></p>
     <a href="#" id="link-login-alternativo" class="btn secondary" style="display:none;margin-top:12px;text-decoration:none;">🔗 Entrar por link direto do Google</a>
+
+    <details style="margin-top:16px;text-align:left;">
+      <summary style="cursor:pointer;color:var(--gray);font-size:12.5px;">Não consegue entrar com o Google? Usar senha</summary>
+      <div style="margin-top:10px;">
+        <div class="field">
+          <label>Email</label>
+          <input type="email" id="login-senha-email" placeholder="seu@email.com">
+        </div>
+        <div class="field" style="margin-top:8px;">
+          <label>Senha</label>
+          <input type="password" id="login-senha-senha" placeholder="Senha de acesso">
+        </div>
+        <button type="button" class="btn" id="btn-login-senha" style="margin-top:10px;width:100%;">Entrar com senha</button>
+        <p class="helper" id="login-senha-status" style="margin-top:8px;"></p>
+      </div>
+    </details>
   </div>
 </div>
 
@@ -1582,6 +1598,19 @@ body.preview-motorista #view-lancamentos::before{
           <button type="button" class="btn ghost" id="btn-cancelar-usuario" style="display:none;">Cancelar edição</button>
         </div>
       </form>
+      <div class="card" id="card-senha-acesso" style="display:none;background:#fff8f6;border:1px solid #f0c4bd;margin-top:14px;">
+        <h2 style="font-size:15px;">🔑 Senha de acesso (login alternativo)</h2>
+        <p class="helper">Só pra quem tem dificuldade de usar o login do Google (ex: navegador bloqueando o script) — com email + essa senha, a pessoa entra sem precisar do Google. Deixa em branco se não precisar disso.</p>
+        <div class="form-grid" style="margin-top:10px;">
+          <div class="field">
+            <label>Nova senha</label>
+            <input type="text" id="u-nova-senha" placeholder="Mínimo 4 caracteres" minlength="4">
+          </div>
+        </div>
+        <div class="btn-row" style="margin-top:10px;">
+          <button type="button" class="btn secondary" id="btn-definir-senha">Definir senha pra essa pessoa</button>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -2302,6 +2331,53 @@ function linkLoginAlternativo(){
    colado depois de "#" na URL) — se sim, já autentica sozinho, sem a
    pessoa precisar fazer mais nada. Roda ANTES de tentar o caminho
    normal, logo no início da página. */
+/* Login alternativo por email+senha — pra quem não consegue de jeito
+   nenhum usar o Google Sign-In (script bloqueado, etc). Só funciona se
+   um admin/nível 4+ já tiver definido uma senha pra essa pessoa. */
+async function loginComSenhaUI(){
+  const email = document.getElementById('login-senha-email').value.trim();
+  const senha = document.getElementById('login-senha-senha').value;
+  const statusEl = document.getElementById('login-senha-status');
+  if(!email || !senha){ statusEl.textContent = 'Preenche email e senha.'; return; }
+  statusEl.textContent = 'Entrando...';
+  try{
+    const resp = await fetch(SYNC_URL, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'loginComSenha', email, senha })
+    });
+    const json = await parseJsonResponse(resp);
+    if(json.status !== 'ok' || !json.sessionToken){
+      statusEl.textContent = '❌ ' + (json.mensagem || 'Falha ao entrar.');
+      return;
+    }
+    statusEl.textContent = '';
+    await autenticarComToken(json.sessionToken, false);
+  }catch(err){
+    console.error(err);
+    statusEl.textContent = '❌ Falha ao entrar: ' + err.message;
+  }
+}
+
+/* Nível 4+ define/redefine a senha de acesso alternativa de alguém
+   (ver card "🔑 Senha de acesso" no cadastro de usuário). */
+async function definirSenhaUI(){
+  if(!editandoUsuarioEmail){ toast('Abre um usuário pra editar antes de definir a senha dele.'); return; }
+  const senha = document.getElementById('u-nova-senha').value;
+  if(!senha || senha.length < 4){ toast('A senha precisa ter pelo menos 4 caracteres.'); return; }
+  try{
+    const resp = await fetch(SYNC_URL, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'definirSenha', email: editandoUsuarioEmail, senha, idToken: ID_TOKEN })
+    });
+    const json = await parseJsonResponse(resp);
+    if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao definir senha.'); return; }
+    document.getElementById('u-nova-senha').value = '';
+    toast('Senha definida! Já pode passar pra pessoa.');
+  }catch(err){ console.error(err); toast('Falha ao definir senha: ' + err.message); }
+}
+
 function checarLoginPorRedirect(){
   if(window.location.hash && window.location.hash.indexOf('id_token=') !== -1){
     const params = new URLSearchParams(window.location.hash.substring(1));
@@ -3505,6 +3581,7 @@ async function salvarConfigDiasUI(){
 }
 
 function initUsuariosTab(){
+  document.getElementById('btn-definir-senha').addEventListener('click', definirSenhaUI);
   document.getElementById('form-usuario').addEventListener('submit', async e=>{
     e.preventDefault();
     const dados = {
@@ -3553,6 +3630,7 @@ function resetFormUsuario(){
   document.getElementById('btn-salvar-usuario').textContent = '+ Adicionar usuário';
   document.getElementById('btn-cancelar-usuario').style.display = 'none';
   document.getElementById('u-email').disabled = false;
+  document.getElementById('card-senha-acesso').style.display = 'none';
 }
 
 function editarUsuario(email){
@@ -3578,6 +3656,10 @@ function editarUsuario(email){
   document.getElementById('usuario-form-title').textContent = 'Editando usuário';
   document.getElementById('btn-salvar-usuario').textContent = 'Salvar alterações';
   document.getElementById('btn-cancelar-usuario').style.display = 'inline-block';
+  // "definir senha" só faz sentido pra quem já tem email de verdade
+  // (sem-login ainda não tem chave estável pra amarrar a senha)
+  document.getElementById('card-senha-acesso').style.display = ehSemLogin(u.email) ? 'none' : 'block';
+  document.getElementById('u-nova-senha').value = '';
   document.getElementById('view-usuarios').scrollIntoView({behavior:'smooth'});
 }
 
@@ -6376,6 +6458,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   // tenha dado problema.
   const veioDoRedirect = checarLoginPorRedirect();
   if(!veioDoRedirect) initLogin();
+  document.getElementById('btn-login-senha').addEventListener('click', loginComSenhaUI);
 
   try{
     initTabs();
