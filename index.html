@@ -1107,6 +1107,7 @@ body.preview-motorista #view-lancamentos::before{
     <small>Frota Tripoloni Construtora · <span id="app-version" style="opacity:.7;"></span></small>
   </div>
   <div class="spacer"></div>
+  <button type="button" class="btn secondary" id="btn-atualizar-tudo" style="display:none;padding:6px 12px;font-size:12.5px;" title="Busca os dados mais recentes sem precisar recarregar a página">🔄 Atualizar</button>
   <span class="status-pill" id="usuario-pill" style="display:none;"></span>
   <span class="status-pill" id="record-count-pill">— registros</span>
   <span class="status-pill" id="sync-pill"><span class="badge-dot off"></span>Sheets desconectado</span>
@@ -1267,6 +1268,7 @@ body.preview-motorista #view-lancamentos::before{
     <div class="card" id="card-selecao-requisicao" style="display:none;">
       <h2>🎫 Escolhe a requisição pra usar</h2>
       <p class="helper">Você só consegue lançar abastecimento com uma requisição já emitida pelo administrador/gestor — escolhe qual vai usar agora. O equipamento já vem travado da requisição escolhida.</p>
+      <div id="resumo-requisicao-selecionada" style="display:none;background:var(--navy);color:#fff;border-radius:10px;padding:14px 16px;margin-bottom:12px;"></div>
       <div id="lista-requisicoes-motorista"></div>
       <p class="helper" id="msg-sem-requisicao" style="display:none;color:var(--bad);font-weight:600;">⚠️ Você não tem nenhuma requisição aberta no momento. Fala com o administrador ou gestor de contrato pra emitir uma antes de abastecer.</p>
       <div id="area-auto-emissao" style="display:none;margin-top:12px;">
@@ -1274,6 +1276,18 @@ body.preview-motorista #view-lancamentos::before{
           <div class="field">
             <label>Equipamento</label>
             <select id="req-auto-equipamento"><option value="">Selecione</option></select>
+          </div>
+          <div class="field">
+            <label>Produto*</label>
+            <select id="req-auto-produto">
+              <option>ETANOL</option>
+              <option>GASOLINA</option>
+              <option>DIESEL</option>
+              <option>DIESEL S-10</option>
+              <option>DIESEL S-500</option>
+              <option>ARLA 32</option>
+              <option>ADITIVO</option>
+            </select>
           </div>
           <div class="field">
             <label>Posto*</label>
@@ -1352,7 +1366,7 @@ body.preview-motorista #view-lancamentos::before{
               <input type="text" id="l-empresa" placeholder="Ex: TRIPOLONI" autocomplete="off">
             </div>
           </div>
-          <div class="field">
+          <div class="field hide-motorista">
             <label>Produto*</label>
             <select id="l-produto" required>
               <option value="">Selecione</option>
@@ -1912,6 +1926,18 @@ body.preview-motorista #view-lancamentos::before{
         <div class="field">
           <label>Equipamento</label>
           <select id="req-equipamento"><option value="">Selecione</option></select>
+        </div>
+        <div class="field">
+          <label>Produto*</label>
+          <select id="req-produto">
+            <option>ETANOL</option>
+            <option>GASOLINA</option>
+            <option>DIESEL</option>
+            <option>DIESEL S-10</option>
+            <option>DIESEL S-500</option>
+            <option>ARLA 32</option>
+            <option>ADITIVO</option>
+          </select>
         </div>
         <div class="field">
           <label>Posto*</label>
@@ -2595,6 +2621,7 @@ function aplicarPapelNaUI(){
   pill.style.display = 'inline-flex';
   pill.innerHTML = `👤 ${escapeHtml(USUARIO_ATUAL.nome || USUARIO_ATUAL.email)} (${NOMES_PAPEL[USUARIO_ATUAL.papel] || USUARIO_ATUAL.papel}) <button id="btn-sair-app" style="margin-left:8px;border:none;background:transparent;color:inherit;cursor:pointer;text-decoration:underline;">sair</button>`;
   document.getElementById('btn-sair-app').addEventListener('click', sairDoApp);
+  document.getElementById('btn-atualizar-tudo').style.display = 'inline-flex';
 
   const nivel = NIVEL_PAPEL[USUARIO_ATUAL.papel] || 0;
   const veCadastro = nivel >= 4;      // usuários, frota, postos, empresas
@@ -2653,8 +2680,9 @@ function aplicarPapelNaUI(){
   } else {
     document.body.classList.remove('motorista-simples');
     document.body.classList.remove('form-simplificado');
-    const cardSelReq = document.getElementById('card-selecao-requisicao');
-    if(cardSelReq) cardSelReq.style.display = 'none';
+    // nível 3+ só vê o painel de requisição se tiver alguma aberta no
+    // próprio nome — renderSelecaoRequisicaoMotorista decide isso sozinho
+    renderSelecaoRequisicaoMotorista();
   }
 }
 
@@ -2671,9 +2699,15 @@ function renderSelecaoRequisicaoMotorista(){
   const msgVazio = document.getElementById('msg-sem-requisicao');
   const areaAuto = document.getElementById('area-auto-emissao');
   if(!card || !box) return;
+  // só as requisições abertas NO PRÓPRIO NOME — pra nível 3+ o servidor
+  // manda a lista inteira do sistema (pra Aprovações), então filtra aqui
+  const minhasAbertas = REQUISICOES_EMITIDAS.filter(r=>r.status==='aberta' && r.motoristaEmail===USUARIO_ATUAL.email);
   const ehFluxoRestrito = USUARIO_ATUAL && (USUARIO_ATUAL.papel === 'motorista' || USUARIO_ATUAL.papel === 'auxiliar');
   const ehPreview = document.body.classList.contains('preview-motorista');
-  if(!ehFluxoRestrito && !ehPreview){ card.style.display = 'none'; return; }
+  // motorista/auxiliar sempre veem o painel (mesmo vazio, pra saber que
+  // precisam pedir uma); nível 3+ só veem se tiverem alguma no próprio
+  // nome — não faz sentido "obrigar" quem já tem lançamento manual livre
+  if(!ehFluxoRestrito && !ehPreview && minhasAbertas.length===0){ card.style.display = 'none'; return; }
   card.style.display = 'block';
   const ehAuxiliar = USUARIO_ATUAL.papel === 'auxiliar';
   if(areaAuto){
@@ -2693,7 +2727,7 @@ function renderSelecaoRequisicaoMotorista(){
       }
     }
   }
-  const abertas = REQUISICOES_EMITIDAS.filter(r=>r.status==='aberta');
+  const abertas = minhasAbertas;
   if(abertas.length===0){
     box.innerHTML = '';
     msgVazio.style.display = 'block';
@@ -2701,18 +2735,50 @@ function renderSelecaoRequisicaoMotorista(){
     return;
   }
   msgVazio.style.display = 'none';
+  const ehNivelAltoComEscolha = !ehFluxoRestrito && REQUISICAO_SELECIONADA;
+
+  const resumoEl = document.getElementById('resumo-requisicao-selecionada');
+  if(resumoEl){
+    if(REQUISICAO_SELECIONADA){
+      const r = REQUISICAO_SELECIONADA;
+      resumoEl.style.display = 'block';
+      resumoEl.innerHTML = `
+        <div style="font-size:12px;opacity:.75;letter-spacing:.03em;text-transform:uppercase;">Requisição selecionada — Nº ${escapeHtml(String(r.numero))}</div>
+        <div style="display:flex;gap:22px;flex-wrap:wrap;margin-top:6px;font-weight:700;font-size:15px;">
+          <div>🚗 ${escapeHtml(r.equipamento)}</div>
+          <div>⛽ ${escapeHtml(r.produto||'ETANOL')}</div>
+          <div>📍 ${escapeHtml(r.posto||'—')}</div>
+          <div>📅 ${fmtDate(todayStr())}</div>
+        </div>
+        <div style="font-size:12px;opacity:.75;margin-top:6px;">Só falta tirar a foto do cupom e informar litros/preço abaixo.</div>`;
+    } else {
+      resumoEl.style.display = 'none';
+      resumoEl.innerHTML = '';
+    }
+  }
+
   box.innerHTML = abertas.map(r=>`
     <div class="usuario-item" data-id="${escapeHtml(r.id)}" style="${REQUISICAO_SELECIONADA && REQUISICAO_SELECIONADA.id===r.id ? 'border-color:var(--navy);background:var(--navy-light);' : ''}">
-      <div><div class="nome">Nº ${escapeHtml(String(r.numero))} — ${escapeHtml(r.equipamento)}</div><div class="detalhe">Posto: ${escapeHtml(r.posto||'—')}${r.kmEsperado?' · Km/Hor esperado: '+escapeHtml(String(r.kmEsperado)):''}</div></div>
+      <div><div class="nome">Nº ${escapeHtml(String(r.numero))} — ${escapeHtml(r.equipamento)} — ${escapeHtml(r.produto||'ETANOL')}</div><div class="detalhe">Posto: ${escapeHtml(r.posto||'—')}${r.kmEsperado?' · Km/Hor esperado: '+escapeHtml(String(r.kmEsperado)):''}</div></div>
       <div class="btn-row"><button type="button" class="btn ${REQUISICAO_SELECIONADA && REQUISICAO_SELECIONADA.id===r.id ? '' : 'secondary'}" data-escolher-req="${escapeHtml(r.id)}">${REQUISICAO_SELECIONADA && REQUISICAO_SELECIONADA.id===r.id ? '✅ Selecionada' : 'Usar essa'}</button></div>
-    </div>`).join('');
+    </div>`).join('') + (ehNivelAltoComEscolha ? `<button type="button" class="btn ghost" id="btn-cancelar-req-selecionada" style="margin-top:8px;">❌ Cancelar — voltar pro lançamento manual livre</button>` : '');
   box.querySelectorAll('[data-escolher-req]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       const req = abertas.find(r=>r.id===btn.dataset.escolherReq);
       REQUISICAO_SELECIONADA = req || null;
       if(req){
+        // nível 3+ que escolher uma requisição também entra no fluxo
+        // restrito (segunda camada de aprovação + consome a requisição)
+        // — só motorista/auxiliar já ficam sempre assim por padrão
+        if(!ehFluxoRestrito) document.body.classList.add('form-simplificado');
+        // Data sempre travada em hoje — não é a requisição que "sabe"
+        // a data, é sempre o dia que a pessoa está abastecendo de fato
+        const dataEl = document.getElementById('l-data');
+        if(dataEl){ dataEl.value = todayStr(); dataEl.readOnly = true; }
         const equipEl = document.getElementById('l-equipamento');
         if(equipEl){ equipEl.value = req.equipamento; equipEl.readOnly = true; equipEl.dispatchEvent(new Event('input')); }
+        const produtoEl = document.getElementById('l-produto');
+        if(produtoEl) produtoEl.value = req.produto || 'ETANOL';
         if(req.posto){
           document.getElementById('l-posto').value = req.posto;
           const postoSelect = document.getElementById('l-posto-select');
@@ -2727,6 +2793,23 @@ function renderSelecaoRequisicaoMotorista(){
       renderSelecaoRequisicaoMotorista();
     });
   });
+  const btnCancelar = document.getElementById('btn-cancelar-req-selecionada');
+  if(btnCancelar){
+    btnCancelar.addEventListener('click', ()=>{
+      REQUISICAO_SELECIONADA = null;
+      document.body.classList.remove('form-simplificado');
+      const equipEl = document.getElementById('l-equipamento');
+      if(equipEl) equipEl.readOnly = false;
+      const dataEl = document.getElementById('l-data');
+      if(dataEl) dataEl.readOnly = false;
+      renderSelecaoRequisicaoMotorista();
+    });
+  }
+}
+
+function sairDoModoRequisicaoSeNivelAlto(){
+  const ehFluxoRestrito = USUARIO_ATUAL && (USUARIO_ATUAL.papel === 'motorista' || USUARIO_ATUAL.papel === 'auxiliar');
+  if(!ehFluxoRestrito) document.body.classList.remove('form-simplificado');
 }
 
 function prepararCamposParaMotorista(){
@@ -2821,6 +2904,7 @@ async function enviarLancamentoMotorista(){
       if(json.semRequisicao){
         mostrarStatusSalvamento('⚠️ ' + (json.mensagem || 'Essa requisição não é mais válida.'), 'erro');
         REQUISICAO_SELECIONADA = null;
+        sairDoModoRequisicaoSeNivelAlto();
         await pullFromSheetsSilencioso(); // atualiza a lista de requisições abertas
         renderSelecaoRequisicaoMotorista();
       } else {
@@ -2836,6 +2920,7 @@ async function enviarLancamentoMotorista(){
       document.getElementById('ocr-raw-wrap-'+t).style.display = 'none';
     });
     REQUISICAO_SELECIONADA = null;
+    sairDoModoRequisicaoSeNivelAlto();
     resetForm(true);
     prepararCamposParaMotorista();
     mostrarStatusSalvamento(`✅ Enviado! Requisição Nº <b>${escapeHtml(String(json.requisicao))}</b>. Só falta o admin confirmar a Nota Fiscal.`, 'ok');
@@ -3185,8 +3270,11 @@ function populateReqSelects(){
   const selMot = document.getElementById('req-motorista');
   const selEquip = document.getElementById('req-equipamento');
   if(!selMot || !selEquip) return;
-  const motoristas = USUARIOS.filter(u=>u.papel==='motorista').sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR'));
-  selMot.innerHTML = '<option value="">Selecione</option>' + motoristas.map(u=>`<option value="${escapeHtml(u.email)}">${escapeHtml(u.nome||u.email)}</option>`).join('');
+  // agora pode emitir requisição pra qualquer nível, não só motorista
+  // (nível 1) — só precisa ter login de verdade (senão a pessoa nunca
+  // consegue entrar pra escolher/usar a requisição)
+  const pessoas = USUARIOS.filter(u=>!ehSemLogin(u.email)).sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR'));
+  selMot.innerHTML = '<option value="">Selecione</option>' + pessoas.map(u=>`<option value="${escapeHtml(u.email)}">${escapeHtml(u.nome||u.email)} — ${escapeHtml(NOMES_PAPEL[u.papel]||u.papel)}</option>`).join('');
   const equips = VEICULOS.length>0 ? VEICULOS.map(v=>v.equipamento).sort() : distinctValues('equipamento');
   selEquip.innerHTML = '<option value="">Selecione</option>' + equips.map(e=>`<option value="${escapeHtml(e)}">${escapeHtml(e)}</option>`).join('');
 
@@ -3216,6 +3304,7 @@ function populateReqSelects(){
 
 async function autoEmitirRequisicaoUI(){
   const equipamento = document.getElementById('req-auto-equipamento').value;
+  const produto = document.getElementById('req-auto-produto').value;
   const postoSel = document.getElementById('req-auto-posto').value;
   const posto = (postoSel === '__externo__' ? document.getElementById('req-auto-posto-externo').value.trim() : postoSel).toUpperCase();
   if(!equipamento){ toast('Escolhe o equipamento.'); return; }
@@ -3224,7 +3313,7 @@ async function autoEmitirRequisicaoUI(){
     const resp = await fetch(SYNC_URL, {
       method:'POST',
       headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({ action:'emitirRequisicao', dados:{motoristaEmail: USUARIO_ATUAL.email, equipamento, posto}, idToken: ID_TOKEN })
+      body: JSON.stringify({ action:'emitirRequisicao', dados:{motoristaEmail: USUARIO_ATUAL.email, equipamento, produto, posto}, idToken: ID_TOKEN })
     });
     const json = await parseJsonResponse(resp);
     if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao emitir.'); return; }
@@ -3237,6 +3326,7 @@ async function autoEmitirRequisicaoUI(){
 async function emitirRequisicaoUI(){
   const motoristaEmail = document.getElementById('req-motorista').value;
   const equipamento = document.getElementById('req-equipamento').value;
+  const produto = document.getElementById('req-produto').value;
   const postoSel = document.getElementById('req-posto').value;
   const posto = (postoSel === '__externo__' ? document.getElementById('req-posto-externo').value.trim() : postoSel).toUpperCase();
   const kmEsperado = document.getElementById('req-km-esperado').value.trim();
@@ -3246,7 +3336,7 @@ async function emitirRequisicaoUI(){
     const resp = await fetch(SYNC_URL, {
       method:'POST',
       headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({ action:'emitirRequisicao', dados:{motoristaEmail, equipamento, posto, kmEsperado}, idToken: ID_TOKEN })
+      body: JSON.stringify({ action:'emitirRequisicao', dados:{motoristaEmail, equipamento, produto, posto, kmEsperado}, idToken: ID_TOKEN })
     });
     const json = await parseJsonResponse(resp);
     if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao emitir.'); return; }
@@ -3976,6 +4066,28 @@ async function rejeitarPendenteUI(id){
 /* Puxa os dados do Sheets de novo em segundo plano, sem pedir confirmação
    nem mostrar toast de sucesso — usado depois de confirmar um pendente,
    só pra atualizar o Dashboard/tabela com o registro novo. */
+/* Botão "🔄 Atualizar" no cabeçalho — busca os dados mais recentes do
+   Sheets sem precisar recarregar a página nem refazer login. Dá pra
+   usar a qualquer momento (ex: depois que outra pessoa cadastrou algo,
+   ou só pra conferir se algo já está refletido). */
+async function atualizarTudoUI(){
+  const btn = document.getElementById('btn-atualizar-tudo');
+  if(!btn || btn.disabled) return;
+  const textoOriginal = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '🔄 Atualizando...';
+  try{
+    await pullFromSheetsSilencioso();
+    toast('Dados atualizados.');
+  }catch(err){
+    console.error(err);
+    toast('Falha ao atualizar: ' + err.message);
+  }finally{
+    btn.disabled = false;
+    btn.textContent = textoOriginal;
+  }
+}
+
 async function pullFromSheetsSilencioso(){
   if(!SYNC_URL || !ID_TOKEN) return;
   try{
@@ -5309,7 +5421,10 @@ function initFormLancamento(){
 
     // motorista de verdade OU admin testando na "Visão do Motorista" —
     // os dois passam pelo mesmo fluxo restrito, pra o teste ser fiel
-    const emModoMotorista = (USUARIO_ATUAL && (USUARIO_ATUAL.papel === 'motorista' || USUARIO_ATUAL.papel === 'auxiliar')) || document.body.classList.contains('preview-motorista');
+    // qualquer nível que tenha escolhido uma requisição própria usa o
+    // fluxo restrito (segunda camada de aprovação + consome a
+    // requisição) — não é mais só motorista/auxiliar
+    const emModoMotorista = (USUARIO_ATUAL && (USUARIO_ATUAL.papel === 'motorista' || USUARIO_ATUAL.papel === 'auxiliar')) || document.body.classList.contains('preview-motorista') || !!REQUISICAO_SELECIONADA;
 
     // só pode salvar um lançamento NOVO depois de ler o cupom por foto
     // nesse formulário — quem não é motorista (fora do modo preview) não
@@ -5731,7 +5846,11 @@ function extrairCamposRequisicao(texto){
 }
 
 function aplicarCamposOcr(campos, tipo){
-  if(campos.data) document.getElementById('l-data').value = campos.data;
+  // com requisição escolhida, a Data/Equipamento/Produto já vêm
+  // travados de lá — a foto só precisa completar litros e preço. Não
+  // sobrescreve o que já está certo, só o que realmente vem do cupom.
+  const comRequisicao = !!REQUISICAO_SELECIONADA;
+  if(campos.data && !comRequisicao) document.getElementById('l-data').value = campos.data;
   if(campos.quantidade != null) document.getElementById('l-quantidade').value = campos.quantidade;
   if(campos.precoTotal != null){
     document.getElementById('l-precototal').value = campos.precoTotal;
@@ -5740,11 +5859,13 @@ function aplicarCamposOcr(campos, tipo){
     if(q > 0) document.getElementById('l-precounit').value = Math.round((campos.precoTotal/q)*1000)/1000;
   }
   if(campos.nf) document.getElementById('l-nf').value = campos.nf;
-  if(campos.kmHor != null) document.getElementById('l-kmhor').value = campos.kmHor;
-  if(campos.requisicao) document.getElementById('l-requisicao').value = campos.requisicao;
+  if(campos.kmHor != null && !comRequisicao) document.getElementById('l-kmhor').value = campos.kmHor;
+  if(campos.requisicao && !comRequisicao) document.getElementById('l-requisicao').value = campos.requisicao;
   // Equipamento: prioriza o que veio do cupom impresso (mais confiável);
   // só usa o da requisição manuscrita se o campo ainda estiver vazio.
-  if(campos.equipamento){
+  // Com requisição digital escolhida, o equipamento já está travado —
+  // não deixa a leitura do cupom sobrescrever.
+  if(campos.equipamento && !comRequisicao){
     const equipEl = document.getElementById('l-equipamento');
     if(tipo === 'cupom' || !equipEl.value.trim()){
       equipEl.value = campos.equipamento;
@@ -6469,6 +6590,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   const veioDoRedirect = checarLoginPorRedirect();
   if(!veioDoRedirect) initLogin();
   document.getElementById('btn-login-senha').addEventListener('click', loginComSenhaUI);
+  document.getElementById('btn-atualizar-tudo').addEventListener('click', atualizarTudoUI);
 
   try{
     initTabs();
