@@ -1514,32 +1514,6 @@ body.preview-motorista #view-lancamentos::before{
 
   <!-- ======================= USUÁRIOS (nível 3+: admin/gestor/dono) ======================= -->
   <section class="view" id="view-usuarios">
-    <div class="card">
-      <h2>Usuários cadastrados</h2>
-      <p class="helper">Nome é o único campo obrigatório — o Email pode ficar em branco pra cadastrar uma pessoa que ainda não tem login (fica como "sem login ainda" na lista, útil pra já vincular em Condutor Principal, relatórios, etc.); quando ela tiver conta Google, edita e completa o email depois. Só quem tiver email de verdade consegue entrar no app. O acesso é só por NÍVEL numérico (o "Cargo" já diz o título de trabalho da pessoa — o nível é só o que ela pode fazer no sistema): <b>Nível 5</b> acesso total. <b>Nível 4</b> tudo, menos Sincronização. <b>Nível 3</b> aprova, emite requisição pra qualquer motorista, lança manualmente — sem acesso a Cadastro (Usuários/Frota/Postos/Empresas). <b>Nível 2</b> vê Dashboard/Relatório e emite requisição só pra si mesmo. <b>Nível 1</b> só lança abastecimento com requisição que alguém emitiu pra ele. Só dá pra criar/editar/remover conta com nível MENOR que o seu — nunca igual ou maior (ex: Nível 3 não mexe em outro Nível 3 nem em Nível 4; só o Nível 5 mexe em qualquer um). "Equipamentos autorizados" trava a pessoa pra só conseguir abastecer essas VPs (separadas por vírgula) — deixa em branco pra não restringir. "Obra" pode ser preenchida pra qualquer pessoa (é só referência), mas só é OBRIGATÓRIA de ser única pra Nível 4 — o sistema não deixa cadastrar dois níveis 4 na mesma obra.</p>
-      <div id="lista-usuarios" style="margin-top:14px;"></div>
-    </div>
-
-    <div class="card" id="card-cruzamento-motoristas" style="display:none;">
-      <h2>🔎 Nomes de motorista sem cadastro</h2>
-      <p class="helper">Nomes que aparecem em lançamentos antigos mas não batem com nenhum Nome ou Apelido já cadastrado. Pode ser gente nova pra cadastrar, ou um apelido/abreviação de alguém que já existe (nesse caso, só edita o cadastro dela e preenche o Apelido certinho).</p>
-      <div id="lista-cruzamento-motoristas" style="margin-top:12px;"></div>
-    </div>
-
-    <div class="card">
-      <h2>Dias bloqueados pra motorista</h2>
-      <p class="helper">Nível 1 não consegue lançar abastecimento nos dias marcados aqui — não afeta níveis 2 a 5, que continuam lançando qualquer dia.</p>
-      <div class="btn-row" id="dias-bloqueados-checks" style="margin:12px 0;flex-wrap:wrap;">
-        <label style="display:flex;align-items:center;gap:5px;"><input type="checkbox" value="0" class="chk-dia-bloqueado"> Domingo</label>
-        <label style="display:flex;align-items:center;gap:5px;"><input type="checkbox" value="1" class="chk-dia-bloqueado"> Segunda</label>
-        <label style="display:flex;align-items:center;gap:5px;"><input type="checkbox" value="2" class="chk-dia-bloqueado"> Terça</label>
-        <label style="display:flex;align-items:center;gap:5px;"><input type="checkbox" value="3" class="chk-dia-bloqueado"> Quarta</label>
-        <label style="display:flex;align-items:center;gap:5px;"><input type="checkbox" value="4" class="chk-dia-bloqueado"> Quinta</label>
-        <label style="display:flex;align-items:center;gap:5px;"><input type="checkbox" value="5" class="chk-dia-bloqueado"> Sexta</label>
-        <label style="display:flex;align-items:center;gap:5px;"><input type="checkbox" value="6" class="chk-dia-bloqueado"> Sábado</label>
-      </div>
-      <button type="button" class="btn" id="btn-salvar-dias-bloqueados">Salvar dias bloqueados</button>
-    </div>
 
     <div class="card">
       <h2 id="usuario-form-title">Adicionar usuário</h2>
@@ -1612,6 +1586,32 @@ body.preview-motorista #view-lancamentos::before{
         </div>
       </div>
     </div>
+    <div class="card">
+      <h2>Usuários cadastrados</h2>
+      <p class="helper">Nome é o único campo obrigatório — o Email pode ficar em branco pra cadastrar uma pessoa que ainda não tem login (fica como "sem login ainda" na lista, útil pra já vincular em Condutor Principal, relatórios, etc.); quando ela tiver conta Google, edita e completa o email depois. Só quem tiver email de verdade consegue entrar no app. O acesso é só por NÍVEL numérico (o "Cargo" já diz o título de trabalho da pessoa — o nível é só o que ela pode fazer no sistema): <b>Nível 5</b> acesso total. <b>Nível 4</b> tudo, menos Sincronização. <b>Nível 3</b> aprova, emite requisição pra qualquer motorista, lança manualmente — sem acesso a Cadastro (Usuários/Frota/Postos/Empresas). <b>Nível 2</b> vê Dashboard/Relatório e emite requisição só pra si mesmo. <b>Nível 1</b> só lança abastecimento com requisição que alguém emitiu pra ele. Só dá pra criar/editar/remover conta com nível MENOR que o seu — nunca igual ou maior (ex: Nível 3 não mexe em outro Nível 3 nem em Nível 4; só o Nível 5 mexe em qualquer um). "Equipamentos autorizados" trava a pessoa pra só conseguir abastecer essas VPs (separadas por vírgula) — deixa em branco pra não restringir. "Obra" pode ser preenchida pra qualquer pessoa (é só referência), mas só é OBRIGATÓRIA de ser única pra Nível 4 — o sistema não deixa cadastrar dois níveis 4 na mesma obra.</p>
+      <div id="lista-usuarios" style="margin-top:14px;"></div>
+    </div>
+
+    <div class="card" id="card-cruzamento-motoristas" style="display:none;">
+      <h2>🔎 Nomes de motorista sem cadastro</h2>
+      <p class="helper">Nomes que aparecem em lançamentos antigos mas não batem com nenhum Nome ou Apelido já cadastrado. Pode ser gente nova pra cadastrar, ou um apelido/abreviação de alguém que já existe (nesse caso, só edita o cadastro dela e preenche o Apelido certinho).</p>
+      <div id="lista-cruzamento-motoristas" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="card">
+      <h2>Dias bloqueados pra motorista</h2>
+      <p class="helper">Nível 1 não consegue lançar abastecimento nos dias marcados aqui — não afeta níveis 2 a 5, que continuam lançando qualquer dia.</p>
+      <div class="btn-row" id="dias-bloqueados-checks" style="margin:12px 0;flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:5px;"><input type="checkbox" value="0" class="chk-dia-bloqueado"> Domingo</label>
+        <label style="display:flex;align-items:center;gap:5px;"><input type="checkbox" value="1" class="chk-dia-bloqueado"> Segunda</label>
+        <label style="display:flex;align-items:center;gap:5px;"><input type="checkbox" value="2" class="chk-dia-bloqueado"> Terça</label>
+        <label style="display:flex;align-items:center;gap:5px;"><input type="checkbox" value="3" class="chk-dia-bloqueado"> Quarta</label>
+        <label style="display:flex;align-items:center;gap:5px;"><input type="checkbox" value="4" class="chk-dia-bloqueado"> Quinta</label>
+        <label style="display:flex;align-items:center;gap:5px;"><input type="checkbox" value="5" class="chk-dia-bloqueado"> Sexta</label>
+        <label style="display:flex;align-items:center;gap:5px;"><input type="checkbox" value="6" class="chk-dia-bloqueado"> Sábado</label>
+      </div>
+      <button type="button" class="btn" id="btn-salvar-dias-bloqueados">Salvar dias bloqueados</button>
+    </div>
   </section>
 
   <!-- ======================= AUDITORIA (nível 3+: admin/gestor/dono) ======================= -->
@@ -1631,19 +1631,6 @@ body.preview-motorista #view-lancamentos::before{
 
   <!-- ======================= FROTA (nível 3+: admin/gestor/dono) ======================= -->
   <section class="view" id="view-frota">
-    <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
-        <h2 style="margin:0;">🚗 Frota — próprios, alugados e terceirizados</h2>
-        <button type="button" class="btn secondary" id="btn-pdf-frota">📄 Exportar PDF da Frota</button>
-      </div>
-      <p class="helper">Cadastra cada equipamento. "Próprio" = da Tripoloni. "Alugado" = a Tripoloni paga aluguel por ele. "Terceirizado" = pertence a outra empresa prestando serviço pra Tripoloni. Alugados entram no relatório com o custo do aluguel rateado pro período filtrado (combustível + aluguel = custo total real de cada veículo).</p>
-      <div id="lista-veiculos" style="margin-top:14px;"></div>
-    </div>
-    <div class="card" id="card-cruzamento-frota" style="display:none;">
-      <h2>🔎 Equipamentos sem cadastro na Frota</h2>
-      <p class="helper">Esses equipamentos já aparecem em lançamentos antigos mas ainda não têm ficha cadastrada. Cadastra os que valem a pena (frota ativa) ou ignora os que já saíram/não existem mais.</p>
-      <div id="lista-cruzamento-frota" style="margin-top:12px;"></div>
-    </div>
     <div class="card">
       <h2 id="veiculo-form-title">Adicionar veículo</h2>
       <form id="form-veiculo">
@@ -1764,20 +1751,23 @@ body.preview-motorista #view-lancamentos::before{
         </div>
       </form>
     </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+        <h2 style="margin:0;">🚗 Frota — próprios, alugados e terceirizados</h2>
+        <button type="button" class="btn secondary" id="btn-pdf-frota">📄 Exportar PDF da Frota</button>
+      </div>
+      <p class="helper">Cadastra cada equipamento. "Próprio" = da Tripoloni. "Alugado" = a Tripoloni paga aluguel por ele. "Terceirizado" = pertence a outra empresa prestando serviço pra Tripoloni. Alugados entram no relatório com o custo do aluguel rateado pro período filtrado (combustível + aluguel = custo total real de cada veículo).</p>
+      <div id="lista-veiculos" style="margin-top:14px;"></div>
+    </div>
+    <div class="card" id="card-cruzamento-frota" style="display:none;">
+      <h2>🔎 Equipamentos sem cadastro na Frota</h2>
+      <p class="helper">Esses equipamentos já aparecem em lançamentos antigos mas ainda não têm ficha cadastrada. Cadastra os que valem a pena (frota ativa) ou ignora os que já saíram/não existem mais.</p>
+      <div id="lista-cruzamento-frota" style="margin-top:12px;"></div>
+    </div>
   </section>
 
   <!-- ======================= POSTOS (nível 3+) ======================= -->
   <section class="view" id="view-postos">
-    <div class="card">
-      <h2>⛽ Postos cadastrados</h2>
-      <p class="helper">Cadastra os postos que a frota usa, com CNPJ e endereço. Isso é o que alimenta a lista de Posto na hora de lançar (em vez de digitar toda vez).</p>
-      <div id="lista-postos" style="margin-top:14px;"></div>
-    </div>
-    <div class="card" id="card-cruzamento-postos" style="display:none;">
-      <h2>🔎 Postos sem cadastro</h2>
-      <p class="helper">Nomes de posto que já aparecem em lançamentos antigos mas ainda não têm ficha cadastrada.</p>
-      <div id="lista-cruzamento-postos" style="margin-top:12px;"></div>
-    </div>
     <div class="card">
       <h2 id="posto-form-title">Adicionar posto</h2>
       <form id="form-posto">
@@ -1809,15 +1799,20 @@ body.preview-motorista #view-lancamentos::before{
         </div>
       </form>
     </div>
+    <div class="card">
+      <h2>⛽ Postos cadastrados</h2>
+      <p class="helper">Cadastra os postos que a frota usa, com CNPJ e endereço. Isso é o que alimenta a lista de Posto na hora de lançar (em vez de digitar toda vez).</p>
+      <div id="lista-postos" style="margin-top:14px;"></div>
+    </div>
+    <div class="card" id="card-cruzamento-postos" style="display:none;">
+      <h2>🔎 Postos sem cadastro</h2>
+      <p class="helper">Nomes de posto que já aparecem em lançamentos antigos mas ainda não têm ficha cadastrada.</p>
+      <div id="lista-cruzamento-postos" style="margin-top:12px;"></div>
+    </div>
   </section>
 
   <!-- ======================= EMPRESAS (nível 3+) ======================= -->
   <section class="view" id="view-empresas">
-    <div class="card">
-      <h2>🏢 Empresas cadastradas</h2>
-      <p class="helper">Cadastra as empresas ligadas à frota: a própria Tripoloni, locadoras (quem aluga veículo pra Tripoloni) e terceirizadas (empresas que prestam serviço pra Tripoloni com equipamento próprio delas). Usado no campo "Empresa vinculada" do cadastro de Frota.</p>
-      <div id="lista-empresas" style="margin-top:14px;"></div>
-    </div>
     <div class="card">
       <h2 id="empresa-form-title">Adicionar empresa</h2>
       <form id="form-empresa">
@@ -1856,6 +1851,11 @@ body.preview-motorista #view-lancamentos::before{
           <button type="button" class="btn ghost" id="btn-cancelar-empresa" style="display:none;">Cancelar edição</button>
         </div>
       </form>
+    </div>
+    <div class="card">
+      <h2>🏢 Empresas cadastradas</h2>
+      <p class="helper">Cadastra as empresas ligadas à frota: a própria Tripoloni, locadoras (quem aluga veículo pra Tripoloni) e terceirizadas (empresas que prestam serviço pra Tripoloni com equipamento próprio delas). Usado no campo "Empresa vinculada" do cadastro de Frota.</p>
+      <div id="lista-empresas" style="margin-top:14px;"></div>
     </div>
   </section>
 
@@ -3170,6 +3170,7 @@ async function removerVeiculoUI(equipamento){
     VEICULOS = VEICULOS.filter(v=>v.equipamento!==equipamento);
     renderListaVeiculos();
     renderCruzamentoFrota();
+    populateReqSelects();
     toast('Veículo removido.');
   }catch(err){
     console.error(err);
@@ -3379,6 +3380,7 @@ async function removerPostoUI(nome){
     POSTOS = POSTOS.filter(p=>p.nome!==nome);
     renderListaPostos();
     renderCruzamentoPostos();
+    populateReqSelects();
     toast('Posto removido.');
   }catch(err){ console.error(err); toast('Falha ao remover: ' + err.message); }
 }
@@ -3405,6 +3407,7 @@ function initPostosTab(){
       resetFormPosto();
       renderListaPostos();
       renderCruzamentoPostos();
+      populateReqSelects();
     }catch(err){ console.error(err); toast('Falha ao salvar: ' + err.message); }
   });
   document.getElementById('btn-cancelar-posto').addEventListener('click', resetFormPosto);
@@ -3472,6 +3475,7 @@ async function removerEmpresaUI(nome){
     if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao remover.'); return; }
     EMPRESAS = EMPRESAS.filter(e=>e.nome!==nome);
     renderListaEmpresas();
+    populateUsuarioEmpresaSelect();
     toast('Empresa removida.');
   }catch(err){ console.error(err); toast('Falha ao remover: ' + err.message); }
 }
@@ -3498,6 +3502,7 @@ function initEmpresasTab(){
       toast(editandoEmpresaNome ? 'Empresa atualizada.' : 'Empresa adicionada.');
       resetFormEmpresa();
       renderListaEmpresas();
+      populateUsuarioEmpresaSelect();
     }catch(err){ console.error(err); toast('Falha ao salvar: ' + err.message); }
   });
   document.getElementById('btn-cancelar-empresa').addEventListener('click', resetFormEmpresa);
@@ -3548,6 +3553,7 @@ function initVeiculosTab(){
       resetFormVeiculo();
       renderListaVeiculos();
       renderCruzamentoFrota();
+      populateReqSelects();
     }catch(err){
       console.error(err);
       toast('Falha ao salvar: ' + err.message);
@@ -3611,6 +3617,8 @@ function initUsuariosTab(){
       resetFormUsuario();
       renderListaUsuarios();
       renderCruzamentoMotoristas();
+      populateCondutorSelect();
+      populateReqSelects();
     }catch(err){
       console.error(err);
       toast('Falha ao salvar: ' + err.message);
@@ -3696,6 +3704,8 @@ async function removerUsuarioUI(email){
     toast('Usuário removido.');
     renderListaUsuarios();
     renderCruzamentoMotoristas();
+    populateCondutorSelect();
+    populateReqSelects();
   }catch(err){
     console.error(err);
     toast('Falha ao remover: ' + err.message);
