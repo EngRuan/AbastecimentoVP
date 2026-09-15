@@ -1070,6 +1070,7 @@ body.preview-motorista #view-lancamentos::before{
     <div id="google-signin-btn" style="display:flex;justify-content:center;margin-top:18px;"></div>
     <p class="helper" id="login-status" style="margin-top:16px;"></p>
     <a href="#" id="link-login-alternativo" class="btn secondary" style="display:none;margin-top:12px;text-decoration:none;">🔗 Entrar por link direto do Google</a>
+    <a href="#" id="link-login-microsoft" class="btn secondary" style="margin-top:10px;text-decoration:none;">🪟 Entrar com Microsoft / Outlook</a>
 
     <details style="margin-top:16px;text-align:left;">
       <summary style="cursor:pointer;color:var(--gray);font-size:12.5px;">Não consegue entrar com o Google? Usar senha</summary>
@@ -1356,7 +1357,7 @@ body.preview-motorista #view-lancamentos::before{
             </div>
             <select id="l-posto-select" style="display:none;"></select>
           </div>
-          <div class="field hide-motorista" style="display:none !important;">
+          <div class="field hide-motorista">
             <label>Requisição</label>
             <input type="text" id="l-requisicao" placeholder="Nº requisição">
           </div>
@@ -2053,6 +2054,10 @@ const APP_VERSION = 'v2026.09.14-1';
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
    valor de exemplo, o login não vai carregar. */
 const GOOGLE_CLIENT_ID = '196277004266-rfbg8arvkbqhgs8j7mhpk1otr56ev38a.apps.googleusercontent.com';
+// Preenche depois que o registro do app no Azure Portal estiver pronto
+const MICROSOFT_CLIENT_ID = 'COLOQUE_O_CLIENT_ID_DO_AZURE_AQUI';
+let PROVEDOR_LOGIN = null; // 'google' | 'microsoft' | 'senha' — usado pra saber onde salvar foto (Drive ou OneDrive)
+let MICROSOFT_ACCESS_TOKEN = null; // guardado quando login é via Microsoft — usado depois pro upload no OneDrive
 
 const USUARIO_CACHE_KEY = 'tripoloni_usuario_v1';
 
@@ -2378,6 +2383,7 @@ async function loginComSenhaUI(){
       return;
     }
     statusEl.textContent = '';
+    PROVEDOR_LOGIN = 'senha';
     await autenticarComToken(json.sessionToken, false);
   }catch(err){
     console.error(err);
@@ -2411,7 +2417,44 @@ function checarLoginPorRedirect(){
     if(idToken){
       // limpa o token da URL visível/histórico assim que pega ele
       history.replaceState(null, '', window.location.pathname + window.location.search);
+      PROVEDOR_LOGIN = 'google';
       autenticarComToken(idToken, false);
+      return true;
+    }
+  }
+  return false;
+}
+
+/* Login com Microsoft/Outlook — mesmo esquema de redirect direto (sem
+   carregar biblioteca nenhuma no meio, só um link normal), só que
+   pedindo um ACCESS TOKEN em vez de id_token — assim dá pra verificar
+   o login chamando o Graph API da própria Microsoft (verificarTokenMicrosoft_
+   no servidor), sem precisar validar assinatura JWT na mão. O mesmo
+   token também serve depois pra subir foto no OneDrive. */
+function linkLoginMicrosoft(){
+  const redirectUri = window.location.origin + window.location.pathname;
+  const nonce = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,'0')).join('');
+  const params = new URLSearchParams({
+    client_id: MICROSOFT_CLIENT_ID,
+    redirect_uri: redirectUri,
+    response_type: 'token',
+    response_mode: 'fragment',
+    scope: 'openid profile email https://graph.microsoft.com/User.Read https://graph.microsoft.com/Files.ReadWrite',
+    nonce: nonce,
+    prompt: 'select_account',
+  });
+  return 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?' + params.toString();
+}
+
+function checarLoginPorRedirectMicrosoft(){
+  if(window.location.hash && window.location.hash.indexOf('access_token=') !== -1){
+    const params = new URLSearchParams(window.location.hash.substring(1));
+    const accessToken = params.get('access_token');
+    if(accessToken){
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+      PROVEDOR_LOGIN = 'microsoft';
+      MICROSOFT_ACCESS_TOKEN = accessToken; // guarda separado — vai servir depois pra subir foto no OneDrive
+      autenticarComToken('MSFT:' + accessToken, false);
       return true;
     }
   }
@@ -2502,6 +2545,7 @@ function initLogin(){
 }
 
 function handleCredentialResponse(response){
+  PROVEDOR_LOGIN = 'google';
   autenticarComToken(response.credential, false);
 }
 
@@ -2715,7 +2759,8 @@ function renderSelecaoRequisicaoMotorista(){
     if(ehAuxiliar){
       const sel = document.getElementById('req-auto-equipamento');
       if(sel && sel.options.length <= 1){
-        const equips = VEICULOS.length>0 ? VEICULOS.map(v=>v.equipamento).sort() : distinctValues('equipamento');
+        const permitidos = equipamentosPermitidosDoUsuario();
+        const equips = permitidos.length ? permitidos : (VEICULOS.length>0 ? VEICULOS.map(v=>v.equipamento).sort() : distinctValues('equipamento'));
         sel.innerHTML = '<option value="">Selecione</option>' + equips.map(e=>`<option value="${escapeHtml(e)}">${escapeHtml(e)}</option>`).join('');
       }
       const selPosto = document.getElementById('req-auto-posto');
@@ -3270,13 +3315,30 @@ function populateReqSelects(){
   const selMot = document.getElementById('req-motorista');
   const selEquip = document.getElementById('req-equipamento');
   if(!selMot || !selEquip) return;
-  // agora pode emitir requisição pra qualquer nível, não só motorista
-  // (nível 1) — só precisa ter login de verdade (senão a pessoa nunca
-  // consegue entrar pra escolher/usar a requisição)
-  const pessoas = USUARIOS.filter(u=>!ehSemLogin(u.email)).sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR'));
-  selMot.innerHTML = '<option value="">Selecione</option>' + pessoas.map(u=>`<option value="${escapeHtml(u.email)}">${escapeHtml(u.nome||u.email)} — ${escapeHtml(NOMES_PAPEL[u.papel]||u.papel)}</option>`).join('');
-  const equips = VEICULOS.length>0 ? VEICULOS.map(v=>v.equipamento).sort() : distinctValues('equipamento');
-  selEquip.innerHTML = '<option value="">Selecione</option>' + equips.map(e=>`<option value="${escapeHtml(e)}">${escapeHtml(e)}</option>`).join('');
+  // mostra TODOS os cadastrados (qualquer nível), inclusive quem ainda
+  // não tem login — fica marcado, mas aparece, pra já poder organizar
+  const pessoas = [...USUARIOS].sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR'));
+  selMot.innerHTML = '<option value="">Selecione</option>' + pessoas.map(u=>{
+    const semLogin = ehSemLogin(u.email);
+    return `<option value="${escapeHtml(u.email)}">${escapeHtml(u.nome||u.email)} — ${escapeHtml(NOMES_PAPEL[u.papel]||u.papel)}${semLogin?' (sem login ainda)':''}</option>`;
+  }).join('');
+
+  const todosEquips = VEICULOS.length>0 ? VEICULOS.map(v=>v.equipamento).sort() : distinctValues('equipamento');
+  const montarOpcoesEquip = (lista)=>'<option value="">Selecione</option>' + lista.map(e=>`<option value="${escapeHtml(e)}">${escapeHtml(e)}</option>`).join('');
+  selEquip.innerHTML = montarOpcoesEquip(todosEquips);
+
+  // escolher o motorista já filtra o Equipamento pros veículos
+  // autorizados dele (se ele tiver algum vinculado) — evita erro de
+  // emitir pro carro errado
+  selMot.onchange = ()=>{
+    const pessoa = USUARIOS.find(u=>u.email===selMot.value);
+    const permitidos = pessoa && pessoa.equipamento
+      ? String(pessoa.equipamento).split(',').map(s=>s.trim().toUpperCase()).filter(Boolean)
+      : [];
+    const valorAtual = selEquip.value;
+    selEquip.innerHTML = montarOpcoesEquip(permitidos.length ? permitidos : todosEquips);
+    if(permitidos.includes(valorAtual)) selEquip.value = valorAtual;
+  };
 
   const postosOptions = '<option value="">Selecione</option>' +
     [...POSTOS].sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR')).map(p=>`<option value="${escapeHtml(p.nome)}">${escapeHtml(p.nome)}</option>`).join('') +
@@ -6587,10 +6649,12 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   // impediu até o BOTÃO de login de aparecer. Com o login primeiro, a
   // pessoa sempre consegue pelo menos entrar, mesmo que algo mais abaixo
   // tenha dado problema.
-  const veioDoRedirect = checarLoginPorRedirect();
+  const veioDoRedirect = checarLoginPorRedirect() || checarLoginPorRedirectMicrosoft();
   if(!veioDoRedirect) initLogin();
   document.getElementById('btn-login-senha').addEventListener('click', loginComSenhaUI);
   document.getElementById('btn-atualizar-tudo').addEventListener('click', atualizarTudoUI);
+  const linkMicrosoft = document.getElementById('link-login-microsoft');
+  if(linkMicrosoft) linkMicrosoft.href = linkLoginMicrosoft();
 
   try{
     initTabs();
