@@ -1431,6 +1431,10 @@ body.preview-motorista #view-lancamentos::before{
 
     <div class="card hide-so-nivel1">
       <h2>Base de lançamentos <span class="count" id="lanc-count">0</span></h2>
+      <div id="alerta-sem-equipamento" style="display:none;margin-bottom:12px;padding:10px 14px;background:#fff8f6;border:1px solid #f0c4bd;border-radius:8px;font-size:13px;">
+        ⚠️ <b id="alerta-sem-equipamento-n"></b> lançamento(s) sem equipamento preenchido (não tem como o sistema adivinhar o prefixo de um registro que nunca teve nenhum — precisa editar um por um e preencher na mão).
+        <button type="button" class="btn ghost" id="btn-ver-sem-equipamento" style="margin-left:8px;">Ver esses</button>
+      </div>
       <div class="filters" style="margin-bottom:12px;">
         <div class="field" style="min-width:220px;">
           <label>Buscar</label>
@@ -2048,7 +2052,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.09.14-1';
+const APP_VERSION = 'v2026.09.14-3';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -5689,14 +5693,42 @@ async function deleteRecord(id){
   toast('Registro excluído.');
 }
 
+let FILTRO_SEM_EQUIPAMENTO = false; // toggle: mostrar só lançamentos sem equipamento preenchido
+
 function renderLancTable(){
   const search = (document.getElementById('lanc-search').value || '').toUpperCase();
   const tbody = document.querySelector('#lanc-table tbody');
   let rows = [...DB].sort(compareDataDesc);
+  if(FILTRO_SEM_EQUIPAMENTO) rows = rows.filter(r => !r.equipamento || !String(r.equipamento).trim());
   if(search){
     rows = rows.filter(r => [r.motorista,r.equipamento,r.posto,r.produto,r.requisicao].join(' ').toUpperCase().includes(search));
   }
   document.getElementById('lanc-count').textContent = rows.length;
+
+  // aviso de quantos lançamentos estão sem equipamento — não tem como
+  // "puxar sozinho" um prefixo que nunca foi preenchido, só editando
+  // um por um; isso é só pra achar rápido quais são
+  const semEquip = DB.filter(r => !r.equipamento || !String(r.equipamento).trim());
+  const alerta = document.getElementById('alerta-sem-equipamento');
+  if(alerta){
+    if(FILTRO_SEM_EQUIPAMENTO){
+      alerta.style.display = 'block';
+      alerta.innerHTML = `📋 Mostrando só os <b>${semEquip.length}</b> lançamento(s) sem equipamento. <button type="button" class="btn ghost" id="btn-ver-sem-equipamento">← Voltar pra lista completa</button>`;
+      document.getElementById('btn-ver-sem-equipamento').addEventListener('click', ()=>{ FILTRO_SEM_EQUIPAMENTO = false; renderLancTable(); });
+    } else if(semEquip.length > 0){
+      alerta.style.display = 'block';
+      alerta.innerHTML = `⚠️ <b>${semEquip.length}</b> lançamento(s) sem equipamento preenchido (não tem como o sistema adivinhar o prefixo de um registro que nunca teve nenhum — precisa editar um por um e preencher na mão). <button type="button" class="btn ghost" id="btn-ver-sem-equipamento">Ver esses</button>`;
+      document.getElementById('btn-ver-sem-equipamento').addEventListener('click', ()=>{
+        FILTRO_SEM_EQUIPAMENTO = true;
+        document.getElementById('lanc-search').value = '';
+        renderLancTable();
+        document.getElementById('lanc-table').scrollIntoView({behavior:'smooth'});
+      });
+    } else {
+      alerta.style.display = 'none';
+    }
+  }
+
   tbody.innerHTML = rows.slice(0,400).map(r=>`
     <tr>
       <td>${fmtDate(r.data)}</td>
