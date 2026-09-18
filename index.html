@@ -787,6 +787,7 @@ main{
 .ms-option span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .btn{
   appearance:none;
+  display:inline-block;
   border:1px solid var(--navy);
   background:var(--navy);
   color:#fff;
@@ -795,6 +796,8 @@ main{
   font-size:13px;
   font-weight:600;
   cursor:pointer;
+  text-decoration:none;
+  text-align:center;
   transition:background .15s;
 }
 .btn:hover{background:var(--navy-dark);}
@@ -1069,8 +1072,8 @@ body.preview-motorista #view-lancamentos::before{
     <p class="helper">Entre com sua conta Google pra continuar.</p>
     <div id="google-signin-btn" style="display:flex;justify-content:center;margin-top:18px;"></div>
     <p class="helper" id="login-status" style="margin-top:16px;"></p>
-    <a href="#" id="link-login-alternativo" class="btn secondary" style="display:none;margin-top:12px;text-decoration:none;">🔗 Entrar por link direto do Google</a>
-    <a href="#" id="link-login-microsoft" class="btn secondary" style="margin-top:10px;text-decoration:none;">🪟 Entrar com Microsoft / Outlook</a>
+    <a href="#" id="link-login-alternativo" class="btn secondary" style="display:none;margin-top:12px;width:100%;box-sizing:border-box;">🔗 Entrar por link direto do Google</a>
+    <a href="#" id="link-login-microsoft" class="btn secondary" style="display:block;margin-top:10px;width:100%;box-sizing:border-box;">🪟 Entrar com Microsoft / Outlook</a>
 
     <details style="margin-top:16px;text-align:left;">
       <summary style="cursor:pointer;color:var(--gray);font-size:12.5px;">Não consegue entrar com o Google? Usar senha</summary>
@@ -2052,7 +2055,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.09.14-3';
+const APP_VERSION = 'v2026.09.14-5';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -2483,7 +2486,7 @@ function initLogin(){
     const linkAlt = document.getElementById('link-login-alternativo');
     if(linkAlt){
       linkAlt.href = linkLoginAlternativo();
-      linkAlt.style.display = 'inline-block';
+      linkAlt.style.display = 'block';
     }
     return;
   }
@@ -2556,7 +2559,7 @@ function handleCredentialResponse(response){
 async function autenticarComToken(idToken, silencioso){
   if(!silencioso) document.getElementById('login-status').textContent = 'Entrando...';
   try{
-    const url = `${SYNC_URL}?action=pull&idToken=${encodeURIComponent(idToken)}`;
+    const url = `${SYNC_URL}?action=pull&idToken=${encodeURIComponent(idToken)}&login=1`;
     const resp = await fetch(url);
     const json = await parseJsonResponse(resp);
 
@@ -3021,6 +3024,8 @@ const ROTULOS_ACAO_AUDITORIA = {
   editou_usuario: { texto: 'editou usuário', classe: '' },
   removeu_usuario: { texto: 'removeu usuário', classe: 'del' },
   alterou_dias_bloqueados: { texto: 'mudou dias bloqueados', classe: '' },
+  acessou_sistema: { texto: 'acessou o sistema', classe: '' },
+  tentativa_acesso_nao_cadastrado: { texto: '⚠️ tentativa de acesso não cadastrado', classe: 'del' },
 };
 
 function renderAuditoria(termoBusca){
