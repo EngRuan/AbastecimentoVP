@@ -1550,8 +1550,8 @@ body.preview-motorista #view-lancamentos::before{
             <input type="text" id="u-nome" placeholder="Nome completo" required>
           </div>
           <div class="field">
-            <label>Apelido (nome curto)</label>
-            <input type="text" id="u-apelido" placeholder="Ex: Tião (pra Sebastião)">
+            <label>Apelidos (separa por vírgula se tiver mais de um)</label>
+            <input type="text" id="u-apelido" placeholder="Ex: Tião, Sebastiãozinho">
           </div>
           <div class="field">
             <label>Empresa</label>
@@ -1879,6 +1879,11 @@ body.preview-motorista #view-lancamentos::before{
       <p class="helper">Cadastra as empresas ligadas à frota: a própria Tripoloni, locadoras (quem aluga veículo pra Tripoloni) e terceirizadas (empresas que prestam serviço pra Tripoloni com equipamento próprio delas). Usado no campo "Empresa vinculada" do cadastro de Frota.</p>
       <div id="lista-empresas" style="margin-top:14px;"></div>
     </div>
+    <div class="card" id="card-cruzamento-empresas" style="display:none;">
+      <h2>🔎 Nomes de empresa sem cadastro</h2>
+      <p class="helper">Nomes que aparecem nos lançamentos antigos mas não batem com nenhuma empresa cadastrada — geralmente é a mesma empresa digitada de jeitos diferentes ao longo do tempo (ex: "TRIPOLONI" e "CONSTRUTORA TRIPOLONI LTDA"). Pode cadastrar como nova, ou unificar com uma que já existe (corrige todos os lançamentos antigos de uma vez).</p>
+      <div id="lista-cruzamento-empresas" style="margin-top:12px;"></div>
+    </div>
   </section>
 
   <!-- ======================= SINCRONIZAÇÃO ======================= -->
@@ -2055,7 +2060,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.09.14-5';
+const APP_VERSION = 'v2026.09.14-8';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -2619,6 +2624,7 @@ async function autenticarComToken(idToken, silencioso){
     renderCruzamentoFrota();
     renderCruzamentoPostos();
     renderListaEmpresas();
+    renderCruzamentoEmpresas();
     populateReqSelects();
     renderListaRequisicoesAdmin();
   }catch(err){
@@ -3072,7 +3078,10 @@ function populateCondutorSelect(){
   const valorAtual = sel.value;
   sel.innerHTML = '<option value="">Nenhum vinculado</option>' +
     [...USUARIOS].sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR'))
-      .map(u=>`<option value="${escapeHtml(u.email)}">${escapeHtml(u.nome||u.email)} — ${escapeHtml(NOMES_PAPEL[u.papel]||u.papel)}</option>`).join('');
+      .map(u=>{
+        const veiculoInfo = u.equipamento ? ' · '+u.equipamento : '';
+        return `<option value="${escapeHtml(u.email)}">${escapeHtml(u.nome||u.email)}${veiculoInfo} — ${escapeHtml(NOMES_PAPEL[u.papel]||u.papel)}</option>`;
+      }).join('');
   sel.value = valorAtual;
 }
 
@@ -3087,7 +3096,8 @@ function renderCruzamentoMotoristas(){
   const cadastrados = new Set();
   USUARIOS.forEach(u=>{
     if(u.nome) cadastrados.add(u.nome.toUpperCase());
-    if(u.apelido) cadastrados.add(u.apelido.toUpperCase());
+    // apelido agora pode ter vários, separados por vírgula
+    if(u.apelido) String(u.apelido).split(',').forEach(a=>{ const t=a.trim(); if(t) cadastrados.add(t.toUpperCase()); });
   });
   const contagem = {};
   DB.forEach(r=>{ if(r.motorista) contagem[r.motorista] = (contagem[r.motorista]||0)+1; });
@@ -3116,7 +3126,13 @@ function renderCruzamentoMotoristas(){
       const alvo = USUARIOS.find(u=>(u.nome||'').toUpperCase()===nomeParaAchar.trim().toUpperCase());
       if(!alvo){ toast('Não achei ninguém cadastrado com esse nome exato.'); return; }
       editarUsuario(alvo.email);
-      document.getElementById('u-apelido').value = btn.dataset.vincularApelido;
+      // adiciona na lista de apelidos já existente, não sobrescreve —
+      // uma pessoa pode ter vários apelidos diferentes
+      const jaTinha = String(alvo.apelido||'').split(',').map(a=>a.trim()).filter(Boolean);
+      if(!jaTinha.some(a=>a.toUpperCase()===btn.dataset.vincularApelido.toUpperCase())){
+        jaTinha.push(btn.dataset.vincularApelido);
+      }
+      document.getElementById('u-apelido').value = jaTinha.join(', ');
       toast('Confirma e clica em "Salvar alterações" pra vincular o apelido.');
     });
   });
@@ -3144,6 +3160,54 @@ function renderCruzamentoFrota(){
       document.getElementById('form-veiculo').scrollIntoView({behavior:'smooth'});
     });
   });
+}
+
+function renderCruzamentoEmpresas(){
+  const card = document.getElementById('card-cruzamento-empresas');
+  const box = document.getElementById('lista-cruzamento-empresas');
+  if(!card || !box) return;
+  const cadastradas = new Set(EMPRESAS.map(e=>e.nome));
+  const contagem = {};
+  DB.forEach(r=>{ if(r.empresa) contagem[r.empresa] = (contagem[r.empresa]||0)+1; });
+  const faltando = Object.keys(contagem).filter(e=>!cadastradas.has(e)).sort((a,b)=>contagem[b]-contagem[a]);
+  if(faltando.length===0){ card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  box.innerHTML = faltando.map(e=>`
+    <div class="usuario-item" data-empresa="${escapeHtml(e)}">
+      <div><div class="nome">${escapeHtml(e)}</div><div class="detalhe">${contagem[e]} lançamento(s) no histórico</div></div>
+      <div class="btn-row">
+        <button class="btn secondary" data-cadastrar-empresa="${escapeHtml(e)}">+ Cadastrar como nova</button>
+        <button class="btn ghost" data-unificar-empresa="${escapeHtml(e)}">🔗 Unificar com uma já cadastrada</button>
+      </div>
+    </div>`).join('');
+  box.querySelectorAll('[data-cadastrar-empresa]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      resetFormEmpresa();
+      document.getElementById('e-nome').value = btn.dataset.cadastrarEmpresa;
+      document.getElementById('form-empresa').scrollIntoView({behavior:'smooth'});
+    });
+  });
+  box.querySelectorAll('[data-unificar-empresa]').forEach(btn=>{
+    btn.addEventListener('click', ()=>unificarEmpresaUI(btn.dataset.unificarEmpresa));
+  });
+}
+
+async function unificarEmpresaUI(nomeAntigo){
+  if(EMPRESAS.length===0){ toast('Cadastra pelo menos uma empresa antes de unificar.'); return; }
+  const opcoes = EMPRESAS.map(e=>e.nome).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const escolha = window.prompt(`"${nomeAntigo}" vai virar qual empresa já cadastrada? Digita exatamente um destes nomes:\n\n${opcoes.join('\n')}`, opcoes[0]||'');
+  if(!escolha) return;
+  const nomeNovo = opcoes.find(o=>o.toUpperCase()===escolha.trim().toUpperCase());
+  if(!nomeNovo){ toast('Não achei nenhuma empresa cadastrada com esse nome exato.'); return; }
+  const ok = await confirmModal('Unificar empresa', `Isso vai trocar TODOS os lançamentos com "${nomeAntigo}" pra "${nomeNovo}". Não tem como desfazer sozinho depois. Continuar?`);
+  if(!ok) return;
+  try{
+    const resp = await fetch(SYNC_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ action:'unificarEmpresaHistorico', nomeAntigo, nomeNovo, idToken: ID_TOKEN }) });
+    const json = await parseJsonResponse(resp);
+    if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao unificar.'); return; }
+    toast(`${json.alterados} lançamento(s) atualizado(s) pra "${nomeNovo}".`);
+    await atualizarTudoUI();
+  }catch(err){ console.error(err); toast('Falha ao unificar: ' + err.message); }
 }
 
 function renderCruzamentoPostos(){
@@ -3329,7 +3393,10 @@ function populateReqSelects(){
   const pessoas = [...USUARIOS].sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR'));
   selMot.innerHTML = '<option value="">Selecione</option>' + pessoas.map(u=>{
     const semLogin = ehSemLogin(u.email);
-    return `<option value="${escapeHtml(u.email)}">${escapeHtml(u.nome||u.email)} — ${escapeHtml(NOMES_PAPEL[u.papel]||u.papel)}${semLogin?' (sem login ainda)':''}</option>`;
+    // mostra o veículo autorizado junto do nome — ajuda a diferenciar
+    // duas pessoas com o mesmo nome (é comum ter dois "João" na frota)
+    const veiculoInfo = u.equipamento ? ' · '+u.equipamento : '';
+    return `<option value="${escapeHtml(u.email)}">${escapeHtml(u.nome||u.email)}${veiculoInfo} — ${escapeHtml(NOMES_PAPEL[u.papel]||u.papel)}${semLogin?' (sem login ainda)':''}</option>`;
   }).join('');
 
   const todosEquips = VEICULOS.length>0 ? VEICULOS.map(v=>v.equipamento).sort() : distinctValues('equipamento');
@@ -3637,6 +3704,7 @@ async function removerEmpresaUI(nome){
     EMPRESAS = EMPRESAS.filter(e=>e.nome!==nome);
     renderListaEmpresas();
     populateUsuarioEmpresaSelect();
+    renderCruzamentoEmpresas();
     toast('Empresa removida.');
   }catch(err){ console.error(err); toast('Falha ao remover: ' + err.message); }
 }
@@ -3664,6 +3732,7 @@ function initEmpresasTab(){
       resetFormEmpresa();
       renderListaEmpresas();
       populateUsuarioEmpresaSelect();
+      renderCruzamentoEmpresas();
     }catch(err){ console.error(err); toast('Falha ao salvar: ' + err.message); }
   });
   document.getElementById('btn-cancelar-empresa').addEventListener('click', resetFormEmpresa);
@@ -3895,7 +3964,7 @@ function renderListaUsuarios(){
     <div class="usuario-item" data-email="${escapeHtml(u.email)}">
       <div>
         <div class="nome">${escapeHtml(u.nome||u.email)} <span class="badge-papel ${nivel>=3?'admin':''}">${NOMES_PAPEL[u.papel]||u.papel}</span></div>
-        <div class="detalhe">${ehSemLogin(u.email) ? '🔓 sem login ainda' : escapeHtml(u.email)}${u.apelido?' · apelido: '+escapeHtml(u.apelido):''}${u.empresa?' · '+escapeHtml(u.empresa):''}${u.cargo?' · '+escapeHtml(u.cargo):''}${u.setor?' · setor '+escapeHtml(u.setor):''}${u.equipamento?' · '+escapeHtml(u.equipamento):''}${u.limiteDiario?' · limite '+escapeHtml(String(u.limiteDiario))+'/dia':''}${u.obra?' · obra '+escapeHtml(String(u.obra)):''}</div>
+        <div class="detalhe">${ehSemLogin(u.email) ? '🔓 sem login ainda' : escapeHtml(u.email)}${u.apelido?' · apelidos: '+escapeHtml(u.apelido):''}${u.empresa?' · '+escapeHtml(u.empresa):''}${u.cargo?' · '+escapeHtml(u.cargo):''}${u.setor?' · setor '+escapeHtml(u.setor):''}${u.equipamento?' · '+escapeHtml(u.equipamento):''}${u.limiteDiario?' · limite '+escapeHtml(String(u.limiteDiario))+'/dia':''}${u.obra?' · obra '+escapeHtml(String(u.obra)):''}</div>
       </div>
       <div class="btn-row">
         ${gerenciavel ? `
@@ -4192,6 +4261,7 @@ async function pullFromSheetsSilencioso(){
     renderCruzamentoFrota();
     renderCruzamentoPostos();
     renderListaEmpresas();
+    renderCruzamentoEmpresas();
     populateReqSelects();
     renderListaRequisicoesAdmin();
     renderSelecaoRequisicaoMotorista();
@@ -5041,11 +5111,15 @@ function buildMediaConfig(rows, view){
   const field = view==='motorista' ? 'motorista' : 'equipamento';
   const valid = rows.filter(r=> typeof r.mediaKmL === 'number' && r.mediaKmL>0);
   const grouped = groupBy(valid, r=>r[field] || '(sem valor)');
-  const ranked = [...grouped.entries()].map(([k,v])=>[k, v.reduce((s,r)=>s+r.mediaKmL,0)/v.length])
-    .sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const ranked = [...grouped.entries()].map(([k,v])=>{
+    const porProduto = {};
+    v.forEach(r=>{ porProduto[r.produto||'—'] = (porProduto[r.produto||'—']||0)+1; });
+    const produtoDominante = Object.entries(porProduto).sort((a,b)=>b[1]-a[1])[0]?.[0] || null;
+    return [k, v.reduce((s,r)=>s+r.mediaKmL,0)/v.length, produtoDominante];
+  }).sort((a,b)=>b[1]-a[1]).slice(0,10);
   return {
     type:'bar',
-    data:{ labels: ranked.map(r=>r[0]), datasets:[{ label:'km/L médio', data: ranked.map(r=>Math.round(r[1]*100)/100), backgroundColor: CHART_COLORS[4], borderRadius:4 }] },
+    data:{ labels: ranked.map(r=>r[0]), datasets:[{ label:'km/L médio', data: ranked.map(r=>Math.round(r[1]*100)/100), backgroundColor: ranked.map(r=>corProduto(r[2],4)), borderRadius:4 }] },
     options:{ ...chartBaseOptions(), plugins:{legend:{display:false}, datalabels: datalabelsCfg(v=>fmtNum(v,2), {align:'end', anchor:'end'})} },
     plugins: DATALABELS_PLUGIN
   };
@@ -5135,7 +5209,7 @@ function buildBebedoresConfig(rows){
   const ranked = calcPioresMediasPorEquipamento(rows, 10);
   const referencias = ranked.map(r=>referenciaConsumo(r.equipamento, r.produtoDominante));
   const temReferencia = referencias.some(v=>v!=null);
-  const datasets = [{ label:'km/L médio (real)', data: ranked.map(r=>Math.round(r.mediaKmL*100)/100), backgroundColor: CHART_COLORS[7], borderRadius:4 }];
+  const datasets = [{ label:'km/L médio (real)', data: ranked.map(r=>Math.round(r.mediaKmL*100)/100), backgroundColor: ranked.map(r=>corProduto(r.produtoDominante,7)), borderRadius:4 }];
   if(temReferencia){
     datasets.push({
       type:'line', label:'Referência do fabricante', data: referencias,
@@ -6653,6 +6727,7 @@ async function pullFromSheets(){
     renderCruzamentoFrota();
     renderCruzamentoPostos();
     renderListaEmpresas();
+    renderCruzamentoEmpresas();
     populateReqSelects();
     renderListaRequisicoesAdmin();
     logSync(`${DB.length} registros importados do Sheets.`);
