@@ -2060,7 +2060,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.09.14-8';
+const APP_VERSION = 'v2026.09.14-10';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -5979,13 +5979,31 @@ function extrairCamposCupom(texto){
     campos.data = `${y}-${m}-${d}`;
   }
 
-  const valores = [...texto.matchAll(/R?\$?\s?(\d{1,3}(?:\.\d{3})*,\d{2})/g)]
+  const valores = [...texto.matchAll(/R?\$?\s?(\d{1,3}(?:\.\d{3})*,\d{2})(?!\d)/g)]
     .map(m => parseFloat(m[1].replace(/\./g,'').replace(',','.')))
     .filter(v => !isNaN(v) && v > 0);
   if(valores.length) campos.precoTotal = Math.max(...valores);
 
-  const mLitros = texto.match(/(\d{1,3}[.,]\d{1,4})\s*(?:L|LT|LTS|LITROS)\b/i);
+  const mLitros = texto.match(/(\d{1,3}[.,]\d{1,4})\s*(?:LT|LTS|LITROS|LISX|UN|L)\b/i);
   if(mLitros) campos.quantidade = parseFloat(mLitros[1].replace(',','.'));
+
+  // fallback: quando o OCR lê a unidade errado de um jeito imprevisível
+  // (ex: "L" virando "LISX", "L5", etc.), tenta reconhecer o PADRÃO da
+  // linha de item de combustível mesmo assim — número, uma palavra curta
+  // qualquer (a "unidade" ilegível), e mais dois números em formato de
+  // dinheiro (preço unitário e total). É como um cupom de posto sempre
+  // vem: quantidade, unidade, preço unit., preço total, nessa ordem.
+  if(campos.quantidade == null){
+    const mLinha = texto.match(/(\d{1,3}[.,]\d{2,4})\s+\S{1,6}\s+(\d{1,3}[.,]\d{2,4})\s+(\d{1,3}(?:\.\d{3})*[.,]\d{2})/);
+    if(mLinha){
+      const qtd = parseFloat(mLinha[1].replace(',','.'));
+      if(qtd > 0 && qtd < 500) campos.quantidade = qtd; // sanity check: tanque plausível
+    }
+  }
+
+  // se achou quantidade e o total, mas ainda não tem preço unitário
+  // explícito, deixa o cálculo pra aplicarCamposOcr (ele já faz
+  // precoTotal/quantidade automaticamente)
 
   const mNF = texto.match(/(?:N[°º]?\.?\s?F\.?|NOTA FISCAL|CUPOM FISCAL|CUPOM)\s*[:\-nN°º]*\s*(\d{3,9})/i);
   if(mNF) campos.nf = mNF[1];
