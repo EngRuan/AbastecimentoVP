@@ -2060,7 +2060,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.09.14-10';
+const APP_VERSION = 'v2026.09.14-11';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -6008,9 +6008,10 @@ function extrairCamposCupom(texto){
   const mNF = texto.match(/(?:N[°º]?\.?\s?F\.?|NOTA FISCAL|CUPOM FISCAL|CUPOM)\s*[:\-nN°º]*\s*(\d{3,9})/i);
   if(mNF) campos.nf = mNF[1];
 
-  // A maioria dos cupons de posto (NFC-e) traz a placa do veículo impressa
-  // — isso é bem mais confiável que tentar ler a requisição manuscrita.
-  const mPlaca = texto.match(/Placa\s*[:\-]?\s*([A-Z]{2,3}[\s\-]?\d[A-Z0-9]?\d{2,3})/i);
+  // A maioria dos cupons de posto (NFC-e) traz a placa do veículo
+  // impressa — cruza com o cadastro de Frota (campo Placa) em
+  // aplicarCamposOcr pra achar o VP certo (ver lá o porquê).
+  const mPlaca = texto.match(/Placa\s*[:\-]?\s*([A-Z]{2,3}[\s\-]?\d{1,4}[\s\-]?[A-Z0-9]{0,4})/i);
   if(mPlaca) campos.equipamento = mPlaca[1].replace(/[\s\-]/g,'').toUpperCase();
 
   const mKm = texto.match(/\bKM\s*[:\-]?\s*(\d{3,7})\b/i);
@@ -6052,14 +6053,19 @@ function aplicarCamposOcr(campos, tipo){
   if(campos.nf) document.getElementById('l-nf').value = campos.nf;
   if(campos.kmHor != null && !comRequisicao) document.getElementById('l-kmhor').value = campos.kmHor;
   if(campos.requisicao && !comRequisicao) document.getElementById('l-requisicao').value = campos.requisicao;
-  // Equipamento: prioriza o que veio do cupom impresso (mais confiável);
-  // só usa o da requisição manuscrita se o campo ainda estiver vazio.
+  // Equipamento: o cupom só traz a PLACA de verdade impressa (nunca o
+  // código VP interno) — então cruza com o cadastro de Frota (campo
+  // Placa) pra achar o VP certo. Se não achar cadastro com essa placa,
+  // não preenche nada — não faz sentido jogar a placa crua no campo,
+  // ela nunca vai bater com "VP0555" e só ia confundir.
   // Com requisição digital escolhida, o equipamento já está travado —
-  // não deixa a leitura do cupom sobrescrever.
+  // não deixa a leitura do cupom sobrescrever de jeito nenhum.
   if(campos.equipamento && !comRequisicao){
-    const equipEl = document.getElementById('l-equipamento');
-    if(tipo === 'cupom' || !equipEl.value.trim()){
-      equipEl.value = campos.equipamento;
+    const placaLida = String(campos.equipamento).replace(/[\s\-]/g,'').toUpperCase();
+    const veiculoAchado = VEICULOS.find(v => v.placa && String(v.placa).replace(/[\s\-]/g,'').toUpperCase() === placaLida);
+    if(veiculoAchado){
+      const equipEl = document.getElementById('l-equipamento');
+      equipEl.value = veiculoAchado.equipamento;
       equipEl.dispatchEvent(new Event('input'));
     }
   }
