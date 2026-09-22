@@ -1936,13 +1936,28 @@ body.preview-motorista #view-lancamentos::before{
       <h2>🎫 Emitir requisição</h2>
       <p class="helper">Emite uma requisição nova pro motorista ANTES dele ir abastecer — é assim que ele consegue lançar (sem requisição aberta, o app bloqueia sozinho). Motorista, equipamento e posto são obrigatórios — o motorista não escolhe mais o posto, ele vem definido aqui.</p>
       <div class="form-grid" style="margin-top:10px;">
-        <div class="field">
+        <div class="field wide">
+          <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="req-terceiro" style="width:auto;"> É pra veículo de empresa terceirizada (motorista não cadastrado no sistema)</label>
+        </div>
+        <div class="field" id="req-motorista-wrap">
           <label>Motorista</label>
           <select id="req-motorista"><option value="">Selecione</option></select>
         </div>
-        <div class="field">
+        <div class="field" id="req-motorista-livre-wrap" style="display:none;">
+          <label>Nome do motorista (terceiro)*</label>
+          <input type="text" id="req-motorista-livre" placeholder="Nome completo">
+        </div>
+        <div class="field" id="req-equipamento-wrap">
           <label>Equipamento</label>
           <select id="req-equipamento"><option value="">Selecione</option></select>
+        </div>
+        <div class="field" id="req-empresa-terceiro-wrap" style="display:none;">
+          <label>Empresa*</label>
+          <select id="req-empresa-terceiro"><option value="">Selecione</option></select>
+        </div>
+        <div class="field" id="req-placa-wrap" style="display:none;">
+          <label>Placa*</label>
+          <input type="text" id="req-placa" placeholder="Ex: ABC-1234">
         </div>
         <div class="field">
           <label>Produto*</label>
@@ -2064,7 +2079,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.09.14-14';
+const APP_VERSION = 'v2026.09.14-16';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -2690,7 +2705,8 @@ function aplicarPapelNaUI(){
   document.getElementById('btn-atualizar-tudo').style.display = 'inline-flex';
 
   const nivel = NIVEL_PAPEL[USUARIO_ATUAL.papel] || 0;
-  const veCadastro = nivel >= 4;      // usuários, frota, postos, empresas
+  const veCadastro = nivel >= 4;      // usuários, frota, postos
+  const veEmpresas = nivel >= 3;      // empresas — nível 3 também precisa (pra cadastrar terceirizada na hora de emitir requisição)
   const veConfigAuditoria = nivel >= 4; // auditoria (config, menos sync)
   const veSync = nivel >= 5;          // só nível 5
   const veAprovacoes = nivel >= 3;    // aprovações + visão do motorista (testar como)
@@ -2698,8 +2714,10 @@ function aplicarPapelNaUI(){
 
   document.querySelectorAll('button[data-tab]').forEach(btn=>{
     const tab = btn.dataset.tab;
-    if(tab === 'usuarios' || tab === 'frota' || tab === 'postos' || tab === 'empresas'){
+    if(tab === 'usuarios' || tab === 'frota' || tab === 'postos'){
       btn.style.display = veCadastro ? '' : 'none';
+    } else if(tab === 'empresas'){
+      btn.style.display = veEmpresas ? '' : 'none';
     } else if(tab === 'auditoria'){
       btn.style.display = veConfigAuditoria ? '' : 'none';
     } else if(tab === 'sync'){
@@ -3445,7 +3463,7 @@ function populateReqSelects(){
   selEquip.onchange = ()=>{
     const kmEl = document.getElementById('req-km-esperado');
     if(kmEl && selEquip.value){
-      const max = maiorKmRegistrado(selEquip.value);
+      const max = maiorKmConhecido(selEquip.value);
       if(max !== null) kmEl.value = max;
     }
   };
@@ -3478,19 +3496,32 @@ async function autoEmitirRequisicaoUI(){
 }
 
 async function emitirRequisicaoUI(){
-  const motoristaEmail = document.getElementById('req-motorista').value;
-  const equipamento = document.getElementById('req-equipamento').value;
+  const ehTerceiro = document.getElementById('req-terceiro').checked;
   const produto = document.getElementById('req-produto').value;
   const postoSel = document.getElementById('req-posto').value;
   const posto = (postoSel === '__externo__' ? document.getElementById('req-posto-externo').value.trim() : postoSel).toUpperCase();
   const kmEsperado = document.getElementById('req-km-esperado').value.trim();
-  if(!motoristaEmail || !equipamento){ toast('Escolhe o motorista e o equipamento.'); return; }
   if(!posto){ toast('Escolhe o posto (ou digita o nome, se for externo).'); return; }
+
+  let dados;
+  if(ehTerceiro){
+    const motoristaNomeLivre = document.getElementById('req-motorista-livre').value.trim();
+    const empresa = document.getElementById('req-empresa-terceiro').value;
+    const placa = document.getElementById('req-placa').value.trim();
+    if(!motoristaNomeLivre || !empresa || !placa){ toast('Pra terceiro, preenche nome, empresa e placa.'); return; }
+    dados = { terceiro:true, motoristaNomeLivre, empresa, placa, produto, posto, kmEsperado };
+  } else {
+    const motoristaEmail = document.getElementById('req-motorista').value;
+    const equipamento = document.getElementById('req-equipamento').value;
+    if(!motoristaEmail || !equipamento){ toast('Escolhe o motorista e o equipamento.'); return; }
+    dados = { motoristaEmail, equipamento, produto, posto, kmEsperado };
+  }
+
   try{
     const resp = await fetch(SYNC_URL, {
       method:'POST',
       headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({ action:'emitirRequisicao', dados:{motoristaEmail, equipamento, produto, posto, kmEsperado}, idToken: ID_TOKEN })
+      body: JSON.stringify({ action:'emitirRequisicao', dados, idToken: ID_TOKEN })
     });
     const json = await parseJsonResponse(resp);
     if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao emitir.'); return; }
@@ -3499,6 +3530,10 @@ async function emitirRequisicaoUI(){
     document.getElementById('req-posto-externo').value = '';
     document.getElementById('req-posto-externo-wrap').style.display = 'none';
     document.getElementById('req-km-esperado').value = '';
+    if(ehTerceiro){
+      document.getElementById('req-motorista-livre').value = '';
+      document.getElementById('req-placa').value = '';
+    }
     renderListaRequisicoesAdmin();
     toast(`Requisição Nº ${json.numero} emitida!`);
   }catch(err){ console.error(err); toast('Falha ao emitir: ' + err.message); }
@@ -3517,6 +3552,22 @@ async function cancelarRequisicaoUI(id){
   }catch(err){ console.error(err); toast('Falha ao cancelar: ' + err.message); }
 }
 
+/* Requisição de terceiro não tem ninguém logando no app pra "resgatar"
+   ela sozinha — depois que o carro terceirizado já abasteceu e a nota
+   voltou, alguém de nível 3+ marca aqui na mão que já foi usada. */
+async function marcarRequisicaoUsadaUI(id){
+  const ok = await confirmModal('Marcar como usada', 'Confirma que esse veículo terceirizado já abasteceu com essa requisição?');
+  if(!ok) return;
+  try{
+    const resp = await fetch(SYNC_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ action:'marcarRequisicaoUsada', id, idToken: ID_TOKEN }) });
+    const json = await parseJsonResponse(resp);
+    if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao marcar.'); return; }
+    REQUISICOES_EMITIDAS = json.requisicoesEmitidas || REQUISICOES_EMITIDAS;
+    renderListaRequisicoesAdmin();
+    toast('Marcada como usada.');
+  }catch(err){ console.error(err); toast('Falha ao marcar: ' + err.message); }
+}
+
 /** Gera um "vale-abastecimento" em PDF pra imprimir e o motorista levar
     fisicamente no posto — útil quando não dá pra usar o celular na hora
     (sinal ruim, bateria, frentista que prefere papel, etc). Depois do
@@ -3532,55 +3583,53 @@ function gerarPdfRequisicao(r){
   doc.addImage(`data:image/png;base64,${LOGO_B64}`, 'PNG', margin, y, 120, 35);
   doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(0,38,116);
   doc.text('Requisição de Abastecimento', margin+135, y+22);
-  y += 70;
+  y += 68;
 
   doc.setDrawColor(0,38,116); doc.setLineWidth(1.2);
-  doc.rect(margin, y, 515, 60);
-  doc.setFont('helvetica','bold'); doc.setFontSize(28); doc.setTextColor(0,38,116);
-  doc.text(`Nº ${String(r.numero)}`, margin+16, y+40);
+  doc.rect(margin, y, 515, 50);
+  doc.setFont('helvetica','bold'); doc.setFontSize(26); doc.setTextColor(0,38,116);
+  doc.text(`Nº ${String(r.numero)}`, margin+16, y+33);
   doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(90,90,90);
-  doc.text(`Emitida em ${r.criadoEm ? new Date(r.criadoEm).toLocaleString('pt-BR') : '—'}`, margin+340, y+25);
-  doc.text(`Válida pra usar até ser consumida ou cancelada`, margin+340, y+40);
-  y += 90;
+  doc.text(`Emitida em ${r.criadoEm ? new Date(r.criadoEm).toLocaleString('pt-BR') : '—'}`, margin+340, y+30);
+  y += 78;
 
   const linhaDado = (rotulo, valor) => {
     doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(90,90,90);
     doc.text(rotulo, margin, y);
     doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.setTextColor(20,22,28);
     doc.text(String(valor||'—'), margin, y+18);
-    y += 42;
+    y += 40;
   };
-  linhaDado('MOTORISTA', r.motoristaNome || r.motoristaEmail);
-  linhaDado('EQUIPAMENTO', r.equipamento);
+  linhaDado(r.terceiro ? 'MOTORISTA (TERCEIRO)' : 'MOTORISTA', r.motoristaNome || r.motoristaEmail);
+  if(r.terceiro){
+    linhaDado('EMPRESA', r.empresa);
+    linhaDado('PLACA', r.placa);
+  } else {
+    linhaDado('EQUIPAMENTO', r.equipamento);
+  }
   linhaDado('PRODUTO', r.produto || 'ETANOL');
   linhaDado('POSTO AUTORIZADO', r.posto || '—');
   if(r.kmEsperado) linhaDado('KM/HORÍMETRO ESPERADO', r.kmEsperado);
 
-  y += 10;
+  y += 6;
   doc.setDrawColor(200,200,200); doc.setLineDashPattern([3,3], 0);
   doc.line(margin, y, margin+515, y);
   doc.setLineDashPattern([], 0);
-  y += 28;
+  y += 30;
 
   doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(0,38,116);
   doc.text('Preenchimento no posto (a caneta)', margin, y);
-  y += 26;
+  y += 28;
 
   const campoPreencher = (rotulo, largura) => {
     doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(90,90,90);
     doc.text(rotulo, margin, y);
     doc.setDrawColor(150,150,150);
     doc.line(margin+90, y, margin+90+largura, y);
-    y += 32;
+    y += 36;
   };
-  campoPreencher('Litros:', 200);
-  campoPreencher('Valor total (R$):', 200);
-  campoPreencher('Nota Fiscal Nº:', 200);
-  campoPreencher('Assinatura do frentista:', 260);
-
-  y += 10;
-  doc.setFont('helvetica','italic'); doc.setFontSize(8.5); doc.setTextColor(130,130,130);
-  doc.text('Essa via impressa é só um apoio — o lançamento oficial continua sendo feito pelo motorista no app, com foto do cupom fiscal.', margin, y, {maxWidth: 515});
+  campoPreencher('Litros:', 220);
+  campoPreencher('Valor total (R$):', 220);
 
   doc.save(`Requisicao_${r.numero}.pdf`);
 }
@@ -3593,19 +3642,27 @@ function renderListaRequisicoesAdmin(){
     .sort((a,b)=>(b.criadoEm||'').localeCompare(a.criadoEm||''));
   if(lista.length===0){ box.innerHTML = `<p class="helper">Nenhuma requisição ${filtro==='aberta'?'aberta':''} no momento.</p>`; return; }
   const NOMES_STATUS = { aberta:'Aberta', usada:'Usada', cancelada:'Cancelada' };
-  box.innerHTML = lista.map(r=>`
+  box.innerHTML = lista.map(r=>{
+    const ehTerceiro = r.terceiro === 'sim';
+    const identificador = ehTerceiro ? `${escapeHtml(r.placa)} · ${escapeHtml(r.empresa)} 🏗️terceiro` : escapeHtml(r.equipamento);
+    return `
     <div class="aprov-item" data-id="${escapeHtml(r.id)}">
       <div class="info">
-        <b>Nº ${escapeHtml(String(r.numero))}</b> — ${escapeHtml(r.motoristaNome||r.motoristaEmail)} · ${escapeHtml(r.equipamento)}${r.posto?' · '+escapeHtml(r.posto):''}
+        <b>Nº ${escapeHtml(String(r.numero))}</b> — ${escapeHtml(r.motoristaNome||r.motoristaEmail)} · ${identificador}${r.posto?' · '+escapeHtml(r.posto):''}
         <br><span style="color:var(--gray);">${NOMES_STATUS[r.status]||r.status}${r.usadaEm?' em '+new Date(r.usadaEm).toLocaleString('pt-BR'):''}</span>
       </div>
       <div class="btn-row">
         ${r.status==='aberta' ? `<button class="btn secondary" data-imprimir-req="${escapeHtml(r.id)}">🖨️ Imprimir</button>` : ''}
+        ${r.status==='aberta' && ehTerceiro ? `<button class="btn secondary" data-marcar-usada="${escapeHtml(r.id)}">✅ Marcar como usada</button>` : ''}
         ${r.status==='aberta' ? `<button class="btn ghost" data-cancelar-req="${escapeHtml(r.id)}">🗑️ Cancelar</button>` : ''}
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   box.querySelectorAll('[data-cancelar-req]').forEach(btn=>{
     btn.addEventListener('click', ()=>cancelarRequisicaoUI(btn.dataset.cancelarReq));
+  });
+  box.querySelectorAll('[data-marcar-usada]').forEach(btn=>{
+    btn.addEventListener('click', ()=>marcarRequisicaoUsadaUI(btn.dataset.marcarUsada));
   });
   box.querySelectorAll('[data-imprimir-req]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
@@ -3619,6 +3676,24 @@ function initRequisicoesTab(){
   document.getElementById('btn-emitir-requisicao').addEventListener('click', emitirRequisicaoUI);
   document.getElementById('req-filtro-status').addEventListener('change', renderListaRequisicoesAdmin);
   document.getElementById('btn-auto-emitir-requisicao').addEventListener('click', autoEmitirRequisicaoUI);
+  document.getElementById('req-terceiro').addEventListener('change', (e)=>{
+    const ehTerceiro = e.target.checked;
+    document.getElementById('req-motorista-wrap').style.display = ehTerceiro ? 'none' : '';
+    document.getElementById('req-motorista-livre-wrap').style.display = ehTerceiro ? '' : 'none';
+    document.getElementById('req-equipamento-wrap').style.display = ehTerceiro ? 'none' : '';
+    document.getElementById('req-empresa-terceiro-wrap').style.display = ehTerceiro ? '' : 'none';
+    document.getElementById('req-placa-wrap').style.display = ehTerceiro ? '' : 'none';
+    if(ehTerceiro) populateEmpresaTerceiroSelect();
+  });
+}
+
+function populateEmpresaTerceiroSelect(){
+  const sel = document.getElementById('req-empresa-terceiro');
+  if(!sel) return;
+  const valorAtual = sel.value;
+  sel.innerHTML = '<option value="">Selecione</option>' +
+    [...EMPRESAS].sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR')).map(e=>`<option value="${escapeHtml(e.nome)}">${escapeHtml(e.nome)} (${e.tipo})</option>`).join('');
+  sel.value = valorAtual;
 }
 
 function populateEmpresaVinculadaSelect(){
@@ -4451,6 +4526,24 @@ function maiorKmRegistrado(equipamento, excludeId){
     if((r.equipamento||'').toUpperCase() !== equipUpper) return;
     if(r.kmHor === null || r.kmHor === undefined || isNaN(r.kmHor)) return;
     if(maior === null || r.kmHor > maior) maior = r.kmHor;
+  });
+  return maior;
+}
+
+/* Só pra SUGERIR o "Km/Hor esperado" na hora de emitir requisição — olha
+   tanto o oficial (DB) quanto o que ainda está esperando revisão
+   (PENDENTES), porque o motorista pode ter acabado de mandar uma leitura
+   mais nova que ainda não foi confirmada. É só um chute inicial editável,
+   então não tem risco de usar dado ainda não confirmado aqui (diferente
+   da validação anti-fraude, que usa só o oficial mesmo). */
+function maiorKmConhecido(equipamento){
+  const equipUpper = (equipamento||'').toUpperCase();
+  let maior = maiorKmRegistrado(equipamento);
+  PENDENTES.forEach(p=>{
+    if((p.equipamento||'').toUpperCase() !== equipUpper) return;
+    const km = Number(p.kmHor);
+    if(isNaN(km)) return;
+    if(maior === null || km > maior) maior = km;
   });
   return maior;
 }
