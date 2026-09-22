@@ -1187,19 +1187,59 @@ body.preview-motorista #view-lancamentos::before{
         </div>
         <div class="field">
           <label>Motorista</label>
-          <select id="f-motorista"><option value="">Todos</option></select>
+          <div class="multiselect" id="f-motorista" data-ms="motorista">
+            <button type="button" class="ms-toggle">Todos</button>
+            <div class="ms-panel">
+              <input type="text" class="ms-search" placeholder="Buscar motorista...">
+              <div class="ms-actions">
+                <button type="button" data-act="all">Selecionar todos</button>
+                <button type="button" data-act="none">Limpar</button>
+              </div>
+              <div class="ms-options"></div>
+            </div>
+          </div>
         </div>
         <div class="field">
           <label>Produto</label>
-          <select id="f-produto"><option value="">Todos</option></select>
+          <div class="multiselect" id="f-produto" data-ms="produto">
+            <button type="button" class="ms-toggle">Todos</button>
+            <div class="ms-panel">
+              <input type="text" class="ms-search" placeholder="Buscar produto...">
+              <div class="ms-actions">
+                <button type="button" data-act="all">Selecionar todos</button>
+                <button type="button" data-act="none">Limpar</button>
+              </div>
+              <div class="ms-options"></div>
+            </div>
+          </div>
         </div>
         <div class="field">
           <label>Posto</label>
-          <select id="f-posto"><option value="">Todos</option></select>
+          <div class="multiselect" id="f-posto" data-ms="posto">
+            <button type="button" class="ms-toggle">Todos</button>
+            <div class="ms-panel">
+              <input type="text" class="ms-search" placeholder="Buscar posto...">
+              <div class="ms-actions">
+                <button type="button" data-act="all">Selecionar todos</button>
+                <button type="button" data-act="none">Limpar</button>
+              </div>
+              <div class="ms-options"></div>
+            </div>
+          </div>
         </div>
         <div class="field">
           <label>Empresa</label>
-          <select id="f-empresa"><option value="">Todas</option></select>
+          <div class="multiselect" id="f-empresa" data-ms="empresa">
+            <button type="button" class="ms-toggle">Todas</button>
+            <div class="ms-panel">
+              <input type="text" class="ms-search" placeholder="Buscar empresa...">
+              <div class="ms-actions">
+                <button type="button" data-act="all">Selecionar todos</button>
+                <button type="button" data-act="none">Limpar</button>
+              </div>
+              <div class="ms-options"></div>
+            </div>
+          </div>
         </div>
         <div class="field">
           <label>Nota Fiscal</label>
@@ -1508,15 +1548,45 @@ body.preview-motorista #view-lancamentos::before{
         </div>
         <div class="field">
           <label>Motorista</label>
-          <select id="r-motorista"><option value="">Todos</option></select>
+          <div class="multiselect" id="r-motorista" data-ms="motorista">
+            <button type="button" class="ms-toggle">Todos</button>
+            <div class="ms-panel">
+              <input type="text" class="ms-search" placeholder="Buscar motorista...">
+              <div class="ms-actions">
+                <button type="button" data-act="all">Selecionar todos</button>
+                <button type="button" data-act="none">Limpar</button>
+              </div>
+              <div class="ms-options"></div>
+            </div>
+          </div>
         </div>
         <div class="field">
           <label>Produto</label>
-          <select id="r-produto"><option value="">Todos</option></select>
+          <div class="multiselect" id="r-produto" data-ms="produto">
+            <button type="button" class="ms-toggle">Todos</button>
+            <div class="ms-panel">
+              <input type="text" class="ms-search" placeholder="Buscar produto...">
+              <div class="ms-actions">
+                <button type="button" data-act="all">Selecionar todos</button>
+                <button type="button" data-act="none">Limpar</button>
+              </div>
+              <div class="ms-options"></div>
+            </div>
+          </div>
         </div>
         <div class="field">
           <label>Empresa</label>
-          <select id="r-empresa"><option value="">Todas</option></select>
+          <div class="multiselect" id="r-empresa" data-ms="empresa">
+            <button type="button" class="ms-toggle">Todas</button>
+            <div class="ms-panel">
+              <input type="text" class="ms-search" placeholder="Buscar empresa...">
+              <div class="ms-actions">
+                <button type="button" data-act="all">Selecionar todos</button>
+                <button type="button" data-act="none">Limpar</button>
+              </div>
+              <div class="ms-options"></div>
+            </div>
+          </div>
         </div>
         <div class="field">
           <label>Nota Fiscal</label>
@@ -2079,7 +2149,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.09.14-16';
+const APP_VERSION = 'v2026.09.14-18';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -3553,18 +3623,34 @@ async function cancelarRequisicaoUI(id){
 }
 
 /* Requisição de terceiro não tem ninguém logando no app pra "resgatar"
-   ela sozinha — depois que o carro terceirizado já abasteceu e a nota
-   voltou, alguém de nível 3+ marca aqui na mão que já foi usada. */
+   ela sozinha — depois que o carro terceirizado já abasteceu (com a via
+   impressa) e a nota voltou, alguém de nível 3+ registra aqui: pede
+   litros e valor, já cria o lançamento pendente de verdade (cai direto
+   na segunda aba de aprovação) e fecha a requisição. */
 async function marcarRequisicaoUsadaUI(id){
-  const ok = await confirmModal('Marcar como usada', 'Confirma que esse veículo terceirizado já abasteceu com essa requisição?');
-  if(!ok) return;
+  const litrosStr = window.prompt('Quantos litros abasteceu?');
+  if(litrosStr === null) return;
+  const quantidade = numBR(litrosStr);
+  if(!quantidade || quantidade <= 0){ toast('Litros inválido.'); return; }
+  const valorStr = window.prompt('Valor total pago (R$)?');
+  if(valorStr === null) return;
+  const precoTotal = numBR(valorStr);
+  if(!precoTotal || precoTotal <= 0){ toast('Valor inválido.'); return; }
+  const kmStr = window.prompt('Km/Hor no momento (opcional — deixa em branco se não souber)');
+  const kmHor = kmStr && kmStr.trim() ? numBR(kmStr) : null;
+
   try{
-    const resp = await fetch(SYNC_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ action:'marcarRequisicaoUsada', id, idToken: ID_TOKEN }) });
+    const resp = await fetch(SYNC_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({
+      action:'marcarRequisicaoUsada', id, idToken: ID_TOKEN,
+      dados: { quantidade, precoTotal, kmHor, data: todayStr() }
+    }) });
     const json = await parseJsonResponse(resp);
     if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao marcar.'); return; }
     REQUISICOES_EMITIDAS = json.requisicoesEmitidas || REQUISICOES_EMITIDAS;
+    PENDENTES = json.pendentes || PENDENTES;
     renderListaRequisicoesAdmin();
-    toast('Marcada como usada.');
+    renderListaPendentes();
+    toast('Lançado! Já está na segunda aba de aprovação, esperando a Nota Fiscal.');
   }catch(err){ console.error(err); toast('Falha ao marcar: ' + err.message); }
 }
 
@@ -3692,8 +3778,29 @@ function populateEmpresaTerceiroSelect(){
   if(!sel) return;
   const valorAtual = sel.value;
   sel.innerHTML = '<option value="">Selecione</option>' +
-    [...EMPRESAS].sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR')).map(e=>`<option value="${escapeHtml(e.nome)}">${escapeHtml(e.nome)} (${e.tipo})</option>`).join('');
+    [...EMPRESAS].sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR')).map(e=>`<option value="${escapeHtml(e.nome)}">${escapeHtml(e.nome)} (${e.tipo})</option>`).join('') +
+    '<option value="__nova__">+ Cadastrar nova empresa...</option>';
   sel.value = valorAtual;
+  if(!sel.dataset.listenerNova){
+    sel.dataset.listenerNova = '1';
+    sel.addEventListener('change', async ()=>{
+      if(sel.value !== '__nova__') return;
+      const nome = window.prompt('Nome da empresa terceirizada:');
+      if(!nome || !nome.trim()){ sel.value = ''; return; }
+      try{
+        const resp = await fetch(SYNC_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ action:'salvarEmpresa', dados: { nome: nome.trim().toUpperCase(), tipo: 'terceirizada' }, idToken: ID_TOKEN }) });
+        const json = await parseJsonResponse(resp);
+        if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao cadastrar empresa.'); sel.value = ''; return; }
+        if(json.empresa){
+          const idx = EMPRESAS.findIndex(e=>e.nome===json.empresa.nome);
+          if(idx>=0) EMPRESAS[idx] = json.empresa; else EMPRESAS.push(json.empresa);
+        }
+        populateEmpresaTerceiroSelect();
+        sel.value = nome.trim().toUpperCase();
+        toast('Empresa cadastrada!');
+      }catch(err){ console.error(err); toast('Falha ao cadastrar: ' + err.message); sel.value = ''; }
+    });
+  }
 }
 
 function populateEmpresaVinculadaSelect(){
@@ -4732,10 +4839,10 @@ function baseParaCascata(prefix, excluir){
   const dataIni = document.getElementById(prefix+'-data-ini')?.value || '';
   const dataFim = document.getElementById(prefix+'-data-fim')?.value || '';
   const equipSet = MS_STATE[prefix+'-equip'] || new Set();
-  const motorista = document.getElementById(prefix+'-motorista')?.value || '';
-  const produto = document.getElementById(prefix+'-produto')?.value || '';
-  const posto = document.getElementById(prefix+'-posto')?.value || '';
-  const empresa = document.getElementById(prefix+'-empresa')?.value || '';
+  const motoristaSet = MS_STATE[prefix+'-motorista'] || new Set();
+  const produtoSet = MS_STATE[prefix+'-produto'] || new Set();
+  const postoSet = MS_STATE[prefix+'-posto'] || new Set();
+  const empresaSet = MS_STATE[prefix+'-empresa'] || new Set();
   const nf = (document.getElementById(prefix+'-nf')?.value || '').trim().toLowerCase();
 
   return DB.filter(r=>{
@@ -4744,10 +4851,10 @@ function baseParaCascata(prefix, excluir){
       if(dataFim && (!r.data || r.data > dataFim)) return false;
     }
     if(excluir!=='equipamento' && equipSet.size>0 && !equipSet.has(r.equipamento)) return false;
-    if(excluir!=='motorista' && motorista && r.motorista !== motorista) return false;
-    if(excluir!=='produto' && produto && r.produto !== produto) return false;
-    if(excluir!=='posto' && posto && r.posto !== posto) return false;
-    if(excluir!=='empresa' && empresa && r.empresa !== empresa) return false;
+    if(excluir!=='motorista' && motoristaSet.size>0 && !motoristaSet.has(r.motorista)) return false;
+    if(excluir!=='produto' && produtoSet.size>0 && !produtoSet.has(r.produto)) return false;
+    if(excluir!=='posto' && postoSet.size>0 && !postoSet.has(r.posto)) return false;
+    if(excluir!=='empresa' && empresaSet.size>0 && !empresaSet.has(r.empresa)) return false;
     if(excluir!=='nf' && nf && !String(r.nf||'').toLowerCase().includes(nf)) return false;
     return true;
   });
@@ -4766,13 +4873,12 @@ function refreshFilterOptions(prefix){
   const postoList = valoresDistintos(baseParaCascata(prefix,'posto'), 'posto');
   const empresaList = valoresDistintos(baseParaCascata(prefix,'empresa'), 'empresa');
 
-  fillSelect(prefix+'-motorista', motoristaList);
-  fillSelect(prefix+'-produto', produtoList);
-  fillSelect(prefix+'-posto', postoList);
-  fillSelect(prefix+'-empresa', empresaList);
-
   FILTER_OPTIONS[prefix+'-equip'] = equipList;
-  refreshOpenMultiSelect(prefix+'-equip');
+  FILTER_OPTIONS[prefix+'-motorista'] = motoristaList;
+  FILTER_OPTIONS[prefix+'-produto'] = produtoList;
+  FILTER_OPTIONS[prefix+'-posto'] = postoList;
+  FILTER_OPTIONS[prefix+'-empresa'] = empresaList;
+  ['equip','motorista','produto','posto','empresa'].forEach(campo=>refreshOpenMultiSelect(prefix+'-'+campo));
 }
 
 function populateFilterSelects(){
@@ -4998,20 +5104,20 @@ function applyFilters(prefix){
   const dataIni = document.getElementById(prefix+'-data-ini')?.value || '';
   const dataFim = document.getElementById(prefix+'-data-fim')?.value || '';
   const equipSet = MS_STATE[prefix+'-equip'] || new Set();
-  const motorista = document.getElementById(prefix+'-motorista')?.value || '';
-  const produto = document.getElementById(prefix+'-produto')?.value || '';
-  const posto = document.getElementById(prefix+'-posto')?.value || '';
-  const empresa = document.getElementById(prefix+'-empresa')?.value || '';
+  const motoristaSet = MS_STATE[prefix+'-motorista'] || new Set();
+  const produtoSet = MS_STATE[prefix+'-produto'] || new Set();
+  const postoSet = MS_STATE[prefix+'-posto'] || new Set();
+  const empresaSet = MS_STATE[prefix+'-empresa'] || new Set();
   const nf = (document.getElementById(prefix+'-nf')?.value || '').trim().toLowerCase();
 
   return DB.filter(r=>{
     if(dataIni && (!r.data || r.data < dataIni)) return false;
     if(dataFim && (!r.data || r.data > dataFim)) return false;
     if(equipSet.size > 0 && !equipSet.has(r.equipamento)) return false;
-    if(motorista && r.motorista !== motorista) return false;
-    if(produto && r.produto !== produto) return false;
-    if(posto && r.posto !== posto) return false;
-    if(empresa && r.empresa !== empresa) return false;
+    if(motoristaSet.size > 0 && !motoristaSet.has(r.motorista)) return false;
+    if(produtoSet.size > 0 && !produtoSet.has(r.produto)) return false;
+    if(postoSet.size > 0 && !postoSet.has(r.posto)) return false;
+    if(empresaSet.size > 0 && !empresaSet.has(r.empresa)) return false;
     if(nf && !String(r.nf||'').toLowerCase().includes(nf)) return false;
     return true;
   });
@@ -5024,15 +5130,17 @@ let dashView = 'geral';
 let charts = {};
 
 function initDashboardControls(){
-  ['f-data-ini','f-data-fim','f-motorista','f-produto','f-posto','f-empresa'].forEach(id=>{
+  ['f-data-ini','f-data-fim'].forEach(id=>{
     document.getElementById(id).addEventListener('change', ()=>{ refreshFilterOptions('f'); renderDashboard(); });
   });
   document.getElementById('f-nf').addEventListener('input', ()=>{ refreshFilterOptions('f'); renderDashboard(); });
   document.getElementById('btn-clear-filters').addEventListener('click', ()=>{
-    ['f-data-ini','f-data-fim','f-motorista','f-produto','f-posto','f-empresa','f-nf'].forEach(id=>{
+    ['f-data-ini','f-data-fim','f-nf'].forEach(id=>{
       document.getElementById(id).value = '';
     });
-    MS_STATE['f-equip'].clear();
+    ['f-equip','f-motorista','f-produto','f-posto','f-empresa'].forEach(id=>{
+      if(MS_STATE[id]) MS_STATE[id].clear();
+    });
     updateMultiSelectToggleLabels();
     refreshFilterOptions('f');
     renderDashboard();
@@ -6445,7 +6553,7 @@ function handleRestoreJson(e){
 function initReportTab(){
   document.getElementById('btn-refresh-report').addEventListener('click', renderReportPreview);
   document.getElementById('btn-gerar-pdf').addEventListener('click', gerarPdf);
-  ['r-data-ini','r-data-fim','r-motorista','r-produto','r-empresa'].forEach(id=>{
+  ['r-data-ini','r-data-fim'].forEach(id=>{
     document.getElementById(id).addEventListener('change', ()=>{ refreshFilterOptions('r'); renderReportPreview(); });
   });
   document.getElementById('r-titulo').addEventListener('change', renderReportPreview);
