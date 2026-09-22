@@ -2149,7 +2149,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.09.14-20';
+const APP_VERSION = 'v2026.09.14-21';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -6504,16 +6504,30 @@ function normalizeImportedRow(row){
     requisicao: get('Requisição','REQUISIÇÃO','requisicao') ? String(get('Requisição','REQUISIÇÃO','requisicao')) : null,
     produto: get('Produto','PRODUTO','produto') ? String(get('Produto','PRODUTO','produto')).toUpperCase() : null,
     unidade: get('Unidade','UNID.','unidade') || 'LT',
-    quantidade: parseFloat(get('Quantidade','QUANT.','quantidade')) || null,
-    precoUnit: parseFloat(get('Preço Unit.','PREÇ.UNIT.','precoUnit')) || null,
-    precoTotal: parseFloat(get('Preço Total','PREÇ.TOTAL.','precoTotal')) || null,
+    quantidade: numBRouNumero(get('Quantidade','QUANT.','quantidade')),
+    precoUnit: numBRouNumero(get('Preço Unit.','PREÇ.UNIT.','precoUnit')),
+    precoTotal: numBRouNumero(get('Preço Total','PREÇ.TOTAL.','precoTotal')),
     motorista: get('Motorista','QUEM PEGOU','motorista') ? String(get('Motorista','QUEM PEGOU','motorista')).trim().toUpperCase() : null,
     empresa: get('Empresa','EMPRESA','empresa') || 'TRIPOLONI',
     equipamento: String(equip).trim().toUpperCase(),
-    kmHor: parseFloat(get('Km/Hor.','km/Hor.','kmHor')) || null,
+    kmHor: numBRouNumero(get('Km/Hor.','km/Hor.','kmHor')),
     obsKm: null,
-    mediaKmL: parseFloat(get('Média Km/L','MÉDIA KM/L','mediaKmL')) || null,
+    mediaKmL: numBRouNumero(get('Média Km/L','MÉDIA KM/L','mediaKmL')),
   };
+}
+
+/* Excel às vezes entrega o valor já como NÚMERO de verdade (célula
+   formatada como número — aí não tem vírgula pra confundir) e às vezes
+   como TEXTO no formato brasileiro ("1.234,56"). parseFloat() sozinho
+   lê só até achar o primeiro caractere que não reconhece e PARA ali —
+   em "1.234,56" ele lê só "1.234" (interpretando o ponto como decimal
+   do jeito americano) e descarta o resto, dando um número bem menor
+   que o real. numBR() trata os dois formatos direito. */
+function numBRouNumero(v){
+  if(v === null || v === undefined || v === '') return null;
+  if(typeof v === 'number') return isNaN(v) ? null : v;
+  const n = numBR(v);
+  return isNaN(n) ? null : n;
 }
 
 function exportXlsx(){
