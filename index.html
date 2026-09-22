@@ -2149,7 +2149,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.09.14-18';
+const APP_VERSION = 'v2026.09.14-20';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -5235,9 +5235,11 @@ function renderWorstTable(rows){
 }
 
 function renderKPIs(rows){
-  const totalLitros = rows.filter(r=>PRODUTOS_COMBUSTIVEL.has(r.produto) && r.unidade==='LT').reduce((s,r)=>s+(r.quantidade||0),0);
+  const rowsCombustivel = rows.filter(r=>PRODUTOS_COMBUSTIVEL.has(r.produto) && r.unidade==='LT');
+  const totalLitros = rowsCombustivel.reduce((s,r)=>s+(r.quantidade||0),0);
+  const totalGastoCombustivel = rowsCombustivel.reduce((s,r)=>s+(r.precoTotal||0),0);
   const totalGasto = rows.reduce((s,r)=>s+(r.precoTotal||0),0);
-  const precoMedioLitro = totalLitros>0 ? totalGasto/totalLitros : null;
+  const precoMedioLitro = totalLitros>0 ? totalGastoCombustivel/totalLitros : null;
 
   // distância total: soma das diferenças consecutivas de km por equipamento dentro do filtro
   const distancias = calcDistanciasPorEquipamento(rows);
@@ -5254,7 +5256,7 @@ function renderKPIs(rows){
     {label:'Abastecimentos', value: nAbastecimentos.toLocaleString('pt-BR'), sub:`${nEquip} equipamentos · ${nMotoristas} motoristas`},
     {label:'Total gasto', value: fmtMoney(totalGasto), sub:'no período filtrado'},
     {label:'Litros abastecidos', value: fmtNum(totalLitros,0)+' L', sub:'diesel+etanol+gasolina'},
-    {label:'Preço médio / litro', value: precoMedioLitro?fmtMoney(precoMedioLitro):'—', sub:'gasto ÷ litros'},
+    {label:'Preço médio / litro', value: precoMedioLitro?fmtMoney(precoMedioLitro):'—', sub:'gasto em combustível ÷ litros'},
     {label:'Distância percorrida', value: fmtNum(distanciaTotal,0)+' km', sub:'somando todos equipamentos'},
     {label:'Média geral', value: mediaGeral? fmtNum(mediaGeral,2)+' km/L':'—', sub:'média dos registros com leitura'},
     {label:'Custo por km rodado', value: (distanciaTotal>0)? fmtMoney(totalGasto/distanciaTotal)+'/km' : '—', sub:'gasto total ÷ km rodados'},
@@ -5297,6 +5299,20 @@ const CORES_PRODUTO = {
 };
 function corProduto(produto, indiceFallback){
   return CORES_PRODUTO[(produto||'').toUpperCase()] || CHART_COLORS[indiceFallback % CHART_COLORS.length];
+}
+
+/* Converte cor hex (#rrggbb) ou rgb(...)/rgba(...) do Chart.js pra um
+   array [r,g,b] — formato que o jsPDF-autotable espera pra fillColor/
+   textColor. Usado pra manter a mesma cor por combustível no PDF que já
+   usamos nos gráficos do Dashboard. */
+function hexParaRgbPdf(cor){
+  if(!cor) return [0,0,0];
+  if(cor.startsWith('#')){
+    const h = cor.replace('#','');
+    return [parseInt(h.substring(0,2),16), parseInt(h.substring(2,4),16), parseInt(h.substring(4,6),16)];
+  }
+  const m = cor.match(/(\d+(?:\.\d+)?)/g);
+  return m ? m.slice(0,3).map(Number) : [0,0,0];
 }
 
 function renderCharts(rows){
@@ -6914,7 +6930,13 @@ function gerarPdf(){
     theme:'striped',
     headStyles:{fillColor:[0,38,116]},
     styles:{fontSize:8.5},
-    margin:{left:margin, right:margin}
+    margin:{left:margin, right:margin},
+    didParseCell: d=>{
+      if(d.section==='body' && d.column.index===0){
+        d.cell.styles.textColor = hexParaRgbPdf(corProduto(d.cell.raw, 4));
+        d.cell.styles.fontStyle = 'bold';
+      }
+    }
   });
 
   // top 10 mais bebedores (pior média por equipamento) em formato de tabela também
@@ -6975,7 +6997,13 @@ function gerarPdf(){
     headStyles:{fillColor:[0,38,116]},
     styles:{fontSize:8},
     columnStyles:{4:{halign:'right'},5:{halign:'right'},7:{halign:'right'}},
-    margin:{left:margin, right:margin}
+    margin:{left:margin, right:margin},
+    didParseCell: d=>{
+      if(d.section==='body' && d.column.index===3){
+        d.cell.styles.textColor = hexParaRgbPdf(corProduto(d.cell.raw, 4));
+        d.cell.styles.fontStyle = 'bold';
+      }
+    }
   });
 
   doc.save(`relatorio_abastecimento_${todayStr()}.pdf`);
