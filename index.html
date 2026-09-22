@@ -1156,6 +1156,10 @@ body.preview-motorista #view-lancamentos::before{
 
   <!-- ======================= DASHBOARD ======================= -->
   <section class="view active" id="view-dashboard">
+    <div id="banner-periodo-limitado" class="card" style="display:none;align-items:center;gap:14px;flex-wrap:wrap;background:#eef4ff;border:1px solid #b9cdfa;padding:12px 16px;">
+      <span>📅 Mostrando só os últimos 60 dias (mais rápido pra carregar).</span>
+      <button type="button" class="btn secondary" id="btn-carregar-historico-completo">Carregar histórico completo</button>
+    </div>
     <div class="card">
       <h2>Filtros</h2>
       <div class="filters">
@@ -2060,7 +2064,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.09.14-11';
+const APP_VERSION = 'v2026.09.14-14';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -2070,6 +2074,7 @@ const GOOGLE_CLIENT_ID = '196277004266-rfbg8arvkbqhgs8j7mhpk1otr56ev38a.apps.goo
 const MICROSOFT_CLIENT_ID = 'COLOQUE_O_CLIENT_ID_DO_AZURE_AQUI';
 let PROVEDOR_LOGIN = null; // 'google' | 'microsoft' | 'senha' — usado pra saber onde salvar foto (Drive ou OneDrive)
 let MICROSOFT_ACCESS_TOKEN = null; // guardado quando login é via Microsoft — usado depois pro upload no OneDrive
+let PERIODO_LIMITADO = false; // true quando o servidor só mandou os últimos 60 dias (carga padrão, mais rápida)
 
 const USUARIO_CACHE_KEY = 'tripoloni_usuario_v1';
 
@@ -2089,6 +2094,7 @@ let PENDENTES = [];          // lançamentos simplificados de motorista, esperan
 let DIAS_BLOQUEADOS = [0];   // dias da semana (0=domingo...6=sábado) que motorista não pode lançar
 let AUDITORIA = [];          // log de auditoria — quem fez o quê e quando
 let VEICULOS = [];           // cadastro de frota — próprio × alugado
+let MAPA_PLACAS = [];         // versão enxuta (placa+equipamento) — nível <4 não recebe o VEICULOS completo, só isso
 let POSTOS = [];              // cadastro de postos de combustível
 let EMPRESAS = [];            // cadastro de empresas (própria/locadora/terceirizada)
 let HISTORICO_MOBILIZACAO = []; // eventos de desmobilizou/remobilizou por equipamento, nunca apaga
@@ -2591,12 +2597,14 @@ async function autenticarComToken(idToken, silencioso){
     iniciarRenovacaoAutomaticaDoToken();
 
     DB = (json.dados || []).map(sanitizeRecord);
+    PERIODO_LIMITADO = !!json.periodoLimitado;
     SOLICITACOES = json.solicitacoes || [];
     USUARIOS = json.usuarios || [];
     PENDENTES = json.pendentes || [];
     DIAS_BLOQUEADOS = json.diasBloqueados || DIAS_BLOQUEADOS;
     AUDITORIA = json.auditoria || [];
     VEICULOS = json.veiculos || [];
+    MAPA_PLACAS = json.mapaPlacas || [];
     POSTOS = json.postos || [];
     EMPRESAS = json.empresas || [];
     HISTORICO_MOBILIZACAO = json.historicoMobilizacao || [];
@@ -2611,6 +2619,7 @@ async function autenticarComToken(idToken, silencioso){
     populateFilterSelects();
     resetForm();
     refreshRecordPill();
+    atualizarBannerPeriodoLimitado();
     renderDashboard();
     renderLancTable();
     renderAprovacoes();
@@ -2818,7 +2827,7 @@ function renderSelecaoRequisicaoMotorista(){
   box.innerHTML = abertas.map(r=>`
     <div class="usuario-item" data-id="${escapeHtml(r.id)}" style="${REQUISICAO_SELECIONADA && REQUISICAO_SELECIONADA.id===r.id ? 'border-color:var(--navy);background:var(--navy-light);' : ''}">
       <div><div class="nome">Nº ${escapeHtml(String(r.numero))} — ${escapeHtml(r.equipamento)} — ${escapeHtml(r.produto||'ETANOL')}</div><div class="detalhe">Posto: ${escapeHtml(r.posto||'—')}${r.kmEsperado?' · Km/Hor esperado: '+escapeHtml(String(r.kmEsperado)):''}</div></div>
-      <div class="btn-row"><button type="button" class="btn ${REQUISICAO_SELECIONADA && REQUISICAO_SELECIONADA.id===r.id ? '' : 'secondary'}" data-escolher-req="${escapeHtml(r.id)}">${REQUISICAO_SELECIONADA && REQUISICAO_SELECIONADA.id===r.id ? '✅ Selecionada' : 'Usar essa'}</button></div>
+      <div class="btn-row"><button type="button" class="btn ${REQUISICAO_SELECIONADA && REQUISICAO_SELECIONADA.id===r.id ? '' : 'secondary'}" data-escolher-req="${escapeHtml(r.id)}">${REQUISICAO_SELECIONADA && REQUISICAO_SELECIONADA.id===r.id ? '✅ Selecionada' : 'Usar essa'}</button><button type="button" class="btn ghost" data-imprimir-req-motorista="${escapeHtml(r.id)}">🖨️</button></div>
     </div>`).join('') + (ehNivelAltoComEscolha ? `<button type="button" class="btn ghost" id="btn-cancelar-req-selecionada" style="margin-top:8px;">❌ Cancelar — voltar pro lançamento manual livre</button>` : '');
   box.querySelectorAll('[data-escolher-req]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
@@ -2849,6 +2858,13 @@ function renderSelecaoRequisicaoMotorista(){
         if(kmEl && req.kmEsperado){ kmEl.value = req.kmEsperado; kmEl.dispatchEvent(new Event('input')); }
       }
       renderSelecaoRequisicaoMotorista();
+    });
+  });
+  box.querySelectorAll('[data-imprimir-req-motorista]').forEach(btn=>{
+    btn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      const req = abertas.find(r=>r.id===btn.dataset.imprimirReqMotorista);
+      if(req) gerarPdfRequisicao(req);
     });
   });
   const btnCancelar = document.getElementById('btn-cancelar-req-selecionada');
@@ -3501,6 +3517,74 @@ async function cancelarRequisicaoUI(id){
   }catch(err){ console.error(err); toast('Falha ao cancelar: ' + err.message); }
 }
 
+/** Gera um "vale-abastecimento" em PDF pra imprimir e o motorista levar
+    fisicamente no posto — útil quando não dá pra usar o celular na hora
+    (sinal ruim, bateria, frentista que prefere papel, etc). Depois do
+    abastecimento, o motorista ainda lança normal pelo app (com foto do
+    cupom) — esse papel é só uma via física de apoio/comprovação, não
+    substitui o lançamento digital. */
+function gerarPdfRequisicao(r){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:'pt', format:'a4'});
+  const margin = 50;
+  let y = 50;
+
+  doc.addImage(`data:image/png;base64,${LOGO_B64}`, 'PNG', margin, y, 120, 35);
+  doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(0,38,116);
+  doc.text('Requisição de Abastecimento', margin+135, y+22);
+  y += 70;
+
+  doc.setDrawColor(0,38,116); doc.setLineWidth(1.2);
+  doc.rect(margin, y, 515, 60);
+  doc.setFont('helvetica','bold'); doc.setFontSize(28); doc.setTextColor(0,38,116);
+  doc.text(`Nº ${String(r.numero)}`, margin+16, y+40);
+  doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(90,90,90);
+  doc.text(`Emitida em ${r.criadoEm ? new Date(r.criadoEm).toLocaleString('pt-BR') : '—'}`, margin+340, y+25);
+  doc.text(`Válida pra usar até ser consumida ou cancelada`, margin+340, y+40);
+  y += 90;
+
+  const linhaDado = (rotulo, valor) => {
+    doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(90,90,90);
+    doc.text(rotulo, margin, y);
+    doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.setTextColor(20,22,28);
+    doc.text(String(valor||'—'), margin, y+18);
+    y += 42;
+  };
+  linhaDado('MOTORISTA', r.motoristaNome || r.motoristaEmail);
+  linhaDado('EQUIPAMENTO', r.equipamento);
+  linhaDado('PRODUTO', r.produto || 'ETANOL');
+  linhaDado('POSTO AUTORIZADO', r.posto || '—');
+  if(r.kmEsperado) linhaDado('KM/HORÍMETRO ESPERADO', r.kmEsperado);
+
+  y += 10;
+  doc.setDrawColor(200,200,200); doc.setLineDashPattern([3,3], 0);
+  doc.line(margin, y, margin+515, y);
+  doc.setLineDashPattern([], 0);
+  y += 28;
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(0,38,116);
+  doc.text('Preenchimento no posto (a caneta)', margin, y);
+  y += 26;
+
+  const campoPreencher = (rotulo, largura) => {
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(90,90,90);
+    doc.text(rotulo, margin, y);
+    doc.setDrawColor(150,150,150);
+    doc.line(margin+90, y, margin+90+largura, y);
+    y += 32;
+  };
+  campoPreencher('Litros:', 200);
+  campoPreencher('Valor total (R$):', 200);
+  campoPreencher('Nota Fiscal Nº:', 200);
+  campoPreencher('Assinatura do frentista:', 260);
+
+  y += 10;
+  doc.setFont('helvetica','italic'); doc.setFontSize(8.5); doc.setTextColor(130,130,130);
+  doc.text('Essa via impressa é só um apoio — o lançamento oficial continua sendo feito pelo motorista no app, com foto do cupom fiscal.', margin, y, {maxWidth: 515});
+
+  doc.save(`Requisicao_${r.numero}.pdf`);
+}
+
 function renderListaRequisicoesAdmin(){
   const box = document.getElementById('lista-requisicoes-admin');
   if(!box) return;
@@ -3515,10 +3599,19 @@ function renderListaRequisicoesAdmin(){
         <b>Nº ${escapeHtml(String(r.numero))}</b> — ${escapeHtml(r.motoristaNome||r.motoristaEmail)} · ${escapeHtml(r.equipamento)}${r.posto?' · '+escapeHtml(r.posto):''}
         <br><span style="color:var(--gray);">${NOMES_STATUS[r.status]||r.status}${r.usadaEm?' em '+new Date(r.usadaEm).toLocaleString('pt-BR'):''}</span>
       </div>
-      ${r.status==='aberta' ? `<button class="btn ghost" data-cancelar-req="${escapeHtml(r.id)}">🗑️ Cancelar</button>` : ''}
+      <div class="btn-row">
+        ${r.status==='aberta' ? `<button class="btn secondary" data-imprimir-req="${escapeHtml(r.id)}">🖨️ Imprimir</button>` : ''}
+        ${r.status==='aberta' ? `<button class="btn ghost" data-cancelar-req="${escapeHtml(r.id)}">🗑️ Cancelar</button>` : ''}
+      </div>
     </div>`).join('');
   box.querySelectorAll('[data-cancelar-req]').forEach(btn=>{
     btn.addEventListener('click', ()=>cancelarRequisicaoUI(btn.dataset.cancelarReq));
+  });
+  box.querySelectorAll('[data-imprimir-req]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const r = REQUISICOES_EMITIDAS.find(x=>x.id===btn.dataset.imprimirReq);
+      if(r) gerarPdfRequisicao(r);
+    });
   });
 }
 
@@ -4210,6 +4303,44 @@ async function rejeitarPendenteUI(id){
    Sheets sem precisar recarregar a página nem refazer login. Dá pra
    usar a qualquer momento (ex: depois que outra pessoa cadastrou algo,
    ou só pra conferir se algo já está refletido). */
+/* Por padrão o servidor só manda os últimos 60 dias de lançamento (bem
+   mais rápido de carregar) — isso aqui busca TUDO quando a pessoa
+   realmente precisar (relatório anual, corrigir algo antigo, etc). */
+function atualizarBannerPeriodoLimitado(){
+  const banner = document.getElementById('banner-periodo-limitado');
+  if(banner) banner.style.display = PERIODO_LIMITADO ? 'flex' : 'none';
+}
+
+async function carregarHistoricoCompletoUI(){
+  const btn = document.getElementById('btn-carregar-historico-completo');
+  if(!btn || btn.disabled) return;
+  const textoOriginal = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Carregando tudo...';
+  try{
+    const resp = await fetch(`${SYNC_URL}?action=pull&idToken=${encodeURIComponent(ID_TOKEN)}&completo=1`);
+    const json = await parseJsonResponse(resp);
+    if(json.status !== 'ok' || !Array.isArray(json.dados)){ toast(json.mensagem || 'Falha ao carregar histórico.'); return; }
+    DB = json.dados.map(sanitizeRecord);
+    PERIODO_LIMITADO = !!json.periodoLimitado;
+    AUDITORIA = json.auditoria || AUDITORIA;
+    recalcularTodasMedias();
+    saveDB();
+    populateFilterSelects();
+    renderLancTable();
+    renderDashboard();
+    renderAuditoria();
+    atualizarBannerPeriodoLimitado();
+    toast(`Histórico completo carregado — ${DB.length} registros.`);
+  }catch(err){
+    console.error(err);
+    toast('Falha ao carregar histórico: ' + err.message);
+  }finally{
+    btn.disabled = false;
+    btn.textContent = textoOriginal;
+  }
+}
+
 async function atualizarTudoUI(){
   const btn = document.getElementById('btn-atualizar-tudo');
   if(!btn || btn.disabled) return;
@@ -4235,12 +4366,14 @@ async function pullFromSheetsSilencioso(){
     const json = await parseJsonResponse(resp);
     if(json.status !== 'ok' || !Array.isArray(json.dados)) return;
     DB = json.dados.map(sanitizeRecord);
+    PERIODO_LIMITADO = !!json.periodoLimitado;
     SOLICITACOES = json.solicitacoes || [];
     USUARIOS = json.usuarios || [];
     PENDENTES = json.pendentes || [];
     DIAS_BLOQUEADOS = json.diasBloqueados || DIAS_BLOQUEADOS;
     AUDITORIA = json.auditoria || AUDITORIA;
     VEICULOS = json.veiculos || VEICULOS;
+    MAPA_PLACAS = json.mapaPlacas || MAPA_PLACAS;
     POSTOS = json.postos || POSTOS;
     EMPRESAS = json.empresas || EMPRESAS;
     HISTORICO_MOBILIZACAO = json.historicoMobilizacao || HISTORICO_MOBILIZACAO;
@@ -4248,6 +4381,7 @@ async function pullFromSheetsSilencioso(){
     recalcularTodasMedias();
     saveDB();
     populateFilterSelects();
+    atualizarBannerPeriodoLimitado();
     renderLancTable();
     renderDashboard();
     renderAprovacoes();
@@ -6062,7 +6196,11 @@ function aplicarCamposOcr(campos, tipo){
   // não deixa a leitura do cupom sobrescrever de jeito nenhum.
   if(campos.equipamento && !comRequisicao){
     const placaLida = String(campos.equipamento).replace(/[\s\-]/g,'').toUpperCase();
-    const veiculoAchado = VEICULOS.find(v => v.placa && String(v.placa).replace(/[\s\-]/g,'').toUpperCase() === placaLida);
+    // usa o VEICULOS completo se tiver (nível 4+), senão a versão enxuta
+    // que todo mundo recebe (mapaPlacas) — nível 1/2/3 nunca teve acesso
+    // ao cadastro completo de Frota, só a esse mapa mínimo
+    const fonte = VEICULOS.length > 0 ? VEICULOS : MAPA_PLACAS;
+    const veiculoAchado = fonte.find(v => v.placa && String(v.placa).replace(/[\s\-]/g,'').toUpperCase() === placaLida);
     if(veiculoAchado){
       const equipEl = document.getElementById('l-equipamento');
       equipEl.value = veiculoAchado.equipamento;
@@ -6717,20 +6855,22 @@ async function pushToSheets(mostrarToast){
 async function pullFromSheets(){
   if(!SYNC_URL){ toast('Configure a URL do Apps Script primeiro.'); return; }
   if(!ID_TOKEN){ toast('Faça login com o Google primeiro.'); return; }
-  logSync('Puxando dados do Sheets...');
+  logSync('Puxando dados do Sheets (histórico completo)...');
   try{
-    const resp = await fetch(`${SYNC_URL}?action=pull&idToken=${encodeURIComponent(ID_TOKEN)}`);
+    const resp = await fetch(`${SYNC_URL}?action=pull&idToken=${encodeURIComponent(ID_TOKEN)}&completo=1`);
     const json = await parseJsonResponse(resp);
     if(json.status !== 'ok' || !Array.isArray(json.dados)) throw new Error(json.mensagem || 'resposta inesperada do servidor');
     const ok = await confirmModal('Puxar dados do Sheets', `Foram encontrados ${json.dados.length} registros no Sheets. Isso vai SUBSTITUIR os ${DB.length} registros locais. Continuar?`);
     if(!ok){ logSync('Importação cancelada pelo usuário.'); return; }
     DB = json.dados.map(sanitizeRecord);
+    PERIODO_LIMITADO = !!json.periodoLimitado;
     SOLICITACOES = json.solicitacoes || [];
     USUARIOS = json.usuarios || [];
     PENDENTES = json.pendentes || [];
     DIAS_BLOQUEADOS = json.diasBloqueados || DIAS_BLOQUEADOS;
     AUDITORIA = json.auditoria || AUDITORIA;
     VEICULOS = json.veiculos || VEICULOS;
+    MAPA_PLACAS = json.mapaPlacas || MAPA_PLACAS;
     POSTOS = json.postos || POSTOS;
     EMPRESAS = json.empresas || EMPRESAS;
     HISTORICO_MOBILIZACAO = json.historicoMobilizacao || HISTORICO_MOBILIZACAO;
@@ -6738,6 +6878,7 @@ async function pullFromSheets(){
     recalcularTodasMedias();
     saveDB();
     populateFilterSelects();
+    atualizarBannerPeriodoLimitado();
     renderLancTable();
     renderDashboard();
     renderAprovacoes();
@@ -6789,6 +6930,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   if(!veioDoRedirect) initLogin();
   document.getElementById('btn-login-senha').addEventListener('click', loginComSenhaUI);
   document.getElementById('btn-atualizar-tudo').addEventListener('click', atualizarTudoUI);
+  document.getElementById('btn-carregar-historico-completo').addEventListener('click', carregarHistoricoCompletoUI);
   const linkMicrosoft = document.getElementById('link-login-microsoft');
   if(linkMicrosoft) linkMicrosoft.href = linkLoginMicrosoft();
 
