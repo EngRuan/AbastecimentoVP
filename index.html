@@ -2024,11 +2024,11 @@ body.preview-motorista #view-lancamentos::before{
           <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="req-terceiro" style="width:auto;"> É pra veículo de empresa terceirizada (motorista não cadastrado no sistema)</label>
         </div>
         <div class="field" id="req-motorista-wrap">
-          <label>Motorista</label>
+          <label>Motorista <a href="#" id="link-motorista-sem-cadastro" style="font-weight:400;font-size:12px;margin-left:6px;">🖊️ funcionário sem cadastro</a></label>
           <select id="req-motorista"><option value="">Selecione</option></select>
         </div>
         <div class="field" id="req-motorista-livre-wrap" style="display:none;">
-          <label>Nome do motorista (terceiro)*</label>
+          <label>Nome do motorista* <a href="#" id="link-motorista-com-cadastro" style="font-weight:400;font-size:12px;margin-left:6px;">↩️ voltar pra lista</a></label>
           <input type="text" id="req-motorista-livre" placeholder="Nome completo">
         </div>
         <div class="field" id="req-equipamento-wrap">
@@ -2161,7 +2161,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.09.14-24';
+const APP_VERSION = 'v2026.09.14-25';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -3612,6 +3612,11 @@ async function emitirRequisicaoUI(){
     const placa = document.getElementById('req-placa').value.trim();
     if(!motoristaNomeLivre || !empresa || !placa){ toast('Pra terceiro, preenche nome, empresa e placa.'); return; }
     dados = { terceiro:true, motoristaNomeLivre, empresa, placa, produto, posto, kmEsperado };
+  } else if(document.getElementById('req-motorista-livre').dataset.modo === 'sem-cadastro'){
+    const motoristaNomeLivre = document.getElementById('req-motorista-livre').value.trim();
+    const equipamento = document.getElementById('req-equipamento').value;
+    if(!motoristaNomeLivre || !equipamento){ toast('Escolhe o nome e o equipamento.'); return; }
+    dados = { semCadastro:true, motoristaNomeLivre, equipamento, produto, posto, kmEsperado };
   } else {
     const motoristaEmail = document.getElementById('req-motorista').value;
     const equipamento = document.getElementById('req-equipamento').value;
@@ -3635,6 +3640,8 @@ async function emitirRequisicaoUI(){
     if(ehTerceiro){
       document.getElementById('req-motorista-livre').value = '';
       document.getElementById('req-placa').value = '';
+    } else if(document.getElementById('req-motorista-livre').dataset.modo === 'sem-cadastro'){
+      document.getElementById('req-motorista-livre').value = '';
     }
     renderListaRequisicoesAdmin();
     toast(`Requisição Nº ${json.numero} emitida!`);
@@ -3802,6 +3809,22 @@ function initRequisicoesTab(){
     document.getElementById('req-empresa-terceiro-wrap').style.display = ehTerceiro ? '' : 'none';
     document.getElementById('req-placa-wrap').style.display = ehTerceiro ? '' : 'none';
     if(ehTerceiro) populateEmpresaTerceiroSelect();
+    // se desmarcar terceiro, também sai do modo "sem cadastro" (evita
+    // ficar com os dois campos escondidos ao mesmo tempo por engano)
+    if(!ehTerceiro) document.getElementById('req-motorista-livre').dataset.modo = '';
+  });
+  document.getElementById('link-motorista-sem-cadastro').addEventListener('click', (e)=>{
+    e.preventDefault();
+    document.getElementById('req-motorista-wrap').style.display = 'none';
+    document.getElementById('req-motorista-livre-wrap').style.display = '';
+    document.getElementById('req-motorista-livre').dataset.modo = 'sem-cadastro';
+  });
+  document.getElementById('link-motorista-com-cadastro').addEventListener('click', (e)=>{
+    e.preventDefault();
+    document.getElementById('req-motorista-wrap').style.display = '';
+    document.getElementById('req-motorista-livre-wrap').style.display = 'none';
+    document.getElementById('req-motorista-livre').value = '';
+    document.getElementById('req-motorista-livre').dataset.modo = '';
   });
 }
 
