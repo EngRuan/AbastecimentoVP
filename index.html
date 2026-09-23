@@ -2161,7 +2161,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.09.14-25';
+const APP_VERSION = 'v2026.09.14-26';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -3661,22 +3661,21 @@ async function cancelarRequisicaoUI(id){
   }catch(err){ console.error(err); toast('Falha ao cancelar: ' + err.message); }
 }
 
-/* Requisição de terceiro não tem ninguém logando no app pra "resgatar"
-   ela sozinha — depois que o carro terceirizado já abasteceu (com a via
-   impressa) e a nota voltou, alguém de nível 3+ registra aqui: pede
-   litros e valor, já cria o lançamento pendente de verdade (cai direto
-   na segunda aba de aprovação) e fecha a requisição. */
-async function marcarRequisicaoUsadaUI(id){
-  const litrosStr = window.prompt('Quantos litros abasteceu?');
-  if(litrosStr === null) return;
-  const quantidade = numBR(litrosStr);
-  if(!quantidade || quantidade <= 0){ toast('Litros inválido.'); return; }
-  const valorStr = window.prompt('Valor total pago (R$)?');
-  if(valorStr === null) return;
-  const precoTotal = numBR(valorStr);
-  if(!precoTotal || precoTotal <= 0){ toast('Valor inválido.'); return; }
-  const kmStr = window.prompt('Km/Hor no momento (opcional — deixa em branco se não souber)');
-  const kmHor = kmStr && kmStr.trim() ? numBR(kmStr) : null;
+/* Requisição de terceiro (ou funcionário sem cadastro) não tem ninguém
+   logando no app pra "resgatar" ela sozinha — depois que o veículo já
+   abasteceu (com a via impressa) e a nota voltou, alguém de nível 3+
+   registra aqui: preenche litros e valor no formulário que abre ali
+   mesmo (embaixo do botão), já cria o lançamento pendente de verdade
+   (cai direto na segunda aba de aprovação) e fecha a requisição. */
+async function confirmarRequisicaoUsadaUI(id){
+  const litrosEl = document.getElementById(`usada-litros-${id}`);
+  const valorEl = document.getElementById(`usada-valor-${id}`);
+  const kmEl = document.getElementById(`usada-km-${id}`);
+  const quantidade = numBR(litrosEl.value);
+  if(!quantidade || quantidade <= 0){ toast('Preenche os litros direito.'); litrosEl.focus(); return; }
+  const precoTotal = numBR(valorEl.value);
+  if(!precoTotal || precoTotal <= 0){ toast('Preenche o valor total direito.'); valorEl.focus(); return; }
+  const kmHor = kmEl.value.trim() ? numBR(kmEl.value) : null;
 
   try{
     const resp = await fetch(SYNC_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({
@@ -3771,23 +3770,49 @@ function renderListaRequisicoesAdmin(){
     const ehTerceiro = r.terceiro === 'sim';
     const identificador = ehTerceiro ? `${escapeHtml(r.placa)} · ${escapeHtml(r.empresa)} 🏗️terceiro` : escapeHtml(r.equipamento);
     return `
-    <div class="aprov-item" data-id="${escapeHtml(r.id)}">
-      <div class="info">
-        <b>Nº ${escapeHtml(String(r.numero))}</b> — ${escapeHtml(r.motoristaNome||r.motoristaEmail)} · ${identificador}${r.posto?' · '+escapeHtml(r.posto):''}
-        <br><span style="color:var(--gray);">${NOMES_STATUS[r.status]||r.status}${r.usadaEm?' em '+new Date(r.usadaEm).toLocaleString('pt-BR'):''}</span>
+    <div class="aprov-item" data-id="${escapeHtml(r.id)}" style="flex-direction:column;align-items:stretch;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <div class="info">
+          <b>Nº ${escapeHtml(String(r.numero))}</b> — ${escapeHtml(r.motoristaNome||r.motoristaEmail)} · ${identificador}${r.posto?' · '+escapeHtml(r.posto):''}
+          <br><span style="color:var(--gray);">${NOMES_STATUS[r.status]||r.status}${r.usadaEm?' em '+new Date(r.usadaEm).toLocaleString('pt-BR'):''}</span>
+        </div>
+        <div class="btn-row">
+          ${r.status==='aberta' ? `<button class="btn secondary" data-imprimir-req="${escapeHtml(r.id)}">🖨️ Imprimir</button>` : ''}
+          ${r.status==='aberta' ? `<button class="btn secondary" data-marcar-usada="${escapeHtml(r.id)}">✅ Marcar como usada</button>` : ''}
+          ${r.status==='aberta' ? `<button class="btn ghost" data-cancelar-req="${escapeHtml(r.id)}">🗑️ Cancelar</button>` : ''}
+        </div>
       </div>
-      <div class="btn-row">
-        ${r.status==='aberta' ? `<button class="btn secondary" data-imprimir-req="${escapeHtml(r.id)}">🖨️ Imprimir</button>` : ''}
-        ${r.status==='aberta' ? `<button class="btn secondary" data-marcar-usada="${escapeHtml(r.id)}">✅ Marcar como usada</button>` : ''}
-        ${r.status==='aberta' ? `<button class="btn ghost" data-cancelar-req="${escapeHtml(r.id)}">🗑️ Cancelar</button>` : ''}
-      </div>
+      ${r.status==='aberta' ? `
+      <div class="form-grid" id="form-usada-${escapeHtml(r.id)}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--line);">
+        <div class="field">
+          <label>Litros*</label>
+          <input type="text" inputmode="decimal" id="usada-litros-${escapeHtml(r.id)}" placeholder="Ex: 47,2">
+        </div>
+        <div class="field">
+          <label>Valor total (R$)*</label>
+          <input type="text" inputmode="decimal" id="usada-valor-${escapeHtml(r.id)}" placeholder="Ex: 183,69">
+        </div>
+        <div class="field">
+          <label>Km/Hor (opcional)</label>
+          <input type="text" inputmode="decimal" id="usada-km-${escapeHtml(r.id)}" placeholder="Se souber">
+        </div>
+        <div class="field" style="align-self:flex-end;">
+          <button type="button" class="btn" data-confirmar-usada="${escapeHtml(r.id)}">Confirmar — vai pra aprovação</button>
+        </div>
+      </div>` : ''}
     </div>`;
   }).join('');
   box.querySelectorAll('[data-cancelar-req]').forEach(btn=>{
     btn.addEventListener('click', ()=>cancelarRequisicaoUI(btn.dataset.cancelarReq));
   });
   box.querySelectorAll('[data-marcar-usada]').forEach(btn=>{
-    btn.addEventListener('click', ()=>marcarRequisicaoUsadaUI(btn.dataset.marcarUsada));
+    btn.addEventListener('click', ()=>{
+      const form = document.getElementById(`form-usada-${btn.dataset.marcarUsada}`);
+      if(form) form.style.display = form.style.display==='none' ? 'grid' : 'none';
+    });
+  });
+  box.querySelectorAll('[data-confirmar-usada]').forEach(btn=>{
+    btn.addEventListener('click', ()=>confirmarRequisicaoUsadaUI(btn.dataset.confirmarUsada));
   });
   box.querySelectorAll('[data-imprimir-req]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
