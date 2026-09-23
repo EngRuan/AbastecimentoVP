@@ -2161,7 +2161,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.09.14-26';
+const APP_VERSION = 'v2026.09.14-27';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -4491,7 +4491,7 @@ function renderListaPendentes(){
     const infoBase = `
       <div class="info">
         <b>${escapeHtml(p.motorista||p.email)}</b> — ${fmtDate(p.data)} · ${escapeHtml(p.equipamento||'—')} · ${escapeHtml(p.produto||'—')}
-        <br><span style="color:var(--gray);">${fmtNum(p.quantidade,1)} L · ${fmtMoney(p.precoTotal)} · Km/Hor: ${p.kmHor!=null?fmtNum(p.kmHor,0):'—'} · Posto: ${escapeHtml(p.posto||'—')}</span>
+        <br><span style="color:var(--gray);">${fmtNum(p.quantidade,1)} L · ${fmtMoney(p.precoTotal)} (${fmtMoney(p.precoUnit)}/L) · Km/Hor: ${p.kmHor!=null?fmtNum(p.kmHor,0):'—'} · Posto: ${escapeHtml(p.posto||'—')}</span>
         ${(p.fotoUrlCupom||p.fotoUrlRequisicao) ? `<br><span style="color:var(--gray);">${p.fotoUrlCupom?`<a href="${escapeHtml(p.fotoUrlCupom)}" target="_blank" rel="noopener">📎 foto do cupom</a>`:''} ${p.fotoUrlRequisicao?`<a href="${escapeHtml(p.fotoUrlRequisicao)}" target="_blank" rel="noopener">📎 foto da requisição</a>`:''}</span>` : ''}
       </div>`;
 
