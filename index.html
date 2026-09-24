@@ -2032,8 +2032,12 @@ body.preview-motorista #view-lancamentos::before{
           <input type="text" id="req-motorista-livre" placeholder="Nome completo">
         </div>
         <div class="field" id="req-equipamento-wrap">
-          <label>Equipamento</label>
+          <label>Equipamento <a href="#" id="link-equip-sem-cadastro" style="font-weight:400;font-size:12px;margin-left:6px;">🖊️ veículo sem cadastro</a></label>
           <select id="req-equipamento"><option value="">Selecione</option></select>
+        </div>
+        <div class="field" id="req-equipamento-livre-wrap" style="display:none;">
+          <label>Código do veículo* <a href="#" id="link-equip-com-cadastro" style="font-weight:400;font-size:12px;margin-left:6px;">↩️ voltar pra lista</a></label>
+          <input type="text" id="req-equipamento-livre" placeholder="Ex: VP0999 ou a placa">
         </div>
         <div class="field" id="req-empresa-terceiro-wrap" style="display:none;">
           <label>Empresa*</label>
@@ -2161,7 +2165,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.09.14-27';
+const APP_VERSION = 'v2026.09.14-28';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -3605,6 +3609,12 @@ async function emitirRequisicaoUI(){
   const kmEsperado = document.getElementById('req-km-esperado').value.trim();
   if(!posto){ toast('Escolhe o posto (ou digita o nome, se for externo).'); return; }
 
+  // se o link "veículo sem cadastro" estiver ativo, usa o texto livre
+  // em vez do select da Frota
+  const equipamentoEscolhido = document.getElementById('req-equipamento-livre').dataset.modo === 'sem-cadastro'
+    ? document.getElementById('req-equipamento-livre').value.trim().toUpperCase()
+    : document.getElementById('req-equipamento').value;
+
   let dados;
   if(ehTerceiro){
     const motoristaNomeLivre = document.getElementById('req-motorista-livre').value.trim();
@@ -3614,14 +3624,12 @@ async function emitirRequisicaoUI(){
     dados = { terceiro:true, motoristaNomeLivre, empresa, placa, produto, posto, kmEsperado };
   } else if(document.getElementById('req-motorista-livre').dataset.modo === 'sem-cadastro'){
     const motoristaNomeLivre = document.getElementById('req-motorista-livre').value.trim();
-    const equipamento = document.getElementById('req-equipamento').value;
-    if(!motoristaNomeLivre || !equipamento){ toast('Escolhe o nome e o equipamento.'); return; }
-    dados = { semCadastro:true, motoristaNomeLivre, equipamento, produto, posto, kmEsperado };
+    if(!motoristaNomeLivre || !equipamentoEscolhido){ toast('Escolhe o nome e o equipamento.'); return; }
+    dados = { semCadastro:true, motoristaNomeLivre, equipamento:equipamentoEscolhido, produto, posto, kmEsperado };
   } else {
     const motoristaEmail = document.getElementById('req-motorista').value;
-    const equipamento = document.getElementById('req-equipamento').value;
-    if(!motoristaEmail || !equipamento){ toast('Escolhe o motorista e o equipamento.'); return; }
-    dados = { motoristaEmail, equipamento, produto, posto, kmEsperado };
+    if(!motoristaEmail || !equipamentoEscolhido){ toast('Escolhe o motorista e o equipamento.'); return; }
+    dados = { motoristaEmail, equipamento:equipamentoEscolhido, produto, posto, kmEsperado };
   }
 
   try{
@@ -3642,6 +3650,9 @@ async function emitirRequisicaoUI(){
       document.getElementById('req-placa').value = '';
     } else if(document.getElementById('req-motorista-livre').dataset.modo === 'sem-cadastro'){
       document.getElementById('req-motorista-livre').value = '';
+    }
+    if(document.getElementById('req-equipamento-livre').dataset.modo === 'sem-cadastro'){
+      document.getElementById('req-equipamento-livre').value = '';
     }
     renderListaRequisicoesAdmin();
     toast(`Requisição Nº ${json.numero} emitida!`);
@@ -3831,6 +3842,8 @@ function initRequisicoesTab(){
     document.getElementById('req-motorista-wrap').style.display = ehTerceiro ? 'none' : '';
     document.getElementById('req-motorista-livre-wrap').style.display = ehTerceiro ? '' : 'none';
     document.getElementById('req-equipamento-wrap').style.display = ehTerceiro ? 'none' : '';
+    document.getElementById('req-equipamento-livre-wrap').style.display = 'none';
+    document.getElementById('req-equipamento-livre').dataset.modo = '';
     document.getElementById('req-empresa-terceiro-wrap').style.display = ehTerceiro ? '' : 'none';
     document.getElementById('req-placa-wrap').style.display = ehTerceiro ? '' : 'none';
     if(ehTerceiro) populateEmpresaTerceiroSelect();
@@ -3850,6 +3863,19 @@ function initRequisicoesTab(){
     document.getElementById('req-motorista-livre-wrap').style.display = 'none';
     document.getElementById('req-motorista-livre').value = '';
     document.getElementById('req-motorista-livre').dataset.modo = '';
+  });
+  document.getElementById('link-equip-sem-cadastro').addEventListener('click', (e)=>{
+    e.preventDefault();
+    document.getElementById('req-equipamento-wrap').style.display = 'none';
+    document.getElementById('req-equipamento-livre-wrap').style.display = '';
+    document.getElementById('req-equipamento-livre').dataset.modo = 'sem-cadastro';
+  });
+  document.getElementById('link-equip-com-cadastro').addEventListener('click', (e)=>{
+    e.preventDefault();
+    document.getElementById('req-equipamento-wrap').style.display = '';
+    document.getElementById('req-equipamento-livre-wrap').style.display = 'none';
+    document.getElementById('req-equipamento-livre').value = '';
+    document.getElementById('req-equipamento-livre').dataset.modo = '';
   });
 }
 
@@ -5998,6 +6024,21 @@ function initFormLancamento(){
   [qtd, punit].forEach(el=>el.addEventListener('input', autoTotal));
   [kmhor, produto, equip, dataInp].forEach(el=>el.addEventListener('input', updateCalcPreview));
   equip.addEventListener('input', updateEquipInfo);
+  // se a pessoa digitar a PLACA direto no campo (em vez do código VP),
+  // troca sozinho assim que ela sai do campo — mesma lógica que já usa
+  // na leitura de cupom, só que agora vale pra digitação manual também
+  equip.addEventListener('blur', ()=>{
+    if(REQUISICAO_SELECIONADA) return; // já travado pela requisição, não mexe
+    const placaLida = equip.value.replace(/[\s\-]/g,'').toUpperCase();
+    if(!placaLida) return;
+    const fonte = VEICULOS.length > 0 ? VEICULOS : MAPA_PLACAS;
+    const veiculoAchado = fonte.find(v => v.placa && String(v.placa).replace(/[\s\-]/g,'').toUpperCase() === placaLida);
+    if(veiculoAchado && veiculoAchado.equipamento.toUpperCase() !== placaLida){
+      equip.value = veiculoAchado.equipamento;
+      equip.dispatchEvent(new Event('input'));
+      toast(`Placa reconhecida — trocado pra ${veiculoAchado.equipamento}.`);
+    }
+  });
 
   /* Mostra a média geral do equipamento e a última leitura conhecida
      assim que o campo Equipamento é preenchido — antes mesmo de digitar
