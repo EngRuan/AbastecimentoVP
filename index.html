@@ -843,6 +843,9 @@ main{
 
 /* ---------- Tables ---------- */
 table{width:100%;border-collapse:collapse;font-size:13px;}
+.th-ordenavel{cursor:pointer;user-select:none;white-space:nowrap;}
+.th-ordenavel:hover{color:var(--navy);}
+.th-ordenavel .seta-ordem{margin-left:3px;font-size:9px;}
 thead th{
   text-align:left;
   font-size:11px;
@@ -1510,9 +1513,9 @@ body.preview-motorista #view-lancamentos::before{
         <table id="lanc-table">
           <thead>
             <tr>
-              <th>Data</th><th>Data Lanç.</th><th>NF</th><th>Requisição</th><th>Posto</th><th>Produto</th>
-              <th class="num">Qtd</th><th class="num">Preç.Unit</th><th class="num">Preç.Total</th>
-              <th>Motorista</th><th>Equip.</th><th class="num">Km/Hor</th><th class="num">Km/L</th><th></th>
+              <th data-sort="data" class="th-ordenavel">Data</th><th data-sort="dataLancamento" class="th-ordenavel">Data Lanç.</th><th data-sort="nf" class="th-ordenavel">NF</th><th data-sort="requisicao" class="th-ordenavel">Requisição</th><th data-sort="posto" class="th-ordenavel">Posto</th><th data-sort="produto" class="th-ordenavel">Produto</th>
+              <th data-sort="quantidade" class="th-ordenavel num">Qtd</th><th data-sort="precoUnit" class="th-ordenavel num">Preç.Unit</th><th data-sort="precoTotal" class="th-ordenavel num">Preç.Total</th>
+              <th data-sort="motorista" class="th-ordenavel">Motorista</th><th data-sort="equipamento" class="th-ordenavel">Equip.</th><th data-sort="kmHor" class="th-ordenavel num">Km/Hor</th><th data-sort="mediaKmL" class="th-ordenavel num">Km/L</th><th></th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -2087,6 +2090,10 @@ body.preview-motorista #view-lancamentos::before{
             <option value="todas">Todas</option>
           </select>
         </div>
+        <div class="field" style="min-width:220px;">
+          <label>Buscar</label>
+          <input type="text" id="req-busca" placeholder="Número, nome, equipamento...">
+        </div>
       </div>
       <div id="lista-requisicoes-admin"></div>
     </div>
@@ -2165,7 +2172,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.09.14-28';
+const APP_VERSION = 'v2026.09.14-31';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -3672,6 +3679,20 @@ async function cancelarRequisicaoUI(id){
   }catch(err){ console.error(err); toast('Falha ao cancelar: ' + err.message); }
 }
 
+/* Volta uma requisição CANCELADA pra "aberta" — pra quando cancelou sem
+   querer. Não é possível reabrir uma que já foi "usada" (essa já virou
+   lançamento pendente de verdade). */
+async function reabrirRequisicaoUI(id){
+  try{
+    const resp = await fetch(SYNC_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ action:'reabrirRequisicao', id, idToken: ID_TOKEN }) });
+    const json = await parseJsonResponse(resp);
+    if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao reabrir.'); return; }
+    REQUISICOES_EMITIDAS = json.requisicoesEmitidas || REQUISICOES_EMITIDAS;
+    renderListaRequisicoesAdmin();
+    toast('Requisição reaberta.');
+  }catch(err){ console.error(err); toast('Falha ao reabrir: ' + err.message); }
+}
+
 /* Requisição de terceiro (ou funcionário sem cadastro) não tem ninguém
    logando no app pra "resgatar" ela sozinha — depois que o veículo já
    abasteceu (com a via impressa) e a nota voltou, alguém de nível 3+
@@ -3712,59 +3733,62 @@ async function confirmarRequisicaoUsadaUI(id){
 function gerarPdfRequisicao(r){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({unit:'pt', format:'a4'});
-  const margin = 50;
-  let y = 50;
+  const margin = 40;
+  const largura = 515;
+  let y = 40;
 
-  doc.addImage(`data:image/png;base64,${LOGO_B64}`, 'PNG', margin, y, 120, 35);
-  doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(0,38,116);
-  doc.text('Requisição de Abastecimento', margin+135, y+22);
-  y += 68;
+  doc.addImage(`data:image/png;base64,${LOGO_B64}`, 'PNG', margin, y, 90, 26);
+  doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(0,38,116);
+  doc.text('Requisição de Abastecimento', margin+100, y+17);
+  y += 44;
 
-  doc.setDrawColor(0,38,116); doc.setLineWidth(1.2);
-  doc.rect(margin, y, 515, 50);
-  doc.setFont('helvetica','bold'); doc.setFontSize(26); doc.setTextColor(0,38,116);
-  doc.text(`Nº ${String(r.numero)}`, margin+16, y+33);
-  doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(90,90,90);
-  doc.text(`Emitida em ${r.criadoEm ? new Date(r.criadoEm).toLocaleString('pt-BR') : '—'}`, margin+340, y+30);
-  y += 78;
+  doc.setDrawColor(0,38,116); doc.setLineWidth(1);
+  doc.rect(margin, y, largura, 36);
+  doc.setFont('helvetica','bold'); doc.setFontSize(19); doc.setTextColor(0,38,116);
+  doc.text(`Nº ${String(r.numero)}`, margin+12, y+24);
+  doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(90,90,90);
+  doc.text(`Emitida em ${r.criadoEm ? new Date(r.criadoEm).toLocaleString('pt-BR') : '—'}`, margin+largura-170, y+22);
+  y += 52;
 
-  const linhaDado = (rotulo, valor) => {
-    doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(90,90,90);
-    doc.text(rotulo, margin, y);
-    doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.setTextColor(20,22,28);
-    doc.text(String(valor||'—'), margin, y+18);
-    y += 40;
-  };
-  linhaDado(r.terceiro ? 'MOTORISTA (TERCEIRO)' : 'MOTORISTA', r.motoristaNome || r.motoristaEmail);
-  if(r.terceiro){
-    linhaDado('EMPRESA', r.empresa);
-    linhaDado('PLACA', r.placa);
-  } else {
-    linhaDado('EQUIPAMENTO', r.equipamento);
-  }
-  linhaDado('PRODUTO', r.produto || 'ETANOL');
-  linhaDado('POSTO AUTORIZADO', r.posto || '—');
-  if(r.kmEsperado) linhaDado('KM/HORÍMETRO ESPERADO', r.kmEsperado);
+  // monta a lista de campos e desenha 2 por linha — mais compacto que
+  // empilhar um embaixo do outro
+  const campos = [];
+  campos.push([r.terceiro ? 'MOTORISTA (TERCEIRO)' : 'MOTORISTA', r.motoristaNome || r.motoristaEmail]);
+  campos.push([r.terceiro ? 'PLACA' : 'EQUIPAMENTO', r.terceiro ? r.placa : r.equipamento]);
+  if(r.terceiro) campos.push(['EMPRESA', r.empresa]);
+  campos.push(['PRODUTO', r.produto || 'ETANOL']);
+  campos.push(['POSTO AUTORIZADO', r.posto || '—']);
+  if(r.kmEsperado) campos.push(['KM/HORÍMETRO ESPERADO', r.kmEsperado]);
 
-  y += 6;
+  const colLargura = largura/2;
+  campos.forEach(([rotulo, valor], i)=>{
+    const x = (i % 2 === 0) ? margin : margin+colLargura;
+    doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(90,90,90);
+    doc.text(rotulo, x, y);
+    doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(20,22,28);
+    doc.text(String(valor||'—'), x, y+14);
+    if(i % 2 === 1) y += 30;
+  });
+  if(campos.length % 2 === 1) y += 30;
+
+  y += 4;
   doc.setDrawColor(200,200,200); doc.setLineDashPattern([3,3], 0);
-  doc.line(margin, y, margin+515, y);
+  doc.line(margin, y, margin+largura, y);
   doc.setLineDashPattern([], 0);
-  y += 30;
+  y += 20;
 
-  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(0,38,116);
+  doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(0,38,116);
   doc.text('Preenchimento no posto (a caneta)', margin, y);
-  y += 28;
+  y += 20;
 
-  const campoPreencher = (rotulo, largura) => {
-    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(90,90,90);
-    doc.text(rotulo, margin, y);
+  const campoPreencher = (rotulo, largCampo, x) => {
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(90,90,90);
+    doc.text(rotulo, x, y);
     doc.setDrawColor(150,150,150);
-    doc.line(margin+90, y, margin+90+largura, y);
-    y += 36;
+    doc.line(x+55, y, x+55+largCampo, y);
   };
-  campoPreencher('Litros:', 220);
-  campoPreencher('Valor total (R$):', 220);
+  campoPreencher('Litros:', 150, margin);
+  campoPreencher('Valor (R$):', 150, margin+260);
 
   doc.save(`Requisicao_${r.numero}.pdf`);
 }
@@ -3773,9 +3797,13 @@ function renderListaRequisicoesAdmin(){
   const box = document.getElementById('lista-requisicoes-admin');
   if(!box) return;
   const filtro = document.getElementById('req-filtro-status')?.value || 'aberta';
-  const lista = (filtro==='aberta' ? REQUISICOES_EMITIDAS.filter(r=>r.status==='aberta') : REQUISICOES_EMITIDAS)
+  const busca = (document.getElementById('req-busca')?.value || '').trim().toUpperCase();
+  let lista = (filtro==='aberta' ? REQUISICOES_EMITIDAS.filter(r=>r.status==='aberta') : REQUISICOES_EMITIDAS)
     .sort((a,b)=>(b.criadoEm||'').localeCompare(a.criadoEm||''));
-  if(lista.length===0){ box.innerHTML = `<p class="helper">Nenhuma requisição ${filtro==='aberta'?'aberta':''} no momento.</p>`; return; }
+  if(busca){
+    lista = lista.filter(r => [r.numero, r.motoristaNome, r.motoristaEmail, r.equipamento, r.placa, r.empresa, r.posto].join(' ').toUpperCase().includes(busca));
+  }
+  if(lista.length===0){ box.innerHTML = `<p class="helper">Nenhuma requisição encontrada.</p>`; return; }
   const NOMES_STATUS = { aberta:'Aberta', usada:'Usada', cancelada:'Cancelada' };
   box.innerHTML = lista.map(r=>{
     const ehTerceiro = r.terceiro === 'sim';
@@ -3791,6 +3819,7 @@ function renderListaRequisicoesAdmin(){
           ${r.status==='aberta' ? `<button class="btn secondary" data-imprimir-req="${escapeHtml(r.id)}">🖨️ Imprimir</button>` : ''}
           ${r.status==='aberta' ? `<button class="btn secondary" data-marcar-usada="${escapeHtml(r.id)}">✅ Marcar como usada</button>` : ''}
           ${r.status==='aberta' ? `<button class="btn ghost" data-cancelar-req="${escapeHtml(r.id)}">🗑️ Cancelar</button>` : ''}
+          ${r.status==='cancelada' ? `<button class="btn secondary" data-reabrir-req="${escapeHtml(r.id)}">↩️ Reabrir</button>` : ''}
         </div>
       </div>
       ${r.status==='aberta' ? `
@@ -3816,6 +3845,9 @@ function renderListaRequisicoesAdmin(){
   box.querySelectorAll('[data-cancelar-req]').forEach(btn=>{
     btn.addEventListener('click', ()=>cancelarRequisicaoUI(btn.dataset.cancelarReq));
   });
+  box.querySelectorAll('[data-reabrir-req]').forEach(btn=>{
+    btn.addEventListener('click', ()=>reabrirRequisicaoUI(btn.dataset.reabrirReq));
+  });
   box.querySelectorAll('[data-marcar-usada]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       const form = document.getElementById(`form-usada-${btn.dataset.marcarUsada}`);
@@ -3836,6 +3868,13 @@ function renderListaRequisicoesAdmin(){
 function initRequisicoesTab(){
   document.getElementById('btn-emitir-requisicao').addEventListener('click', emitirRequisicaoUI);
   document.getElementById('req-filtro-status').addEventListener('change', renderListaRequisicoesAdmin);
+  document.getElementById('req-busca').addEventListener('input', (e)=>{
+    // ao buscar, já muda pra "Todas" sozinho — senão uma requisição
+    // cancelada nunca aparece na busca (o filtro "Só abertas" escondia
+    // ela antes mesmo da busca rodar)
+    if(e.target.value.trim()) document.getElementById('req-filtro-status').value = 'todas';
+    renderListaRequisicoesAdmin();
+  });
   document.getElementById('btn-auto-emitir-requisicao').addEventListener('click', autoEmitirRequisicaoUI);
   document.getElementById('req-terceiro').addEventListener('change', (e)=>{
     const ehTerceiro = e.target.checked;
@@ -6331,11 +6370,40 @@ async function deleteRecord(id){
 }
 
 let FILTRO_SEM_EQUIPAMENTO = false; // toggle: mostrar só lançamentos sem equipamento preenchido
+let LANC_ORDEM = { campo: null, direcao: 'desc' }; // null = ordem padrão (compareDataDesc); clicar no cabeçalho muda isso
+
+function compararPorCampo(a, b, campo, direcao){
+  let va = a[campo], vb = b[campo];
+  // texto: compara sem diferenciar maiúscula/minúscula; número: compara valor
+  if(typeof va === 'string' || typeof vb === 'string'){
+    va = String(va ?? '').toUpperCase();
+    vb = String(vb ?? '').toUpperCase();
+    if(va === '' && vb !== '') return 1;  // vazio sempre vai pro final, nas duas direções
+    if(vb === '' && va !== '') return -1;
+    const cmp = va.localeCompare(vb, 'pt-BR');
+    return direcao === 'asc' ? cmp : -cmp;
+  }
+  const na = va == null ? null : Number(va);
+  const nb = vb == null ? null : Number(vb);
+  if(na == null && nb != null) return 1;
+  if(nb == null && na != null) return -1;
+  if(na == null && nb == null) return 0;
+  return direcao === 'asc' ? na - nb : nb - na;
+}
 
 function renderLancTable(){
   const search = (document.getElementById('lanc-search').value || '').toUpperCase();
   const tbody = document.querySelector('#lanc-table tbody');
-  let rows = [...DB].sort(compareDataDesc);
+  let rows = LANC_ORDEM.campo
+    ? [...DB].sort((a,b)=>compararPorCampo(a,b,LANC_ORDEM.campo,LANC_ORDEM.direcao))
+    : [...DB].sort(compareDataDesc);
+  document.querySelectorAll('#lanc-table .th-ordenavel').forEach(th=>{
+    const seta = th.querySelector('.seta-ordem');
+    if(seta) seta.remove();
+    if(th.dataset.sort === LANC_ORDEM.campo){
+      th.insertAdjacentHTML('beforeend', `<span class="seta-ordem">${LANC_ORDEM.direcao==='asc'?'▲':'▼'}</span>`);
+    }
+  });
   if(FILTRO_SEM_EQUIPAMENTO) rows = rows.filter(r => !r.equipamento || !String(r.equipamento).trim());
   if(search){
     rows = rows.filter(r => [r.motorista,r.equipamento,r.posto,r.produto,r.requisicao].join(' ').toUpperCase().includes(search));
@@ -6638,6 +6706,17 @@ function aplicarCamposOcr(campos, tipo){
 --------------------------------------------------------------------- */
 function initImportExport(){
   document.getElementById('lanc-search').addEventListener('input', renderLancTable);
+  document.querySelectorAll('#lanc-table .th-ordenavel').forEach(th=>{
+    th.addEventListener('click', ()=>{
+      const campo = th.dataset.sort;
+      if(LANC_ORDEM.campo === campo){
+        LANC_ORDEM.direcao = LANC_ORDEM.direcao === 'asc' ? 'desc' : 'asc';
+      } else {
+        LANC_ORDEM = { campo, direcao: 'desc' };
+      }
+      renderLancTable();
+    });
+  });
 
   document.getElementById('btn-import').addEventListener('click', ()=> document.getElementById('file-import').click());
   document.getElementById('file-import').addEventListener('change', handleImportFile);
