@@ -843,6 +843,9 @@ main{
 
 /* ---------- Tables ---------- */
 table{width:100%;border-collapse:collapse;font-size:13px;}
+.perm-cel{text-align:center;cursor:pointer;user-select:none;font-size:16px;}
+.perm-cel:hover{background:var(--navy-light);}
+.perm-grupo td{background:#f4f6fb;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:var(--gray);}
 .th-ordenavel{cursor:pointer;user-select:none;white-space:nowrap;}
 .th-ordenavel:hover{color:var(--navy);}
 .th-ordenavel .seta-ordem{margin-left:3px;font-size:9px;}
@@ -1148,6 +1151,7 @@ body.preview-motorista #view-lancamentos::before{
     <div class="nav-dropdown">
       <button data-tab="auditoria">🕵️ Auditoria</button>
       <button data-tab="sync">⚙️ Sincronização</button>
+      <button data-tab="permissoes">🔐 Permissões</button>
     </div>
   </div>
 
@@ -1980,6 +1984,24 @@ body.preview-motorista #view-lancamentos::before{
   </section>
 
   <!-- ======================= SINCRONIZAÇÃO ======================= -->
+  <section class="view" id="view-permissoes">
+    <div class="card">
+      <h2>🔐 Permissões por nível</h2>
+      <div class="table-scroll">
+        <table id="tabela-permissoes">
+          <thead>
+            <tr><th>O que a pessoa pode fazer</th><th class="num">Nível 1</th><th class="num">Nível 2</th><th class="num">Nível 3</th><th class="num">Nível 4</th><th class="num">Nível 5</th></tr>
+          </thead>
+          <tbody id="matriz-permissoes"></tbody>
+        </table>
+      </div>
+      <div class="btn-row" style="margin-top:14px;">
+        <button type="button" class="btn" id="btn-salvar-permissoes">Salvar permissões</button>
+        <button type="button" class="btn ghost" id="btn-padrao-permissoes">Restaurar padrão</button>
+      </div>
+    </div>
+  </section>
+
   <section class="view" id="view-sync">
     <div class="card">
       <h2>Conectar com Google Sheets</h2>
@@ -2020,7 +2042,7 @@ body.preview-motorista #view-lancamentos::before{
 
   <!-- ======================= APROVAÇÕES (nível 3+: admin/gestor/dono) ======================= -->
   <section class="view" id="view-aprovacoes">
-    <div class="card">
+    <div class="card" id="card-emitir-requisicao">
       <h2>🎫 Emitir requisição</h2>
       <div class="form-grid" style="margin-top:10px;">
         <div class="field wide">
@@ -2172,7 +2194,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.09.14-31';
+const APP_VERSION = 'v2026.09.14-33';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -2201,6 +2223,12 @@ let SOLICITACOES = [];       // pedidos de liberação do limite diário
 let PENDENTES = [];          // lançamentos simplificados de motorista, esperando admin conferir/confirmar
 let DIAS_BLOQUEADOS = [0];   // dias da semana (0=domingo...6=sábado) que motorista não pode lançar
 let CONFIG_SISMA = { empresa:'1', especie:'1', ponto:'300', bomba:'1', mapaProduto:{} }; // usado na exportação CSV pro SISMA
+// Permissões por nível (nível mínimo de cada capacidade). Vem do servidor
+// a cada pull; o padrão abaixo só vale até chegar a primeira resposta.
+const PERMISSOES_PADRAO = { ver_dashboard:2, ver_relatorio:3, aprovacoes_emitir:2, aprovacoes_revisar:3, lancamento_manual:3, cadastro_empresas:3, cadastro_frota_postos:3, cadastro_usuarios:3, manutencao_base:3, config_sistema:3, sincronizacao:5 };
+let PERMISSOES = { ...PERMISSOES_PADRAO };
+let CATALOGO_PERMISSOES = [];   // só o nível 5 recebe (é o que monta a tela de Permissões)
+let PERMISSOES_EDICAO = null;   // cópia de trabalho enquanto edita a matriz
 let AUDITORIA = [];          // log de auditoria — quem fez o quê e quando
 let VEICULOS = [];           // cadastro de frota — próprio × alugado
 let MAPA_PLACAS = [];         // versão enxuta (placa+equipamento) — nível <4 não recebe o VEICULOS completo, só isso
@@ -2712,6 +2740,8 @@ async function autenticarComToken(idToken, silencioso){
     PENDENTES = json.pendentes || [];
     DIAS_BLOQUEADOS = json.diasBloqueados || DIAS_BLOQUEADOS;
     CONFIG_SISMA = json.configSisma || CONFIG_SISMA;
+    PERMISSOES = json.permissoes || PERMISSOES;
+    CATALOGO_PERMISSOES = json.catalogoPermissoes || CATALOGO_PERMISSOES;
     AUDITORIA = json.auditoria || [];
     VEICULOS = json.veiculos || [];
     MAPA_PLACAS = json.mapaPlacas || [];
@@ -2738,6 +2768,8 @@ async function autenticarComToken(idToken, silencioso){
     renderListaPendentes();
     renderConfigDias();
     renderConfigSisma();
+    renderMatrizPermissoes();
+    if(typeof aplicarPermissoesNaUI==='function') aplicarPermissoesNaUI();
     renderAuditoria();
     renderListaVeiculos();
     renderListaPostos();
@@ -2793,6 +2825,62 @@ function sairDoApp(){
    Motorista (1) tem a tela enxuta própria. */
 const NOMES_PAPEL = { dono:'nível 5', gestor:'nível 4', admin:'nível 3', auxiliar:'nível 2', motorista:'nível 1' };
 const NIVEL_PAPEL = { dono:5, gestor:4, admin:3, auxiliar:2, motorista:1 };
+/* true se a pessoa logada tem a capacidade (nível mínimo configurável na
+   tela Permissões). Nível 5 sempre pode tudo. */
+function pode(capacidade){
+  if(!USUARIO_ATUAL) return false;
+  const nivel = NIVEL_PAPEL[USUARIO_ATUAL.papel] || 0;
+  if(nivel >= 5) return true;
+  const minimo = PERMISSOES[capacidade] ?? PERMISSOES_PADRAO[capacidade];
+  return typeof minimo === 'number' && nivel >= minimo;
+}
+
+/* Mostra/esconde abas e seções conforme as permissões. Roda no login e a
+   cada atualização (se o nível 5 mudou as permissões, pega na hora). */
+function aplicarPermissoesNaUI(){
+  if(!USUARIO_ATUAL) return;
+  const nivel = NIVEL_PAPEL[USUARIO_ATUAL.papel] || 0;
+  const visivelPorAba = {
+    dashboard: pode('ver_dashboard'),
+    relatorio: pode('ver_relatorio'),
+    aprovacoes: pode('aprovacoes_emitir') || pode('aprovacoes_revisar'),
+    'lancamentos-preview': pode('lancamento_manual'),
+    usuarios: pode('cadastro_usuarios'),
+    frota: pode('cadastro_frota_postos'),
+    postos: pode('cadastro_frota_postos'),
+    empresas: pode('cadastro_empresas'),
+    auditoria: pode('config_sistema'),
+    sync: pode('sincronizacao'),
+    permissoes: nivel >= 5,
+  };
+  document.querySelectorAll('button[data-tab]').forEach(btn=>{
+    const tab = btn.dataset.tab;
+    if(tab in visivelPorAba) btn.style.display = visivelPorAba[tab] ? '' : 'none';
+  });
+
+  // esconde o grupo inteiro (o título do dropdown) quando ninguém dentro
+  // dele sobrou visível — o menu de cada grupo vive colado no <body>,
+  // por isso busca pelo vínculo guardado em data-grupo-id.
+  document.querySelectorAll('.nav-group').forEach(grupo=>{
+    const dropdownDoGrupo = document.querySelector('.nav-dropdown[data-grupo-id="'+grupo.id+'"]');
+    const botoes = dropdownDoGrupo ? [...dropdownDoGrupo.querySelectorAll('button[data-tab]')] : [];
+    grupo.style.display = botoes.some(b=>b.style.display !== 'none') ? '' : 'none';
+  });
+
+  // seções dentro da aba Aprovações
+  const cardEmitir = document.getElementById('card-emitir-requisicao');
+  if(cardEmitir) cardEmitir.style.display = pode('aprovacoes_emitir') ? '' : 'none';
+  const cardPendentes = document.getElementById('card-pendentes');
+  if(cardPendentes) cardPendentes.style.display = pode('aprovacoes_revisar') ? 'block' : 'none';
+
+  // se a aba que está aberta sumiu pra essa pessoa (ex: Dashboard), leva
+  // pra uma que ela pode ver
+  const abaAberta = document.querySelector('button[data-tab].active')?.dataset.tab;
+  if(abaAberta && abaAberta in visivelPorAba && !visivelPorAba[abaAberta]){
+    ativarTab(visivelPorAba.aprovacoes ? 'aprovacoes' : 'lancamentos');
+  }
+}
+
 function aplicarPapelNaUI(){
   const pill = document.getElementById('usuario-pill');
   pill.style.display = 'inline-flex';
@@ -2800,58 +2888,21 @@ function aplicarPapelNaUI(){
   document.getElementById('btn-sair-app').addEventListener('click', sairDoApp);
   document.getElementById('btn-atualizar-tudo').style.display = 'inline-flex';
 
-  const nivel = NIVEL_PAPEL[USUARIO_ATUAL.papel] || 0;
-  const veCadastro = nivel >= 4;      // usuários, frota, postos
-  const veEmpresas = nivel >= 3;      // empresas — nível 3 também precisa (pra cadastrar terceirizada na hora de emitir requisição)
-  const veConfigAuditoria = nivel >= 4; // auditoria (config, menos sync)
-  const veSync = nivel >= 5;          // só nível 5
-  const veAprovacoes = nivel >= 3;    // aprovações + visão do motorista (testar como)
-  const veRelatorio = nivel >= 2;     // nível 2 também vê dashboard/relatório
-
-  document.querySelectorAll('button[data-tab]').forEach(btn=>{
-    const tab = btn.dataset.tab;
-    if(tab === 'usuarios' || tab === 'frota' || tab === 'postos'){
-      btn.style.display = veCadastro ? '' : 'none';
-    } else if(tab === 'empresas'){
-      btn.style.display = veEmpresas ? '' : 'none';
-    } else if(tab === 'auditoria'){
-      btn.style.display = veConfigAuditoria ? '' : 'none';
-    } else if(tab === 'sync'){
-      btn.style.display = veSync ? '' : 'none';
-    } else if(tab === 'aprovacoes' || tab === 'lancamentos-preview'){
-      btn.style.display = veAprovacoes ? '' : 'none';
-    } else if(tab === 'relatorio'){
-      btn.style.display = veRelatorio ? '' : 'none';
-    }
-  });
-
-  // esconde o grupo inteiro (o título do dropdown) quando ninguém dentro
-  // dele sobrou visível — senão fica um botão de categoria "morto" sem
-  // nada dentro pra essa pessoa. O menu de cada grupo agora vive fora
-  // dele (colado no <body>), então busca pelo vínculo guardado em
-  // data-grupo-id em vez de ser filho direto.
-  document.querySelectorAll('.nav-group').forEach(grupo=>{
-    const dropdownDoGrupo = document.querySelector('.nav-dropdown[data-grupo-id="'+grupo.id+'"]');
-    const botoes = dropdownDoGrupo ? [...dropdownDoGrupo.querySelectorAll('button[data-tab]')] : [];
-    const temAlgumVisivel = botoes.some(b=>b.style.display !== 'none');
-    grupo.style.display = temAlgumVisivel ? '' : 'none';
-  });
-
-  const cardPendentes = document.getElementById('card-pendentes');
-  if(cardPendentes) cardPendentes.style.display = veAprovacoes ? 'block' : 'none';
+  aplicarPermissoesNaUI();
 
   // motorista tem uma tela BEM enxuta: sem nav, só o formulário de
   // lançamento com o essencial (o resto vem do perfil dele automático).
   // Auxiliar (nível 2) usa o MESMO formulário restrito (foto/requisição
   // própria), mas continua vendo o menu inteiro (Dashboard/Relatório).
-  if(USUARIO_ATUAL.papel === 'motorista'){
+  const motoristaComMenu = USUARIO_ATUAL.papel === 'motorista' && (pode('ver_dashboard') || pode('ver_relatorio') || pode('aprovacoes_emitir'));
+  if(USUARIO_ATUAL.papel === 'motorista' && !motoristaComMenu){
     document.body.classList.add('motorista-simples');
     document.body.classList.add('form-simplificado');
     document.getElementById('form-title').textContent = 'Novo abastecimento';
     prepararCamposParaMotorista();
     renderSelecaoRequisicaoMotorista();
     ativarTab('lancamentos');
-  } else if(USUARIO_ATUAL.papel === 'auxiliar'){
+  } else if(USUARIO_ATUAL.papel === 'auxiliar' || motoristaComMenu){
     document.body.classList.remove('motorista-simples');
     document.body.classList.add('form-simplificado');
     document.getElementById('form-title').textContent = 'Novo abastecimento';
@@ -3587,7 +3638,11 @@ function populateReqSelects(){
   });
 }
 
-async function autoEmitirRequisicaoUI(){
+function autoEmitirRequisicaoUI(){
+  return comTravaDeClique('auto-emitir-requisicao', document.getElementById('btn-auto-emitir-requisicao'), 'Emitindo...', autoEmitirRequisicaoUIInterno);
+}
+
+async function autoEmitirRequisicaoUIInterno(){
   const equipamento = document.getElementById('req-auto-equipamento').value;
   const produto = document.getElementById('req-auto-produto').value;
   const postoSel = document.getElementById('req-auto-posto').value;
@@ -3608,7 +3663,28 @@ async function autoEmitirRequisicaoUI(){
   }catch(err){ console.error(err); toast('Falha ao emitir: ' + err.message); }
 }
 
-async function emitirRequisicaoUI(){
+/* Trava contra clique duplo: enquanto uma ação está em andamento, o botão
+   fica desabilitado (mostrando o texto de "aguarde") e qualquer novo
+   clique na mesma ação é ignorado. Sem isso, apertar de novo numa tela
+   lenta mandava a mesma requisição duas vezes. */
+const TRAVAS_CLIQUE = new Set();
+async function comTravaDeClique(chave, botao, textoEnquanto, fn){
+  if(TRAVAS_CLIQUE.has(chave)) return;
+  TRAVAS_CLIQUE.add(chave);
+  const textoOriginal = botao ? botao.textContent : '';
+  if(botao){ botao.disabled = true; botao.textContent = textoEnquanto; }
+  try{ return await fn(); }
+  finally{
+    TRAVAS_CLIQUE.delete(chave);
+    if(botao){ botao.disabled = false; botao.textContent = textoOriginal; }
+  }
+}
+
+function emitirRequisicaoUI(){
+  return comTravaDeClique('emitir-requisicao', document.getElementById('btn-emitir-requisicao'), 'Emitindo...', emitirRequisicaoUIInterno);
+}
+
+async function emitirRequisicaoUIInterno(){
   const ehTerceiro = document.getElementById('req-terceiro').checked;
   const produto = document.getElementById('req-produto').value;
   const postoSel = document.getElementById('req-posto').value;
@@ -3682,7 +3758,12 @@ async function cancelarRequisicaoUI(id){
 /* Volta uma requisição CANCELADA pra "aberta" — pra quando cancelou sem
    querer. Não é possível reabrir uma que já foi "usada" (essa já virou
    lançamento pendente de verdade). */
-async function reabrirRequisicaoUI(id){
+function reabrirRequisicaoUI(id){
+  const btn = document.querySelector(`[data-reabrir-req="${CSS.escape(id)}"]`);
+  return comTravaDeClique('reabrir-'+id, btn, 'Reabrindo...', ()=>reabrirRequisicaoUIInterno(id));
+}
+
+async function reabrirRequisicaoUIInterno(id){
   try{
     const resp = await fetch(SYNC_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ action:'reabrirRequisicao', id, idToken: ID_TOKEN }) });
     const json = await parseJsonResponse(resp);
@@ -3699,7 +3780,12 @@ async function reabrirRequisicaoUI(id){
    registra aqui: preenche litros e valor no formulário que abre ali
    mesmo (embaixo do botão), já cria o lançamento pendente de verdade
    (cai direto na segunda aba de aprovação) e fecha a requisição. */
-async function confirmarRequisicaoUsadaUI(id){
+function confirmarRequisicaoUsadaUI(id){
+  const btn = document.querySelector(`[data-confirmar-usada="${CSS.escape(id)}"]`);
+  return comTravaDeClique('usada-'+id, btn, 'Enviando...', ()=>confirmarRequisicaoUsadaUIInterno(id));
+}
+
+async function confirmarRequisicaoUsadaUIInterno(id){
   const litrosEl = document.getElementById(`usada-litros-${id}`);
   const valorEl = document.getElementById(`usada-valor-${id}`);
   const kmEl = document.getElementById(`usada-km-${id}`);
@@ -4239,6 +4325,60 @@ async function salvarConfigDiasUI(){
 /* Configuração da exportação pro SISMA — muda de obra pra obra, fica
    salva no servidor (Propriedades do Script), não precisa mexer em
    código quando mobilizar em obra nova. */
+/* ---------------------------------------------------------------------
+   PERMISSÕES POR NÍVEL — tela só do nível 5. Cada linha é uma capacidade;
+   clicar numa coluna define o NÍVEL MÍNIMO daquela capacidade (esse nível
+   e todos acima ficam com ✅). O nível 5 sempre pode tudo.
+--------------------------------------------------------------------- */
+function renderMatrizPermissoes(){
+  const corpo = document.getElementById('matriz-permissoes');
+  if(!corpo) return;
+  if(!CATALOGO_PERMISSOES.length){ corpo.innerHTML = ''; return; }
+  if(!PERMISSOES_EDICAO) PERMISSOES_EDICAO = { ...PERMISSOES };
+  let grupoAtual = null;
+  corpo.innerHTML = CATALOGO_PERMISSOES.map(c=>{
+    const minimo = PERMISSOES_EDICAO[c.id] ?? c.padrao;
+    const piso = c.minimo || 1;
+    let html = '';
+    if(c.grupo !== grupoAtual){
+      grupoAtual = c.grupo;
+      html += `<tr class="perm-grupo"><td colspan="6">${escapeHtml(c.grupo)}</td></tr>`;
+    }
+    html += `<tr><td>${escapeHtml(c.rotulo)}</td>` + [1,2,3,4,5].map(n=>{
+      if(n < piso) return `<td class="perm-cel" style="cursor:not-allowed;color:#c8ccd6;" title="Não faz sentido abaixo do nível ${piso}">—</td>`;
+      return `<td class="perm-cel" data-perm="${escapeHtml(c.id)}" data-nivel="${n}">${n >= minimo ? '✅' : '⬜'}</td>`;
+    }).join('') + '</tr>';
+    return html;
+  }).join('');
+  corpo.querySelectorAll('[data-perm]').forEach(td=>{
+    td.addEventListener('click', ()=>{
+      PERMISSOES_EDICAO[td.dataset.perm] = Number(td.dataset.nivel);
+      renderMatrizPermissoes();
+    });
+  });
+}
+
+async function salvarPermissoesUI(){
+  if(!PERMISSOES_EDICAO) return;
+  try{
+    const resp = await fetch(SYNC_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ action:'salvarPermissoes', dados: PERMISSOES_EDICAO, idToken: ID_TOKEN }) });
+    const json = await parseJsonResponse(resp);
+    if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao salvar.'); return; }
+    PERMISSOES = json.permissoes || PERMISSOES;
+    PERMISSOES_EDICAO = { ...PERMISSOES };
+    renderMatrizPermissoes();
+    aplicarPermissoesNaUI();
+    toast('Permissões salvas. Quem já está logado pega a mudança na próxima atualização.');
+  }catch(err){ console.error(err); toast('Falha ao salvar: ' + err.message); }
+}
+
+function restaurarPadraoPermissoes(){
+  PERMISSOES_EDICAO = {};
+  CATALOGO_PERMISSOES.forEach(c=>{ PERMISSOES_EDICAO[c.id] = c.padrao; });
+  renderMatrizPermissoes();
+  toast('Padrão carregado na tela — clica em "Salvar permissões" pra valer.');
+}
+
 function renderConfigSisma(){
   const elEmpresa = document.getElementById('sisma-empresa');
   if(!elEmpresa) return;
@@ -4272,6 +4412,8 @@ async function salvarConfigSismaUI(){
     const json = await parseJsonResponse(resp);
     if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao salvar.'); return; }
     CONFIG_SISMA = json.configSisma || CONFIG_SISMA;
+    PERMISSOES = json.permissoes || PERMISSOES;
+    CATALOGO_PERMISSOES = json.catalogoPermissoes || CATALOGO_PERMISSOES;
     toast('Configuração SISMA salva.');
   }catch(err){ console.error(err); toast('Falha ao salvar: ' + err.message); }
 }
@@ -4361,6 +4503,8 @@ function initUsuariosTab(){
   document.getElementById('btn-cancelar-usuario').addEventListener('click', resetFormUsuario);
   document.getElementById('btn-salvar-dias-bloqueados').addEventListener('click', salvarConfigDiasUI);
   document.getElementById('btn-salvar-config-sisma').addEventListener('click', salvarConfigSismaUI);
+  document.getElementById('btn-salvar-permissoes').addEventListener('click', salvarPermissoesUI);
+  document.getElementById('btn-padrao-permissoes').addEventListener('click', restaurarPadraoPermissoes);
   const buscaAuditoria = document.getElementById('auditoria-busca');
   if(buscaAuditoria) buscaAuditoria.addEventListener('input', ()=> renderAuditoria(buscaAuditoria.value));
 }
@@ -4783,6 +4927,8 @@ async function pullFromSheetsSilencioso(){
     PENDENTES = json.pendentes || [];
     DIAS_BLOQUEADOS = json.diasBloqueados || DIAS_BLOQUEADOS;
     CONFIG_SISMA = json.configSisma || CONFIG_SISMA;
+    PERMISSOES = json.permissoes || PERMISSOES;
+    CATALOGO_PERMISSOES = json.catalogoPermissoes || CATALOGO_PERMISSOES;
     AUDITORIA = json.auditoria || AUDITORIA;
     VEICULOS = json.veiculos || VEICULOS;
     MAPA_PLACAS = json.mapaPlacas || MAPA_PLACAS;
@@ -4802,6 +4948,8 @@ async function pullFromSheetsSilencioso(){
     renderListaPendentes();
     renderConfigDias();
     renderConfigSisma();
+    renderMatrizPermissoes();
+    if(typeof aplicarPermissoesNaUI==='function') aplicarPermissoesNaUI();
     renderAuditoria();
     renderListaVeiculos();
     renderListaPostos();
@@ -5006,6 +5154,7 @@ function ativarTab(nomeTab){
   document.querySelectorAll('main .view').forEach(v=>v.classList.remove('active'));
   const view = document.getElementById('view-'+nomeReal);
   if(view) view.classList.add('active');
+  if(nomeReal === 'permissoes'){ PERMISSOES_EDICAO = { ...PERMISSOES }; renderMatrizPermissoes(); }
 
   // pré-visualização (admin testando como se fosse motorista) — só entra
   // nesse modo se realmente NÃO for um motorista de verdade logado (esse
@@ -7400,6 +7549,8 @@ async function pullFromSheets(){
     PENDENTES = json.pendentes || [];
     DIAS_BLOQUEADOS = json.diasBloqueados || DIAS_BLOQUEADOS;
     CONFIG_SISMA = json.configSisma || CONFIG_SISMA;
+    PERMISSOES = json.permissoes || PERMISSOES;
+    CATALOGO_PERMISSOES = json.catalogoPermissoes || CATALOGO_PERMISSOES;
     AUDITORIA = json.auditoria || AUDITORIA;
     VEICULOS = json.veiculos || VEICULOS;
     MAPA_PLACAS = json.mapaPlacas || MAPA_PLACAS;
@@ -7419,6 +7570,8 @@ async function pullFromSheets(){
     renderListaPendentes();
     renderConfigDias();
     renderConfigSisma();
+    renderMatrizPermissoes();
+    if(typeof aplicarPermissoesNaUI==='function') aplicarPermissoesNaUI();
     renderAuditoria();
     renderListaVeiculos();
     renderListaPostos();
