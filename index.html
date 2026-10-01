@@ -2194,7 +2194,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.09.14-33';
+const APP_VERSION = 'v2026.09.14-34';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -5614,6 +5614,22 @@ function renderWorstTable(rows){
     </tr>`).join('') || `<tr><td colspan="6" class="empty-state">Nenhuma queda relevante encontrada nos filtros atuais.</td></tr>`;
 }
 
+/* Coluna "Tipo" da tabela por equipamento: se o veículo estiver
+   cadastrado como terceirizado/alugado, usa o cadastro (empresa vinculada
+   de verdade); senão, se os lançamentos daquele "equipamento" tiverem
+   empresa diferente de TRIPOLONI (caso de requisição pra terceiro sem
+   veículo cadastrado — aí o "equipamento" é a placa), mostra o nome da
+   empresa em vez de inventar "Próprio". */
+function tipoOuEmpresaEquip(veiculoInfo, registros){
+  if(veiculoInfo?.tipo === 'terceirizado') return veiculoInfo.empresaVinculada || 'Terceirizado';
+  if(veiculoInfo?.tipo === 'alugado') return 'Alugado';
+  if(!veiculoInfo){
+    const empresas = [...new Set((registros||[]).map(r=>r.empresa).filter(e=>e && e.toUpperCase()!=='TRIPOLONI'))];
+    if(empresas.length) return empresas.join(', ');
+  }
+  return 'Próprio';
+}
+
 function renderKPIs(rows){
   const rowsCombustivel = rows.filter(r=>PRODUTOS_COMBUSTIVEL.has(r.produto) && r.unidade==='LT');
   const totalLitros = rowsCombustivel.reduce((s,r)=>s+(r.quantidade||0),0);
@@ -7062,7 +7078,7 @@ function renderReportPreview(){
     const aluguelEquip = custoAluguelEquip(k, diasPeriodo);
     return {
       equip:k,
-      tipo: veiculoInfo?.tipo === 'alugado' ? 'Alugado' : 'Próprio',
+      tipo: tipoOuEmpresaEquip(veiculoInfo, v),
       litros: v.filter(r=>PRODUTOS_COMBUSTIVEL.has(r.produto)).reduce((s,r)=>s+(r.quantidade||0),0),
       gasto: gastoEquip,
       aluguel: aluguelEquip,
@@ -7286,7 +7302,7 @@ function gerarPdf(){
     const aluguelEquip = custoAluguelEquip(k, diasPeriodo);
     return [
       k,
-      veiculoInfo?.tipo === 'alugado' ? 'Alugado' : 'Próprio',
+      tipoOuEmpresaEquip(veiculoInfo, v),
       fmtNum(v.filter(r=>PRODUTOS_COMBUSTIVEL.has(r.produto)).reduce((s,r)=>s+(r.quantidade||0),0),0),
       fmtNum(kmEquip, 0),
       fmtMoney(gastoEquip),
