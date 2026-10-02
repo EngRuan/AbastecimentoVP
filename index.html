@@ -1625,8 +1625,9 @@ body.preview-motorista #view-lancamentos::before{
       <form id="form-usuario">
         <div class="form-grid">
           <div class="field wide">
-            <label>Email (Google) — opcional por enquanto</label>
-            <input type="email" id="u-email" placeholder="Deixa em branco se a pessoa ainda não tem login">
+            <label>Email — opcional por enquanto</label>
+            <input type="text" id="u-email" placeholder="Deixa em branco se ainda não tem login nenhum">
+            <small style="color:var(--gray);">Pra login com Google, usa o email Google de verdade. Pra login só por senha (sem Google), pode ser qualquer email — só precisa ser único.</small>
           </div>
           <div class="field">
             <label>Nome*</label>
@@ -2194,7 +2195,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.09.14-34';
+const APP_VERSION = 'v2026.09.14-35';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -2550,6 +2551,11 @@ async function loginComSenhaUI(){
    (ver card "🔑 Senha de acesso" no cadastro de usuário). */
 async function definirSenhaUI(){
   if(!editandoUsuarioEmail){ toast('Abre um usuário pra editar antes de definir a senha dele.'); return; }
+  const emailDigitado = document.getElementById('u-email').value.trim().toLowerCase();
+  if(emailDigitado !== editandoUsuarioEmail.toLowerCase()){
+    toast('Esse email ainda não foi salvo — clica em "Salvar alterações" primeiro, depois volta aqui pra definir a senha.');
+    return;
+  }
   const senha = document.getElementById('u-nova-senha').value;
   if(!senha || senha.length < 4){ toast('A senha precisa ter pelo menos 4 caracteres.'); return; }
   try{
@@ -4463,6 +4469,12 @@ function exportarSisma(){
 
 function initUsuariosTab(){
   document.getElementById('btn-definir-senha').addEventListener('click', definirSenhaUI);
+  // mostra o card de senha assim que a pessoa digitar QUALQUER email
+  // (não precisa ser Google de verdade) — antes só aparecia se já
+  // tivesse email salvo, travando quem queria login só por senha
+  document.getElementById('u-email').addEventListener('input', (e)=>{
+    document.getElementById('card-senha-acesso').style.display = ehSemLogin(e.target.value.trim()) ? 'none' : 'block';
+  });
   document.getElementById('form-usuario').addEventListener('submit', async e=>{
     e.preventDefault();
     const dados = {
@@ -4489,11 +4501,18 @@ function initUsuariosTab(){
       if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao salvar usuário.'); return; }
       USUARIOS = json.usuarios || USUARIOS;
       toast(editandoUsuarioEmail ? 'Usuário atualizado.' : 'Usuário adicionado.');
-      resetFormUsuario();
       renderListaUsuarios();
       renderCruzamentoMotoristas();
       populateCondutorSelect();
       populateReqSelects();
+      // se ficou com email de verdade, já reabre a edição dele — assim
+      // o card de senha já funciona na hora, sem precisar sair e
+      // clicar em editar de novo
+      if(dados.email && !ehSemLogin(dados.email)){
+        editarUsuario(dados.email);
+      } else {
+        resetFormUsuario();
+      }
     }catch(err){
       console.error(err);
       toast('Falha ao salvar: ' + err.message);
