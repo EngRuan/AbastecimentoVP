@@ -1486,8 +1486,93 @@ body.preview-motorista #view-lancamentos::before{
         <button type="button" class="btn ghost" id="btn-ver-sem-equipamento" style="margin-left:8px;">Ver esses</button>
       </div>
       <div class="filters" style="margin-bottom:12px;">
+        <div class="field">
+          <label>De</label>
+          <input type="date" id="bl-data-ini">
+        </div>
+        <div class="field">
+          <label>Até</label>
+          <input type="date" id="bl-data-fim">
+        </div>
+        <div class="field">
+          <label>Equipamento</label>
+          <div class="multiselect" id="bl-equip" data-ms="equipamento">
+            <button type="button" class="ms-toggle">Todos</button>
+            <div class="ms-panel">
+              <input type="text" class="ms-search" placeholder="Buscar equipamento...">
+              <div class="ms-actions">
+                <button type="button" data-act="all">Selecionar todos</button>
+                <button type="button" data-act="none">Limpar</button>
+              </div>
+              <div class="ms-options"></div>
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <label>Motorista</label>
+          <div class="multiselect" id="bl-motorista" data-ms="motorista">
+            <button type="button" class="ms-toggle">Todos</button>
+            <div class="ms-panel">
+              <input type="text" class="ms-search" placeholder="Buscar motorista...">
+              <div class="ms-actions">
+                <button type="button" data-act="all">Selecionar todos</button>
+                <button type="button" data-act="none">Limpar</button>
+              </div>
+              <div class="ms-options"></div>
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <label>Produto</label>
+          <div class="multiselect" id="bl-produto" data-ms="produto">
+            <button type="button" class="ms-toggle">Todos</button>
+            <div class="ms-panel">
+              <input type="text" class="ms-search" placeholder="Buscar produto...">
+              <div class="ms-actions">
+                <button type="button" data-act="all">Selecionar todos</button>
+                <button type="button" data-act="none">Limpar</button>
+              </div>
+              <div class="ms-options"></div>
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <label>Posto</label>
+          <div class="multiselect" id="bl-posto" data-ms="posto">
+            <button type="button" class="ms-toggle">Todos</button>
+            <div class="ms-panel">
+              <input type="text" class="ms-search" placeholder="Buscar posto...">
+              <div class="ms-actions">
+                <button type="button" data-act="all">Selecionar todos</button>
+                <button type="button" data-act="none">Limpar</button>
+              </div>
+              <div class="ms-options"></div>
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <label>Empresa</label>
+          <div class="multiselect" id="bl-empresa" data-ms="empresa">
+            <button type="button" class="ms-toggle">Todas</button>
+            <div class="ms-panel">
+              <input type="text" class="ms-search" placeholder="Buscar empresa...">
+              <div class="ms-actions">
+                <button type="button" data-act="all">Selecionar todos</button>
+                <button type="button" data-act="none">Limpar</button>
+              </div>
+              <div class="ms-options"></div>
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <label>Nota Fiscal</label>
+          <input type="text" id="bl-nf" placeholder="Buscar NF...">
+        </div>
+        <div class="field">
+          <button class="btn ghost" id="btn-clear-filters-bl" type="button">Limpar filtros</button>
+        </div>
         <div class="field" style="min-width:220px;">
-          <label>Buscar</label>
+          <label>Buscar (texto livre)</label>
           <input type="text" id="lanc-search" placeholder="Motorista, equipamento, posto...">
         </div>
         <div id="admin-tools-row" style="display:contents;">
@@ -2115,7 +2200,15 @@ body.preview-motorista #view-lancamentos::before{
         </div>
         <div class="field" style="min-width:220px;">
           <label>Buscar</label>
-          <input type="text" id="req-busca" placeholder="Número, nome, equipamento...">
+          <input type="text" id="req-busca" placeholder="Número, nome, equipamento, data...">
+        </div>
+        <div class="field">
+          <label>Emitida de</label>
+          <input type="date" id="req-data-ini">
+        </div>
+        <div class="field">
+          <label>até</label>
+          <input type="date" id="req-data-fim">
         </div>
       </div>
       <div id="lista-requisicoes-admin"></div>
@@ -2195,7 +2288,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.09.14-35';
+const APP_VERSION = 'v2026.09.14-37';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -3890,22 +3983,30 @@ function renderListaRequisicoesAdmin(){
   if(!box) return;
   const filtro = document.getElementById('req-filtro-status')?.value || 'aberta';
   const busca = (document.getElementById('req-busca')?.value || '').trim().toUpperCase();
+  const dataIni = document.getElementById('req-data-ini')?.value || '';
+  const dataFim = document.getElementById('req-data-fim')?.value || '';
   let lista = (filtro==='aberta' ? REQUISICOES_EMITIDAS.filter(r=>r.status==='aberta') : REQUISICOES_EMITIDAS)
     .sort((a,b)=>(b.criadoEm||'').localeCompare(a.criadoEm||''));
+  if(dataIni) lista = lista.filter(r => r.criadoEm && r.criadoEm.slice(0,10) >= dataIni);
+  if(dataFim) lista = lista.filter(r => r.criadoEm && r.criadoEm.slice(0,10) <= dataFim);
   if(busca){
-    lista = lista.filter(r => [r.numero, r.motoristaNome, r.motoristaEmail, r.equipamento, r.placa, r.empresa, r.posto].join(' ').toUpperCase().includes(busca));
+    lista = lista.filter(r => {
+      const dataFmt = r.criadoEm ? new Date(r.criadoEm).toLocaleDateString('pt-BR') : '';
+      return [r.numero, r.motoristaNome, r.motoristaEmail, r.equipamento, r.placa, r.empresa, r.posto, dataFmt].join(' ').toUpperCase().includes(busca);
+    });
   }
   if(lista.length===0){ box.innerHTML = `<p class="helper">Nenhuma requisição encontrada.</p>`; return; }
   const NOMES_STATUS = { aberta:'Aberta', usada:'Usada', cancelada:'Cancelada' };
   box.innerHTML = lista.map(r=>{
     const ehTerceiro = r.terceiro === 'sim';
     const identificador = ehTerceiro ? `${escapeHtml(r.placa)} · ${escapeHtml(r.empresa)} 🏗️terceiro` : escapeHtml(r.equipamento);
+    const dataEmitida = r.criadoEm ? new Date(r.criadoEm).toLocaleDateString('pt-BR') : '—';
     return `
     <div class="aprov-item" data-id="${escapeHtml(r.id)}" style="flex-direction:column;align-items:stretch;">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
         <div class="info">
           <b>Nº ${escapeHtml(String(r.numero))}</b> — ${escapeHtml(r.motoristaNome||r.motoristaEmail)} · ${identificador}${r.posto?' · '+escapeHtml(r.posto):''}
-          <br><span style="color:var(--gray);">${NOMES_STATUS[r.status]||r.status}${r.usadaEm?' em '+new Date(r.usadaEm).toLocaleString('pt-BR'):''}</span>
+          <br><span style="color:var(--gray);">📅 ${dataEmitida} · ${NOMES_STATUS[r.status]||r.status}${r.usadaEm?' em '+new Date(r.usadaEm).toLocaleString('pt-BR'):''}</span>
         </div>
         <div class="btn-row">
           ${r.status==='aberta' ? `<button class="btn secondary" data-imprimir-req="${escapeHtml(r.id)}">🖨️ Imprimir</button>` : ''}
@@ -3966,6 +4067,14 @@ function initRequisicoesTab(){
     // ela antes mesmo da busca rodar)
     if(e.target.value.trim()) document.getElementById('req-filtro-status').value = 'todas';
     renderListaRequisicoesAdmin();
+  });
+  ['req-data-ini','req-data-fim'].forEach(id=>{
+    document.getElementById(id).addEventListener('change', ()=>{
+      // igual a busca: filtrar por período só faz sentido olhando todas,
+      // não só as abertas de hoje
+      document.getElementById('req-filtro-status').value = 'todas';
+      renderListaRequisicoesAdmin();
+    });
   });
   document.getElementById('btn-auto-emitir-requisicao').addEventListener('click', autoEmitirRequisicaoUI);
   document.getElementById('req-terceiro').addEventListener('change', (e)=>{
@@ -5299,6 +5408,7 @@ function populateFilterSelects(){
 
   refreshFilterOptions('f');
   refreshFilterOptions('r');
+  refreshFilterOptions('bl');
   updateMultiSelectToggleLabels();
 }
 function fillSelect(id, values){
@@ -5423,10 +5533,13 @@ function initMultiSelects(){
     const btnNone = wrapper.querySelector('[data-act="none"]');
 
     function onChangeCallback(){
-      // dashboard (prefixo f-) re-renderiza o painel; relatório (prefixo r-) atualiza a prévia
-      refreshFilterOptions(id.startsWith('f-') ? 'f' : 'r');
-      if(id.startsWith('f-')) renderDashboard();
-      else if(id.startsWith('r-')) renderReportPreview();
+      // dashboard (prefixo f-) re-renderiza o painel; relatório (prefixo r-) atualiza a prévia;
+      // base de lançamentos (prefixo bl-) re-renderiza a tabela
+      const prefixo = id.startsWith('f-') ? 'f' : (id.startsWith('bl-') ? 'bl' : 'r');
+      refreshFilterOptions(prefixo);
+      if(prefixo === 'f') renderDashboard();
+      else if(prefixo === 'r') renderReportPreview();
+      else if(prefixo === 'bl') renderLancTable();
     }
 
     function renderOptions(){
@@ -6575,12 +6688,39 @@ function compararPorCampo(a, b, campo, direcao){
   return direcao === 'asc' ? na - nb : nb - na;
 }
 
+/* Painel de filtros (De/Até, Equipamento, Motorista, Produto, Posto,
+   Empresa, Nota Fiscal) da Base de lançamentos — mesmo motor de
+   applyFilters/baseParaCascata usado no Dashboard (prefixo 'f') e no
+   Relatório (prefixo 'r'), aqui com prefixo 'bl'. */
+function initLancFilters(){
+  ['bl-data-ini','bl-data-fim'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.addEventListener('change', ()=>{ refreshFilterOptions('bl'); renderLancTable(); });
+  });
+  const nfEl = document.getElementById('bl-nf');
+  if(nfEl) nfEl.addEventListener('input', ()=>{ refreshFilterOptions('bl'); renderLancTable(); });
+  const btnClear = document.getElementById('btn-clear-filters-bl');
+  if(btnClear) btnClear.addEventListener('click', ()=>{
+    ['bl-data-ini','bl-data-fim','bl-nf'].forEach(id=>{
+      const el = document.getElementById(id);
+      if(el) el.value = '';
+    });
+    ['bl-equip','bl-motorista','bl-produto','bl-posto','bl-empresa'].forEach(id=>{
+      if(MS_STATE[id]) MS_STATE[id].clear();
+    });
+    updateMultiSelectToggleLabels();
+    refreshFilterOptions('bl');
+    renderLancTable();
+  });
+}
+
 function renderLancTable(){
   const search = (document.getElementById('lanc-search').value || '').toUpperCase();
   const tbody = document.querySelector('#lanc-table tbody');
-  let rows = LANC_ORDEM.campo
-    ? [...DB].sort((a,b)=>compararPorCampo(a,b,LANC_ORDEM.campo,LANC_ORDEM.direcao))
-    : [...DB].sort(compareDataDesc);
+  let rows = applyFilters('bl');
+  rows = LANC_ORDEM.campo
+    ? rows.sort((a,b)=>compararPorCampo(a,b,LANC_ORDEM.campo,LANC_ORDEM.direcao))
+    : rows.sort(compareDataDesc);
   document.querySelectorAll('#lanc-table .th-ordenavel').forEach(th=>{
     const seta = th.querySelector('.seta-ordem');
     if(seta) seta.remove();
@@ -7658,6 +7798,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   try{
     initTabs();
     initDashboardControls();
+    initLancFilters();
     initFormLancamento();
     initPerfis();
     initAutocompletes();
