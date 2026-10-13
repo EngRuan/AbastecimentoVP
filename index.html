@@ -2326,7 +2326,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.13-40';
+const APP_VERSION = 'v2026.10.13-41';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -4987,7 +4987,7 @@ function renderListaPendentes(){
     return `
       <div class="aprov-item" data-id="${escapeHtml(p.id)}" style="flex-direction:column;align-items:stretch;gap:10px;">
         ${infoBase}
-        <p class="helper" style="margin:0;">📋 Requisição <b>${escapeHtml(String(p.requisicao))}</b> gerada — falta só a Nota Fiscal.${np.arquivo ? ` <span style="color:var(--ok,#1a8f3c);font-weight:700;">📄 Preenchido pela nota PDF (${escapeHtml(np.arquivo)}) — confere e confirma.</span>` : ''}</p>
+        <p class="helper" style="margin:0;">📋 Requisição <b>${escapeHtml(String(p.requisicao))}</b> gerada — falta só a Nota Fiscal.${np.arquivo ? ` <span style="color:var(--ok,#1a8f3c);font-weight:700;">📄 Preenchido pela nota PDF (${escapeHtml(np.arquivo)})${np.docPosto ? ' · cupom do posto nº '+escapeHtml(np.docPosto)+' (não é a NF do fechamento)' : ''} — confere e confirma.</span>` : ''}</p>
         <details ${np.arquivo ? 'open' : ''}>
           <summary style="cursor:pointer;font-size:12px;color:var(--gray);font-weight:600;">✏️ Editar dados antes de confirmar</summary>
           <div class="form-grid" style="margin-top:10px;">
@@ -5016,7 +5016,7 @@ function renderListaPendentes(){
         <div class="btn-row" style="align-items:flex-end;">
           <div class="field" style="margin:0;">
             <label style="font-size:11px;">Nota Fiscal</label>
-            <input type="text" class="pendente-nf" data-nf-de="${escapeHtml(p.id)}" placeholder="Nº NF" value="${escapeHtml(np.nf || p.nfSugerido || '')}">
+            <input type="text" class="pendente-nf" data-nf-de="${escapeHtml(p.id)}" placeholder="Nº NF" value="${escapeHtml(p.nfSugerido || '')}">
           </div>
           <button class="btn secondary" data-confirmar="${escapeHtml(p.id)}">✅ Confirmar e enviar</button>
           <button class="btn ghost" data-rejeitar="${escapeHtml(p.id)}">🗑️ Rejeitar</button>
@@ -5223,7 +5223,7 @@ function renderNotasPdf(){
   if(!NOTAS_PDF_LIDAS.length){ box.innerHTML = ''; return; }
   box.innerHTML = NOTAS_PDF_LIDAS.map((n, i)=>{
     const d = n.dados, c = n.cruz;
-    const resumo = `<b>${escapeHtml(d.posto || 'Nota')}</b> · Doc/NF <b>${escapeHtml(d.nf || '—')}</b> · ${d.data ? fmtDate(d.data) : '—'}<br>
+    const resumo = `<b>${escapeHtml(d.posto || 'Nota')}</b> · Cupom/Doc do posto <b>${escapeHtml(d.nf || '—')}</b> · ${d.data ? fmtDate(d.data) : '—'}<br>
       <span style="color:var(--gray);">${escapeHtml(d.produto || '—')} · ${d.quantidade != null ? fmtNum(d.quantidade,3) + ' L' : '—'} · ${d.precoUnit != null ? fmtMoney(d.precoUnit) + '/L' : ''} · total <b>${d.precoTotal != null ? fmtMoney(d.precoTotal) : '—'}</b> · placa na nota: ${escapeHtml(d.placa || '—')} · km: ${d.km != null ? fmtNum(d.km,0) : '—'} · requisição: <b>${escapeHtml(c.numReq || '—')}</b>${c.origem ? ' ('+c.origem+')' : ''}</span>`;
     const avisos = c.avisos.map(a=>`<div style="color:var(--bad);font-size:12.5px;margin-top:4px;">⚠️ ${escapeHtml(a)}</div>`).join('');
     let acao = '';
@@ -5288,7 +5288,7 @@ async function aplicarNotaPdf(idx){
     if(!p || !p.requisicao) return; // gerarRequisicaoUI já avisou o erro
   }
   NOTA_PREENCHIDA[p.id] = {
-    arquivo: n.arquivo, nf: d.nf || '',
+    arquivo: n.arquivo, docPosto: d.nf || '',
     quantidade: d.quantidade, precoUnit: d.precoUnit, precoTotal: d.precoTotal,
     kmHor: (p.kmHor == null && d.km != null) ? d.km : null,
   };
@@ -5312,7 +5312,7 @@ async function criarPendenteDaNota(idx){
     REQUISICOES_EMITIDAS = json.requisicoesEmitidas || REQUISICOES_EMITIDAS;
     PENDENTES = json.pendentes || PENDENTES;
     const novo = PENDENTES.find(x=>normReqNum(x.requisicao) === normReqNum(req.numero));
-    if(novo) NOTA_PREENCHIDA[novo.id] = { arquivo: n.arquivo, nf: d.nf || '', quantidade: d.quantidade, precoUnit: d.precoUnit, precoTotal: d.precoTotal, kmHor: d.km };
+    if(novo) NOTA_PREENCHIDA[novo.id] = { arquivo: n.arquivo, docPosto: d.nf || '', quantidade: d.quantidade, precoUnit: d.precoUnit, precoTotal: d.precoTotal, kmHor: d.km };
     n.aplicada = true;
     renderListaRequisicoesAdmin();
     renderNotasPdf();
@@ -8370,6 +8370,10 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   }
 });
 
+
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
+}
 
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
