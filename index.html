@@ -2332,7 +2332,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.13-45';
+const APP_VERSION = 'v2026.10.13-46';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -3245,7 +3245,7 @@ function renderSelecaoRequisicaoMotorista(){
         // mas se mudar o servidor registra na Auditoria (ver
         // "alterou_km_requisicao")
         const kmEl = document.getElementById('l-kmhor');
-        if(kmEl && req.kmEsperado){ kmEl.value = req.kmEsperado; kmEl.dispatchEvent(new Event('input')); }
+        if(kmEl){ const ult = maiorKmConhecido(req.equipamento); const base = Math.max(Number(req.kmEsperado)||0, ult===null?0:ult); if(base){ kmEl.value = base; kmEl.dispatchEvent(new Event('input')); } }
       }
       renderSelecaoRequisicaoMotorista();
     });
@@ -3406,6 +3406,12 @@ async function enviarLancamentoManual(){
   const q = numBR(document.getElementById('l-quantidade').value);
   const equip = document.getElementById('l-equipamento').value.trim().toUpperCase() || null;
   if(!document.getElementById('l-data').value || !equip){ toast('Preenche pelo menos a data e o equipamento.'); return; }
+  const msgKm = validarKmManual(equip, document.getElementById('l-data').value, isNaN(km) ? null : km);
+  if(msgKm){ mostrarStatusSalvamento('🚫 ' + escapeHtml(msgKm), 'erro'); toast(msgKm); return; }
+  if(!isNaN(km)){
+    const lim = limitesKm(equip, document.getElementById('l-data').value, null);
+    if(lim.lower && km === lim.lower.km && !confirm(`O Km/Hor (${fmtNum(km,0)}) é IGUAL ao da última leitura de ${equip}. Confirma mesmo assim?`)) return;
+  }
   const dados = {
     manual: true,
     data: document.getElementById('l-data').value,
@@ -3897,18 +3903,50 @@ function populateReqSelects(){
 
   // sugere o Km/Hor esperado assim que escolhe o equipamento — pega a
   // última leitura conhecida daquele equipamento no histórico
-  selEquip.onchange = ()=>{
-    const kmEl = document.getElementById('req-km-esperado');
-    if(kmEl && selEquip.value){
-      const max = maiorKmConhecido(selEquip.value);
-      if(max !== null) kmEl.value = max;
-    }
-  };
+  selEquip.onchange = ()=>atualizarSugestaoKmRequisicao(true);
+  const kmReqEl = document.getElementById('req-km-esperado');
+  if(kmReqEl){
+    kmReqEl.onfocus = ()=>atualizarSugestaoKmRequisicao(false); // reabrir o campo pega a leitura mais nova
+    kmReqEl.oninput = ()=>avisoKmRequisicao();
+  }
   [ ['req-posto','req-posto-externo-wrap'], ['req-auto-posto','req-auto-posto-externo-wrap'] ].forEach(([selId,wrapId])=>{
     const sel = document.getElementById(selId);
     const wrap = document.getElementById(wrapId);
     if(sel && wrap) sel.onchange = ()=>{ wrap.style.display = sel.value==='__externo__' ? 'block' : 'none'; };
   });
+}
+
+/* Sugere no campo "Km/Hor esperado" a ÚLTIMA leitura conhecida (oficial ou
+   pendente). Só sobrescreve se o campo estiver vazio, ainda tiver o valor
+   que o próprio sistema sugeriu antes, ou se "forcar" (trocou de equipamento). */
+function atualizarSugestaoKmRequisicao(forcar){
+  const selEquip = document.getElementById('req-equipamento');
+  const kmEl = document.getElementById('req-km-esperado');
+  if(!selEquip || !kmEl || !selEquip.value) { avisoKmRequisicao(); return; }
+  const max = maiorKmConhecido(selEquip.value);
+  if(max !== null && (forcar || !kmEl.value.trim() || kmEl.value.trim() === kmEl.dataset.sugerido)){
+    kmEl.value = max; kmEl.dataset.sugerido = String(max);
+  }
+  avisoKmRequisicao();
+}
+/* Texto de aviso embaixo do campo: mostra a última leitura e alerta se o km digitado for menor. */
+function avisoKmRequisicao(){
+  const selEquip = document.getElementById('req-equipamento');
+  const kmEl = document.getElementById('req-km-esperado');
+  if(!kmEl) return null;
+  let box = document.getElementById('req-km-aviso');
+  if(!box){ box = document.createElement('div'); box.id = 'req-km-aviso'; box.className = 'helper'; box.style.marginTop = '4px'; kmEl.parentNode.appendChild(box); }
+  box.textContent = ''; box.style.color = '';
+  if(!selEquip || !selEquip.value || selEquip.dataset.modo === 'sem-cadastro') return null;
+  const lim = limitesKm(selEquip.value, null, null).maiorGeral;
+  if(!lim){ box.textContent = 'Sem leitura anterior desse equipamento.'; return null; }
+  box.textContent = `Última leitura: ${fmtNum(lim.km,0)}${lim.data ? ' em ' + fmtDate(lim.data) : ''}`;
+  const v = numBR(kmEl.value);
+  if(kmEl.value.trim() && !isNaN(v) && v < lim.km){
+    const msg = `⚠️ Km esperado (${fmtNum(v,0)}) é MENOR que a última leitura (${fmtNum(lim.km,0)}).`;
+    box.textContent = msg; box.style.color = 'var(--bad)'; return msg;
+  }
+  return null;
 }
 
 function autoEmitirRequisicaoUI(){
@@ -3964,6 +4002,8 @@ async function emitirRequisicaoUIInterno(){
   const posto = (postoSel === '__externo__' ? document.getElementById('req-posto-externo').value.trim() : postoSel).toUpperCase();
   const kmEsperado = document.getElementById('req-km-esperado').value.trim();
   if(!posto){ toast('Escolhe o posto (ou digita o nome, se for externo).'); return; }
+  const avisoKm = avisoKmRequisicao();
+  if(avisoKm && !confirm(avisoKm + '\n\nEmitir a requisição mesmo assim?')) return;
 
   // se o link "veículo sem cadastro" estiver ativo, usa o texto livre
   // em vez do select da Frota
@@ -5012,6 +5052,7 @@ function atualizarCardPendentes(){
     if(!b){ b = document.createElement('span'); b.className = 'badge-pend'; b.style.cssText = 'margin-left:8px;background:#c0392b;color:#fff;border-radius:10px;padding:1px 9px;font-size:12px;font-weight:700;'; h.insertBefore(b, h.firstChild.nextSibling); }
     b.textContent = n; b.style.display = n ? '' : 'none';
   }
+  try{ atualizarSugestaoKmRequisicao(false); }catch(e){}
   // chegou lançamento novo -> abre o card pra não ficar escondido
   if(n > _PEND_QTD_ANTERIOR) card.classList.remove('colapsado');
   _PEND_QTD_ANTERIOR = n;
@@ -5646,6 +5687,34 @@ function maiorKmRegistrado(equipamento, excludeId){
     if(maior === null || r.kmHor > maior) maior = r.kmHor;
   });
   return maior;
+}
+
+/* Leituras de Km/Hor de um equipamento (oficiais + pendentes) em volta de uma data:
+   lower = maior km com data <= dataIso; upper = menor km com data > dataIso. */
+function limitesKm(equipamento, dataIso, excludeId){
+  const eq = (equipamento||'').toUpperCase();
+  let lower = null, upper = null, maiorGeral = null;
+  const olhar = (r, ehPend)=>{
+    if(!ehPend && r.id === excludeId) return;
+    if((r.equipamento||'').toUpperCase() !== eq) return;
+    if(r.kmHor === null || r.kmHor === undefined || r.kmHor === '' || isNaN(r.kmHor)) return;
+    const k = Number(r.kmHor), d = String(r.data||'').slice(0,10);
+    if(maiorGeral === null || k > maiorGeral.km) maiorGeral = { km:k, data:d };
+    if(!dataIso || !d || d <= dataIso){ if(lower === null || k > lower.km) lower = { km:k, data:d }; }
+    else { if(upper === null || k < upper.km) upper = { km:k, data:d }; }
+  };
+  DB.forEach(r=>olhar(r,false));
+  (PENDENTES||[]).forEach(r=>olhar(r,true));
+  return { lower, upper, maiorGeral };
+}
+
+/* Mensagem de erro do Km do lançamento manual (ou null se ok). */
+function validarKmManual(equipamento, dataIso, km){
+  if(km == null || isNaN(km) || !equipamento) return null;
+  const { lower, upper } = limitesKm(equipamento, dataIso, null);
+  if(lower && km < lower.km) return `Km/Hor ${fmtNum(km,0)} é MENOR que a leitura anterior de ${equipamento} (${fmtNum(lower.km,0)}${lower.data?' em '+fmtDate(lower.data):''}). Confere o valor digitado.`;
+  if(upper && km > upper.km) return `Km/Hor ${fmtNum(km,0)} é MAIOR que uma leitura posterior de ${equipamento} (${fmtNum(upper.km,0)}${upper.data?' em '+fmtDate(upper.data):''}). Confere a data ou o valor.`;
+  return null;
 }
 
 /* Só pra SUGERIR o "Km/Hor esperado" na hora de emitir requisição — olha
@@ -7069,7 +7138,7 @@ function initFormLancamento(){
         return;
       }
       if(!editingId && rec.equipamento && rec.kmHor != null){
-        const maxKm = maiorKmRegistrado(rec.equipamento);
+        const maxKm = (limitesKm(rec.equipamento, null, null).maiorGeral || {}).km ?? null;
         if(maxKm !== null && rec.kmHor <= maxKm){
           toast(`Km/Hor inválido: o valor digitado não pode ser aceito pra esse equipamento. Confere o hodômetro/horímetro e digita o valor real.`);
           return;
@@ -8505,6 +8574,10 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   }
 });
 
+
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
+}
 
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
