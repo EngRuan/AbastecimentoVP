@@ -862,7 +862,12 @@ thead th{
 }
 tbody td{padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;}
 tbody tr:hover{background:var(--navy-light);}
-tr.linha-alerta td{background:#fdecec;}
+tr.card.colapsavel > h2{cursor:pointer;display:flex;justify-content:space-between;align-items:center;user-select:none;}
+.card.colapsavel > h2::after{content:'▾';font-size:15px;color:var(--gray);margin-left:10px;}
+.card.colapsado > h2::after{content:'▸';}
+.card.colapsado > *:not(h2){display:none !important;}
+.card.colapsado > h2{margin-bottom:0;}
+.linha-alerta td{background:#fdecec;}
 tr.linha-alerta:hover td{background:#fbdada;}
 tr.linha-alerta td:first-child{box-shadow:inset 4px 0 0 #d92d20;}
 .btn-alerta{border:1px solid #e2a3a3;background:#fff;border-radius:6px;cursor:pointer;padding:1px 6px;font-size:13px;margin-right:2px;}
@@ -2326,7 +2331,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.13-41';
+const APP_VERSION = 'v2026.10.13-42';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -3387,6 +3392,50 @@ async function enviarLancamentoMotorista(){
     // (admin), senão o item que acabou de mandar não aparece até recarregar
     await pullFromSheetsSilencioso();
     renderSelecaoRequisicaoMotorista();
+  }catch(err){
+    console.error(err);
+    mostrarStatusSalvamento('❌ Falha ao enviar: ' + err.message, 'erro');
+  }
+}
+
+/* Lançamento manual (nível 3+): não grava direto — cai em Aprovações,
+   igual ao do motorista, e só vira oficial depois de conferido. */
+async function enviarLancamentoManual(){
+  const km = numBR(document.getElementById('l-kmhor').value);
+  const q = numBR(document.getElementById('l-quantidade').value);
+  const equip = document.getElementById('l-equipamento').value.trim().toUpperCase() || null;
+  if(!document.getElementById('l-data').value || !equip){ toast('Preenche pelo menos a data e o equipamento.'); return; }
+  const dados = {
+    manual: true,
+    data: document.getElementById('l-data').value,
+    equipamento: equip,
+    produto: document.getElementById('l-produto').value,
+    posto: document.getElementById('l-posto').value.trim().toUpperCase() || null,
+    quantidade: isNaN(q) ? null : q,
+    precoUnit: numBR(document.getElementById('l-precounit').value) || null,
+    precoTotal: numBR(document.getElementById('l-precototal').value) || null,
+    kmHor: isNaN(km) ? null : km,
+    nfSugerido: document.getElementById('l-nf').value.trim() || null,
+    requisicao: document.getElementById('l-requisicao').value.trim() || null,
+    motorista: document.getElementById('l-motorista').value.trim().toUpperCase() || null,
+    empresa: document.getElementById('l-empresa').value.trim().toUpperCase() || null,
+    fotoUrlCupom: fotoUrlCupomAtual,
+    fotoUrlRequisicao: fotoUrlRequisicaoAtual,
+    obra: obraParaNovo(equip),
+  };
+  mostrarStatusSalvamento('⏳ Enviando pra aprovação...', 'info');
+  try{
+    const resp = await fetch(SYNC_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ action:'enviarPendente', dados, idToken: ID_TOKEN }) });
+    const json = await parseJsonResponse(resp);
+    if(json.status !== 'ok'){ mostrarStatusSalvamento('❌ ' + (json.mensagem || 'Falha ao enviar.'), 'erro'); return; }
+    cupomLidoNestaSessao = false; fotoUrlCupomAtual = null; fotoUrlRequisicaoAtual = null;
+    ['cupom','requisicao'].forEach(t=>{
+      document.getElementById('ocr-status-'+t).style.display = 'none';
+      document.getElementById('ocr-raw-wrap-'+t).style.display = 'none';
+    });
+    resetForm(true);
+    mostrarStatusSalvamento(`✅ ${escapeHtml(equip)} enviado pra <b>Aprovações</b> — confere lá e confirma com a NF.`, 'ok');
+    await pullFromSheetsSilencioso();
   }catch(err){
     console.error(err);
     mostrarStatusSalvamento('❌ Falha ao enviar: ' + err.message, 'erro');
@@ -5321,6 +5370,27 @@ async function criarPendenteDaNota(idx){
   }catch(err){ console.error(err); toast('Falha ao lançar: ' + err.message); }
 }
 
+/* Cards minimizáveis: clica no título pra recolher/abrir (lembra o estado) */
+function initCardsColapsaveis(){
+  let salvo = {};
+  try{ salvo = JSON.parse(localStorage.getItem('cards_colapsados') || '{}'); }catch(e){}
+  const iniciais = { 'card-nota-pdf': true, 'card-emitir-requisicao': true };
+  document.querySelectorAll('.card').forEach(card=>{
+    const h = [...card.children].find(c=>c.tagName === 'H2');
+    if(!h || card.dataset.colapsavel) return;
+    card.dataset.colapsavel = '1';
+    card.classList.add('colapsavel');
+    const chave = card.id || h.textContent.trim();
+    const fechado = (chave in salvo) ? !!salvo[chave] : !!iniciais[card.id];
+    card.classList.toggle('colapsado', fechado);
+    h.addEventListener('click', ()=>{
+      const f = card.classList.toggle('colapsado');
+      salvo[chave] = f;
+      try{ localStorage.setItem('cards_colapsados', JSON.stringify(salvo)); }catch(e){}
+    });
+  });
+}
+
 function initNotaPdf(){
   const input = document.getElementById('nota-pdf-input');
   const zona = document.getElementById('nota-pdf-zona');
@@ -6896,6 +6966,12 @@ function initFormLancamento(){
       return;
     }
 
+    // lançamento manual NOVO (logado, nível 3+): vai pra aba Aprovações
+    if(!editingId && USUARIO_ATUAL && SYNC_URL && ID_TOKEN){
+      await enviarLancamentoManual();
+      return;
+    }
+
     const km = numBR(kmhor.value);
     const q = numBR(qtd.value);
     const registroAnterior = editingId ? DB.find(r=>r.id===editingId) : null;
@@ -8346,6 +8422,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     initLancFilters();
     initSeletorObra();
     initNotaPdf();
+    initCardsColapsaveis();
     initFormLancamento();
     initPerfis();
     initAutocompletes();
@@ -8370,6 +8447,10 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   }
 });
 
+
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
+}
 
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
