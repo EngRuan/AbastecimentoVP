@@ -1115,6 +1115,10 @@ body.preview-motorista #view-lancamentos::before{
     <small>Frota Tripoloni Construtora · <span id="app-version" style="opacity:.7;"></span></small>
   </div>
   <div class="spacer"></div>
+  <label id="obra-select-wrap" style="display:none;align-items:center;gap:6px;font-size:12.5px;color:#fff;font-weight:600;" title="Mostra só os dados da obra escolhida">🏗️
+    <select id="obra-select" style="padding:5px 8px;font-size:12.5px;border-radius:6px;border:1px solid rgba(255,255,255,.4);background:#fff;color:#1f2a37;font-weight:600;"></select>
+  </label>
+  <datalist id="lista-obras"></datalist>
   <button type="button" class="btn secondary" id="btn-atualizar-tudo" style="display:none;padding:6px 12px;font-size:12.5px;" title="Busca os dados mais recentes sem precisar recarregar a página">🔄 Atualizar</button>
   <span class="status-pill" id="usuario-pill" style="display:none;"></span>
   <span class="status-pill" id="record-count-pill">— registros</span>
@@ -1750,8 +1754,8 @@ body.preview-motorista #view-lancamentos::before{
             <input type="number" id="u-limite" min="0" step="1">
           </div>
           <div class="field">
-            <label>Obra</label>
-            <input type="text" id="u-obra" placeholder="Ex: 0477">
+            <label>Obra(s)</label>
+            <input type="text" id="u-obra" list="lista-obras" placeholder="Ex: 422  ou  422, 430 (várias)" title="Obras que essa pessoa enxerga. Separe com vírgula.">
           </div>
           <div class="field">
             <label>Setor</label>
@@ -1935,6 +1939,10 @@ body.preview-motorista #view-lancamentos::before{
             <label>Fornecedor</label>
             <input type="text" id="v-fornecedor" placeholder="Empresa de locação">
           </div>
+          <div class="field">
+            <label>Obra(s)</label>
+            <input type="text" id="v-obra" list="lista-obras" placeholder="Ex: 422  ou  422, 430" title="Obras onde esse cadastro vale. Separe com vírgula.">
+          </div>
           <div class="field wide">
             <label>Observações</label>
             <input type="text" id="v-observacoes" placeholder="Opcional">
@@ -1997,6 +2005,10 @@ body.preview-motorista #view-lancamentos::before{
             <label>Endereço</label>
             <input type="text" id="p-endereco" placeholder="Opcional">
           </div>
+          <div class="field">
+            <label>Obra(s)</label>
+            <input type="text" id="p-obra" list="lista-obras" placeholder="Ex: 422  ou  422, 430" title="Obras onde esse cadastro vale. Separe com vírgula.">
+          </div>
           <div class="field wide">
             <label>Observações</label>
             <input type="text" id="p-observacoes" placeholder="Opcional">
@@ -2047,6 +2059,10 @@ body.preview-motorista #view-lancamentos::before{
           <div class="field wide">
             <label>Endereço</label>
             <input type="text" id="e-endereco" placeholder="Opcional">
+          </div>
+          <div class="field">
+            <label>Obra(s)</label>
+            <input type="text" id="e-obra" list="lista-obras" placeholder="Ex: 422  ou  422, 430" title="Obras onde esse cadastro vale. Separe com vírgula.">
           </div>
           <div class="field wide">
             <label>Observações</label>
@@ -2288,7 +2304,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.09.14-37';
+const APP_VERSION = 'v2026.10.13-38';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -2304,6 +2320,33 @@ const USUARIO_CACHE_KEY = 'tripoloni_usuario_v1';
 
 let DB = [];           // array of records
 let SYNC_URL = '';
+/* Obra ativa (seletor do topo): tudo que o servidor devolve já vem filtrado
+   por ela. '' = todas as obras liberadas pra essa pessoa. */
+let OBRA_ATIVA = '';
+let OBRAS_DISPONIVEIS = [];
+const OBRA_ATIVA_KEY = 'tripoloni_obra_ativa';
+
+/* Todo pedido pro servidor leva a obra ativa junto (POST: campo "obra" no
+   corpo; pull: parâmetro &obra=, só depois que a pessoa já escolheu uma —
+   no primeiro acesso o servidor abre na primeira obra liberada). */
+(function(){
+  const fetchOriginal = window.fetch.bind(window);
+  window.fetch = function(url, init){
+    try{
+      if(typeof url === 'string' && SYNC_URL && url.indexOf(SYNC_URL) === 0){
+        if(init && typeof init.body === 'string' && init.body.charAt(0) === '{'){
+          const b = JSON.parse(init.body);
+          if(b.obra === undefined){ b.obra = OBRA_ATIVA; init = Object.assign({}, init, { body: JSON.stringify(b) }); }
+        } else if(!init && url.indexOf('action=pull') !== -1 && url.indexOf('&obra=') === -1){
+          let escolhida = null;
+          try{ escolhida = localStorage.getItem(OBRA_ATIVA_KEY); }catch(e){}
+          if(escolhida !== null) url += '&obra=' + encodeURIComponent(escolhida);
+        }
+      }
+    }catch(e){ /* na dúvida, manda o pedido original sem mexer */ }
+    return fetchOriginal(url, init);
+  };
+})();
 let editingId = null;
 let ID_TOKEN = null;         // token do Google da sessão atual (renovado a cada login)
 let driveTokenClient = null; // cliente OAuth2 separado, só pra pedir acesso ao Drive pessoal de cada um
@@ -2456,6 +2499,7 @@ function sanitizeRecord(r){
     criadoPorEmail: toStrOrNull(r.criadoPorEmail),
     fotoUrlCupom: toStrOrNull(r.fotoUrlCupom),
     fotoUrlRequisicao: toStrOrNull(r.fotoUrlRequisicao),
+    obra: toStrOrNull(r.obra),
   };
 }
 /* Comparador de datas seguro: nunca quebra mesmo se o valor não for string. */
@@ -2840,6 +2884,7 @@ async function autenticarComToken(idToken, silencioso){
     DIAS_BLOQUEADOS = json.diasBloqueados || DIAS_BLOQUEADOS;
     CONFIG_SISMA = json.configSisma || CONFIG_SISMA;
     PERMISSOES = json.permissoes || PERMISSOES;
+    capturarObras(json);
     CATALOGO_PERMISSOES = json.catalogoPermissoes || CATALOGO_PERMISSOES;
     AUDITORIA = json.auditoria || [];
     VEICULOS = json.veiculos || [];
@@ -2978,6 +3023,58 @@ function aplicarPermissoesNaUI(){
   if(abaAberta && abaAberta in visivelPorAba && !visivelPorAba[abaAberta]){
     ativarTab(visivelPorAba.aprovacoes ? 'aprovacoes' : 'lancamentos');
   }
+}
+
+/* ---------------------------------------------------------------------
+   OBRAS — seletor no topo + helpers
+--------------------------------------------------------------------- */
+function capturarObras(json){
+  if(!json) return;
+  if(Array.isArray(json.obrasDisponiveis)) OBRAS_DISPONIVEIS = json.obrasDisponiveis;
+  if(json.obraAtiva !== undefined) OBRA_ATIVA = json.obraAtiva || '';
+  renderSeletorObra();
+}
+function listaDeObras(v){
+  return String(v == null ? '' : v).split(/[,;]/).map(s=>s.trim()).filter(Boolean);
+}
+/* Obra sugerida pros formulários cadastro: a ativa, ou a primeira liberada */
+function obraPadraoDoForm(){
+  return OBRA_ATIVA || OBRAS_DISPONIVEIS[0] || '';
+}
+/* Obra de um lançamento/requisição NOVO: a do veículo (se bater com a obra
+   ativa ou, na falta, a primeira dele); senão a obra ativa. Vazio = o
+   servidor decide pela primeira obra liberada da pessoa. */
+function obraParaNovo(equipamento){
+  const eq = String(equipamento || '').trim().toUpperCase();
+  const v = eq ? (VEICULOS || []).find(x=>String(x.equipamento || '').toUpperCase() === eq) : null;
+  if(v && v.obra){
+    const lista = listaDeObras(v.obra);
+    if(OBRA_ATIVA && lista.indexOf(OBRA_ATIVA) !== -1) return OBRA_ATIVA;
+    if(lista.length) return lista[0];
+  }
+  return OBRA_ATIVA || '';
+}
+function renderSeletorObra(){
+  const wrap = document.getElementById('obra-select-wrap');
+  const sel = document.getElementById('obra-select');
+  const dl = document.getElementById('lista-obras');
+  if(dl) dl.innerHTML = OBRAS_DISPONIVEIS.map(o=>`<option value="${escapeHtml(o)}"></option>`).join('');
+  if(!wrap || !sel) return;
+  const ehDono = USUARIO_ATUAL && USUARIO_ATUAL.papel === 'dono';
+  if(OBRAS_DISPONIVEIS.length <= 1 && !ehDono){ wrap.style.display = 'none'; return; }
+  wrap.style.display = 'inline-flex';
+  sel.innerHTML = `<option value="">Todas as obras</option>` + OBRAS_DISPONIVEIS.map(o=>`<option value="${escapeHtml(o)}">Obra ${escapeHtml(o)}</option>`).join('');
+  sel.value = OBRA_ATIVA;
+}
+function initSeletorObra(){
+  const sel = document.getElementById('obra-select');
+  if(!sel) return;
+  sel.addEventListener('change', async ()=>{
+    OBRA_ATIVA = sel.value;
+    try{ localStorage.setItem(OBRA_ATIVA_KEY, OBRA_ATIVA); }catch(e){}
+    await atualizarTudoUI();
+    resetFormVeiculo(); resetFormPosto(); resetFormEmpresa(); resetFormUsuario();
+  });
 }
 
 function aplicarPapelNaUI(){
@@ -3641,6 +3738,7 @@ function editarVeiculo(equipamento){
   document.getElementById('v-periodo-aluguel').value = v.periodoAluguel || 'mensal';
   document.getElementById('v-fornecedor').value = v.fornecedor || '';
   document.getElementById('v-observacoes').value = v.observacoes || '';
+  document.getElementById('v-obra').value = v.obra || '';
   document.getElementById('veiculo-form-title').textContent = 'Editando veículo';
   document.getElementById('btn-salvar-veiculo').textContent = 'Salvar alterações';
   document.getElementById('btn-cancelar-veiculo').style.display = 'inline-block';
@@ -3650,6 +3748,7 @@ function editarVeiculo(equipamento){
 function resetFormVeiculo(){
   editandoVeiculoEquip = null;
   document.getElementById('form-veiculo').reset();
+  document.getElementById('v-obra').value = obraPadraoDoForm();
   document.getElementById('v-equipamento').disabled = false;
   document.getElementById('veiculo-form-title').textContent = 'Adicionar veículo';
   document.getElementById('btn-salvar-veiculo').textContent = '+ Adicionar veículo';
@@ -3752,7 +3851,7 @@ async function autoEmitirRequisicaoUIInterno(){
     const resp = await fetch(SYNC_URL, {
       method:'POST',
       headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({ action:'emitirRequisicao', dados:{motoristaEmail: USUARIO_ATUAL.email, equipamento, produto, posto}, idToken: ID_TOKEN })
+      body: JSON.stringify({ action:'emitirRequisicao', dados:{motoristaEmail: USUARIO_ATUAL.email, equipamento, produto, posto, obra: obraParaNovo(equipamento)}, idToken: ID_TOKEN })
     });
     const json = await parseJsonResponse(resp);
     if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao emitir.'); return; }
@@ -3803,15 +3902,15 @@ async function emitirRequisicaoUIInterno(){
     const empresa = document.getElementById('req-empresa-terceiro').value;
     const placa = document.getElementById('req-placa').value.trim();
     if(!motoristaNomeLivre || !empresa || !placa){ toast('Pra terceiro, preenche nome, empresa e placa.'); return; }
-    dados = { terceiro:true, motoristaNomeLivre, empresa, placa, produto, posto, kmEsperado };
+    dados = { terceiro:true, motoristaNomeLivre, empresa, placa, produto, posto, kmEsperado, obra: OBRA_ATIVA || '' };
   } else if(document.getElementById('req-motorista-livre').dataset.modo === 'sem-cadastro'){
     const motoristaNomeLivre = document.getElementById('req-motorista-livre').value.trim();
     if(!motoristaNomeLivre || !equipamentoEscolhido){ toast('Escolhe o nome e o equipamento.'); return; }
-    dados = { semCadastro:true, motoristaNomeLivre, equipamento:equipamentoEscolhido, produto, posto, kmEsperado };
+    dados = { semCadastro:true, motoristaNomeLivre, equipamento:equipamentoEscolhido, produto, posto, kmEsperado, obra: obraParaNovo(equipamentoEscolhido) };
   } else {
     const motoristaEmail = document.getElementById('req-motorista').value;
     if(!motoristaEmail || !equipamentoEscolhido){ toast('Escolhe o motorista e o equipamento.'); return; }
-    dados = { motoristaEmail, equipamento:equipamentoEscolhido, produto, posto, kmEsperado };
+    dados = { motoristaEmail, equipamento:equipamentoEscolhido, produto, posto, kmEsperado, obra: obraParaNovo(equipamentoEscolhido) };
   }
 
   try{
@@ -4206,6 +4305,7 @@ function editarPosto(nome){
   document.getElementById('p-telefone').value = p.telefone || '';
   document.getElementById('p-endereco').value = p.endereco || '';
   document.getElementById('p-observacoes').value = p.observacoes || '';
+  document.getElementById('p-obra').value = p.obra || '';
   document.getElementById('posto-form-title').textContent = 'Editando posto';
   document.getElementById('btn-salvar-posto').textContent = 'Salvar alterações';
   document.getElementById('btn-cancelar-posto').style.display = 'inline-block';
@@ -4214,6 +4314,7 @@ function editarPosto(nome){
 function resetFormPosto(){
   editandoPostoNome = null;
   document.getElementById('form-posto').reset();
+  document.getElementById('p-obra').value = obraPadraoDoForm();
   document.getElementById('p-nome').disabled = false;
   document.getElementById('posto-form-title').textContent = 'Adicionar posto';
   document.getElementById('btn-salvar-posto').textContent = '+ Adicionar posto';
@@ -4242,6 +4343,7 @@ function initPostosTab(){
       telefone: document.getElementById('p-telefone').value.trim(),
       endereco: document.getElementById('p-endereco').value.trim(),
       observacoes: document.getElementById('p-observacoes').value.trim(),
+      obra: document.getElementById('p-obra').value.trim(),
     };
     if(!dados.nome){ toast('Preenche o nome do posto.'); return; }
     try{
@@ -4302,6 +4404,7 @@ function editarEmpresa(nome){
   document.getElementById('e-telefone').value = e.telefone || '';
   document.getElementById('e-endereco').value = e.endereco || '';
   document.getElementById('e-observacoes').value = e.observacoes || '';
+  document.getElementById('e-obra').value = e.obra || '';
   document.getElementById('empresa-form-title').textContent = 'Editando empresa';
   document.getElementById('btn-salvar-empresa').textContent = 'Salvar alterações';
   document.getElementById('btn-cancelar-empresa').style.display = 'inline-block';
@@ -4310,6 +4413,7 @@ function editarEmpresa(nome){
 function resetFormEmpresa(){
   editandoEmpresaNome = null;
   document.getElementById('form-empresa').reset();
+  document.getElementById('e-obra').value = obraPadraoDoForm();
   document.getElementById('e-nome').disabled = false;
   document.getElementById('empresa-form-title').textContent = 'Adicionar empresa';
   document.getElementById('btn-salvar-empresa').textContent = '+ Adicionar empresa';
@@ -4339,6 +4443,7 @@ function initEmpresasTab(){
       telefone: document.getElementById('e-telefone').value.trim(),
       endereco: document.getElementById('e-endereco').value.trim(),
       observacoes: document.getElementById('e-observacoes').value.trim(),
+      obra: document.getElementById('e-obra').value.trim(),
     };
     if(!dados.nome){ toast('Preenche o nome da empresa.'); return; }
     try{
@@ -4370,6 +4475,7 @@ function initVeiculosTab(){
       periodoAluguel: document.getElementById('v-periodo-aluguel').value,
       fornecedor: document.getElementById('v-fornecedor').value.trim(),
       observacoes: document.getElementById('v-observacoes').value.trim(),
+      obra: document.getElementById('v-obra').value.trim(),
       marca: document.getElementById('v-marca').value.trim(),
       modelo: document.getElementById('v-modelo').value.trim(),
       placa: document.getElementById('v-placa').value.trim().toUpperCase(),
@@ -4480,6 +4586,7 @@ async function salvarPermissoesUI(){
     const json = await parseJsonResponse(resp);
     if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao salvar.'); return; }
     PERMISSOES = json.permissoes || PERMISSOES;
+    capturarObras(json);
     PERMISSOES_EDICAO = { ...PERMISSOES };
     renderMatrizPermissoes();
     aplicarPermissoesNaUI();
@@ -4528,6 +4635,7 @@ async function salvarConfigSismaUI(){
     if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao salvar.'); return; }
     CONFIG_SISMA = json.configSisma || CONFIG_SISMA;
     PERMISSOES = json.permissoes || PERMISSOES;
+    capturarObras(json);
     CATALOGO_PERMISSOES = json.catalogoPermissoes || CATALOGO_PERMISSOES;
     toast('Configuração SISMA salva.');
   }catch(err){ console.error(err); toast('Falha ao salvar: ' + err.message); }
@@ -4640,6 +4748,7 @@ function initUsuariosTab(){
 function resetFormUsuario(){
   editandoUsuarioEmail = null;
   document.getElementById('form-usuario').reset();
+  document.getElementById('u-obra').value = obraPadraoDoForm();
   document.getElementById('usuario-form-title').textContent = 'Adicionar usuário';
   document.getElementById('btn-salvar-usuario').textContent = '+ Adicionar usuário';
   document.getElementById('btn-cancelar-usuario').style.display = 'none';
@@ -5056,6 +5165,7 @@ async function pullFromSheetsSilencioso(){
     DIAS_BLOQUEADOS = json.diasBloqueados || DIAS_BLOQUEADOS;
     CONFIG_SISMA = json.configSisma || CONFIG_SISMA;
     PERMISSOES = json.permissoes || PERMISSOES;
+    capturarObras(json);
     CATALOGO_PERMISSOES = json.catalogoPermissoes || CATALOGO_PERMISSOES;
     AUDITORIA = json.auditoria || AUDITORIA;
     VEICULOS = json.veiculos || VEICULOS;
@@ -6507,6 +6617,7 @@ function initFormLancamento(){
       criadoPorEmail: (registroAnterior && registroAnterior.criadoPorEmail) || (USUARIO_ATUAL ? USUARIO_ATUAL.email : null),
       fotoUrlCupom: fotoUrlCupomAtual || (registroAnterior && registroAnterior.fotoUrlCupom) || null,
       fotoUrlRequisicao: fotoUrlRequisicaoAtual || (registroAnterior && registroAnterior.fotoUrlRequisicao) || null,
+      obra: (registroAnterior && registroAnterior.obra) || obraParaNovo(equip.value),
     };
     const calc = calcMediaKmL(rec.equipamento, rec.data, rec.kmHor, rec.quantidade, rec.produto, rec.id);
     rec.mediaKmL = calc ? calc.media : null;
@@ -7725,6 +7836,7 @@ async function pullFromSheets(){
     DIAS_BLOQUEADOS = json.diasBloqueados || DIAS_BLOQUEADOS;
     CONFIG_SISMA = json.configSisma || CONFIG_SISMA;
     PERMISSOES = json.permissoes || PERMISSOES;
+    capturarObras(json);
     CATALOGO_PERMISSOES = json.catalogoPermissoes || CATALOGO_PERMISSOES;
     AUDITORIA = json.auditoria || AUDITORIA;
     VEICULOS = json.veiculos || VEICULOS;
@@ -7799,6 +7911,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     initTabs();
     initDashboardControls();
     initLancFilters();
+    initSeletorObra();
     initFormLancamento();
     initPerfis();
     initAutocompletes();
