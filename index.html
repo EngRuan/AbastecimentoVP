@@ -2332,7 +2332,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.13-46';
+const APP_VERSION = 'v2026.10.13-47';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -5709,9 +5709,9 @@ function limitesKm(equipamento, dataIso, excludeId){
 }
 
 /* Mensagem de erro do Km do lançamento manual (ou null se ok). */
-function validarKmManual(equipamento, dataIso, km){
+function validarKmManual(equipamento, dataIso, km, excludeId){
   if(km == null || isNaN(km) || !equipamento) return null;
-  const { lower, upper } = limitesKm(equipamento, dataIso, null);
+  const { lower, upper } = limitesKm(equipamento, dataIso, excludeId || null);
   if(lower && km < lower.km) return `Km/Hor ${fmtNum(km,0)} é MENOR que a leitura anterior de ${equipamento} (${fmtNum(lower.km,0)}${lower.data?' em '+fmtDate(lower.data):''}). Confere o valor digitado.`;
   if(upper && km > upper.km) return `Km/Hor ${fmtNum(km,0)} é MAIOR que uma leitura posterior de ${equipamento} (${fmtNum(upper.km,0)}${upper.data?' em '+fmtDate(upper.data):''}). Confere a data ou o valor.`;
   return null;
@@ -7088,8 +7088,13 @@ function initFormLancamento(){
       return;
     }
 
-    // lançamento manual NOVO (logado, nível 3+): vai pra aba Aprovações
-    if(!editingId && USUARIO_ATUAL){
+    // lançamento manual NOVO e INCOMPLETO (sem NF, requisição, valor ou km):
+    // vai pra fila de Aprovações pra completar. Se tem todos os dados, grava normal.
+    const _km = numBR(kmhor.value), _q = numBR(qtd.value);
+    const completo = !!(document.getElementById('l-nf').value.trim() && document.getElementById('l-requisicao').value.trim()
+      && !isNaN(_q) && _q > 0 && (numBR(ptotal.value) || numBR(punit.value)) && !isNaN(_km)
+      && document.getElementById('l-motorista').value.trim() && equip.value.trim() && dataInp.value);
+    if(!editingId && USUARIO_ATUAL && !completo){
       await enviarLancamentoManual();
       return;
     }
@@ -7125,6 +7130,15 @@ function initFormLancamento(){
     };
     const calc = calcMediaKmL(rec.equipamento, rec.data, rec.kmHor, rec.quantidade, rec.produto, rec.id);
     rec.mediaKmL = calc ? calc.media : null;
+
+    // trava de Km do lançamento manual (nível 3+): não pode ser menor que a leitura anterior
+    // nem maior que uma posterior; igual à última pede confirmação
+    if(USUARIO_ATUAL && USUARIO_ATUAL.papel !== 'motorista' && rec.equipamento && rec.kmHor != null){
+      const msgKm = validarKmManual(rec.equipamento, rec.data, rec.kmHor, rec.id);
+      if(msgKm){ mostrarStatusSalvamento('🚫 ' + escapeHtml(msgKm), 'erro'); toast(msgKm); return; }
+      const lim = limitesKm(rec.equipamento, rec.data, rec.id);
+      if(!editingId && lim.lower && rec.kmHor === lim.lower.km && !confirm(`O Km/Hor (${fmtNum(rec.kmHor,0)}) é IGUAL ao da última leitura de ${rec.equipamento}. Confirma mesmo assim?`)) return;
+    }
 
     // motorista só pode abastecer equipamento vinculado ao próprio
     // perfil, e o Km/Hor não pode vir menor ou igual à última leitura já
@@ -8574,6 +8588,10 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   }
 });
 
+
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
+}
 
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
