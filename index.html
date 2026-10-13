@@ -862,7 +862,8 @@ thead th{
 }
 tbody td{padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;}
 tbody tr:hover{background:var(--navy-light);}
-tr.card.colapsavel > h2{cursor:pointer;display:flex;justify-content:space-between;align-items:center;user-select:none;}
+tr.card.sem-moldura{box-shadow:none !important;border:0 !important;padding:0 !important;margin:10px 0 0 !important;background:transparent !important;}
+.card.colapsavel > h2{cursor:pointer;display:flex;justify-content:space-between;align-items:center;user-select:none;}
 .card.colapsavel > h2::after{content:'▾';font-size:15px;color:var(--gray);margin-left:10px;}
 .card.colapsado > h2::after{content:'▸';}
 .card.colapsado > *:not(h2){display:none !important;}
@@ -2331,7 +2332,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.13-43';
+const APP_VERSION = 'v2026.10.13-45';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -3436,8 +3437,8 @@ async function enviarLancamentoManual(){
     resetForm(true);
     mostrarStatusSalvamento(`✅ ${escapeHtml(equip)} enviado pra <b>Aprovações</b> — confere lá e confirma com a NF.`, 'ok');
     await pullFromSheetsSilencioso();
-    try{ ativarTab('aprovacoes'); renderListaPendentes(); }catch(e){}
-    toast('Lançamento enviado pra Aprovações.');
+    try{ renderListaPendentes(); }catch(e){}
+    toast('Lançamento enviado — está na lista de aprovação logo abaixo.');
   }catch(err){
     console.error(err);
     mostrarStatusSalvamento('❌ Falha ao enviar: ' + err.message, 'erro');
@@ -5000,9 +5001,25 @@ async function tratarLimiteAtingido(){
    e ainda estão esperando o admin conferir/confirmar (com a NF) antes de
    virarem lançamento oficial.
 --------------------------------------------------------------------- */
+let _PEND_QTD_ANTERIOR = 0;
+function atualizarCardPendentes(){
+  const card = document.getElementById('card-pendentes');
+  if(!card) return;
+  const h = [...card.children].find(c=>c.tagName === 'H2');
+  const n = (PENDENTES || []).length;
+  if(h){
+    let b = h.querySelector('.badge-pend');
+    if(!b){ b = document.createElement('span'); b.className = 'badge-pend'; b.style.cssText = 'margin-left:8px;background:#c0392b;color:#fff;border-radius:10px;padding:1px 9px;font-size:12px;font-weight:700;'; h.insertBefore(b, h.firstChild.nextSibling); }
+    b.textContent = n; b.style.display = n ? '' : 'none';
+  }
+  // chegou lançamento novo -> abre o card pra não ficar escondido
+  if(n > _PEND_QTD_ANTERIOR) card.classList.remove('colapsado');
+  _PEND_QTD_ANTERIOR = n;
+}
 function renderListaPendentes(){
   const box = document.getElementById('lista-pendentes');
   if(!box) return;
+  atualizarCardPendentes();
   if(!PENDENTES || PENDENTES.length===0){
     box.innerHTML = `<p class="helper">Nenhum lançamento pendente no momento.</p>`;
     return;
@@ -5756,9 +5773,43 @@ function initNavGroups(){
   window.addEventListener('scroll', fecharTodosDropdownsNav, true);
 }
 
+/* O formulário de lançamento manual (nível 3+) mora na aba Aprovações,
+   dentro de um card minimizável. Motorista/auxiliar e a "Visão do
+   Motorista" continuam usando o formulário na aba Lançamentos. */
+function posicionarFormLancamento(modoPreview){
+  const form = document.getElementById('form-lanc');
+  if(!form) return;
+  const formCard = form.closest('.card');
+  const viewAprov = document.getElementById('view-aprovacoes');
+  const viewLanc = document.getElementById('view-lancamentos');
+  if(!formCard || !viewAprov || !viewLanc) return;
+  let slot = document.getElementById('slot-form-lanc');
+  if(!slot){ slot = document.createElement('div'); slot.id = 'slot-form-lanc'; formCard.parentNode.insertBefore(slot, formCard); }
+  let wrap = document.getElementById('card-lanc-manual');
+  if(!wrap){
+    wrap = document.createElement('div');
+    wrap.className = 'card'; wrap.id = 'card-lanc-manual'; wrap.style.display = 'none';
+    wrap.innerHTML = '<h2>✍️ Lançamento manual</h2>';
+    viewAprov.insertBefore(wrap, viewAprov.firstChild);
+    initCardsColapsaveis();
+  }
+  const ehMotorista = USUARIO_ATUAL && (USUARIO_ATUAL.papel === 'motorista' || USUARIO_ATUAL.papel === 'auxiliar');
+  const naAprovacao = !!USUARIO_ATUAL && !ehMotorista && !modoPreview && pode('aprovacoes_revisar');
+  if(naAprovacao){
+    if(formCard.parentNode !== wrap){ wrap.appendChild(formCard); }
+    formCard.classList.add('sem-moldura');
+    wrap.style.display = '';
+  } else {
+    if(formCard.parentNode === wrap){ slot.parentNode.insertBefore(formCard, slot.nextSibling); }
+    formCard.classList.remove('sem-moldura');
+    wrap.style.display = 'none';
+  }
+}
+
 function ativarTab(nomeTab){
   const modoPreview = nomeTab === 'lancamentos-preview';
   const nomeReal = modoPreview ? 'lancamentos' : nomeTab;
+  posicionarFormLancamento(modoPreview);
 
   document.querySelectorAll('button[data-tab]').forEach(b=>b.classList.toggle('active', b.dataset.tab===nomeTab));
   fecharTodosDropdownsNav();
@@ -7144,7 +7195,12 @@ function editRecord(id){
   document.getElementById('l-empresa').value = r.empresa || '';
   document.getElementById('l-kmhor').value = r.kmHor ?? '';
   document.getElementById('l-equipamento').dispatchEvent(new Event('input'));
-  document.getElementById('view-lancamentos').scrollIntoView({behavior:'smooth'});
+  const wrapLm = document.getElementById('card-lanc-manual');
+  if(wrapLm && document.getElementById('form-lanc').closest('#card-lanc-manual')){
+    ativarTab('aprovacoes'); wrapLm.classList.remove('colapsado');
+    document.getElementById('form-title').textContent = 'Editando lançamento';
+  }
+  document.getElementById('form-lanc').scrollIntoView({behavior:'smooth'});
 }
 
 async function deleteRecord(id){
@@ -8449,6 +8505,14 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   }
 });
 
+
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
+}
+
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
+}
 
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
