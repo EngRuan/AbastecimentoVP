@@ -862,6 +862,16 @@ thead th{
 }
 tbody td{padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;}
 tbody tr:hover{background:var(--navy-light);}
+tr.linha-alerta td{background:#fdecec;}
+tr.linha-alerta:hover td{background:#fbdada;}
+tr.linha-alerta td:first-child{box-shadow:inset 4px 0 0 #d92d20;}
+.btn-alerta{border:1px solid #e2a3a3;background:#fff;border-radius:6px;cursor:pointer;padding:1px 6px;font-size:13px;margin-right:2px;}
+.btn-alerta:hover{background:#ffeceb;}
+.alerta-lista{margin:0 0 6px;padding-left:20px;}
+.alerta-lista li{margin:6px 0;font-size:13px;color:#7a1c14;}
+.aprov-item.nota-destaque{outline:2px solid #1a8f3c;background:#f1fbf4;}
+.nota-zona{border:2px dashed #b9c4d8;border-radius:10px;padding:14px;text-align:center;font-size:13px;color:#52607a;cursor:pointer;}
+.nota-zona.arrastando{border-color:#1a8f3c;background:#f1fbf4;}
 .table-scroll{overflow:auto;max-height:520px;border:1px solid var(--line);border-radius:8px;}
 td.num, th.num{text-align:right;font-variant-numeric:tabular-nums;}
 .tag{
@@ -1489,6 +1499,7 @@ body.preview-motorista #view-lancamentos::before{
         ⚠️ <b id="alerta-sem-equipamento-n"></b> lançamento(s) sem equipamento preenchido (não tem como o sistema adivinhar o prefixo de um registro que nunca teve nenhum — precisa editar um por um e preencher na mão).
         <button type="button" class="btn ghost" id="btn-ver-sem-equipamento" style="margin-left:8px;">Ver esses</button>
       </div>
+      <div id="alerta-lancamentos" style="display:none;margin-bottom:12px;padding:10px 14px;background:#fdeaea;border:1px solid #e9a8a2;border-radius:8px;font-size:13px;color:#7a1c14;"></div>
       <div class="filters" style="margin-bottom:12px;">
         <div class="field">
           <label>De</label>
@@ -2229,6 +2240,16 @@ body.preview-motorista #view-lancamentos::before{
       </div>
       <div id="lista-requisicoes-admin"></div>
     </div>
+    <div class="card" id="card-nota-pdf">
+      <h2>📄 Nota fiscal em PDF</h2>
+      <p class="helper" style="margin-top:0;">Joga aqui o PDF da nota que o posto mandou. O sistema lê o <b>número da requisição</b> impresso nela (mesmo com a placa errada), acha o lançamento pendente correspondente e já preenche a 1ª aprovação (requisição) e a NF, litros e valor da 2ª — você só confere e confirma.</p>
+      <label class="nota-zona" id="nota-pdf-zona" style="display:block;">
+        📎 Clique pra escolher o PDF (ou arraste aqui) — pode ser mais de um
+        <input type="file" id="nota-pdf-input" accept="application/pdf,.pdf" multiple style="display:none;">
+      </label>
+      <div id="nota-pdf-status" class="helper" style="margin:6px 0 0;"></div>
+      <div id="nota-pdf-resultado" style="margin-top:10px;"></div>
+    </div>
     <div class="card" id="card-pendentes">
       <h2>📥 Lançamentos aguardando revisão</h2>
       <div id="lista-pendentes"></div>
@@ -2304,7 +2325,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.13-38';
+const APP_VERSION = 'v2026.10.13-39';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -2500,6 +2521,7 @@ function sanitizeRecord(r){
     fotoUrlCupom: toStrOrNull(r.fotoUrlCupom),
     fotoUrlRequisicao: toStrOrNull(r.fotoUrlRequisicao),
     obra: toStrOrNull(r.obra),
+    alertasAceitos: toStrOrNull(r.alertasAceitos),
   };
 }
 /* Comparador de datas seguro: nunca quebra mesmo se o valor não for string. */
@@ -4934,6 +4956,7 @@ function renderListaPendentes(){
     return;
   }
   box.innerHTML = PENDENTES.map(p=>{
+    const np = NOTA_PREENCHIDA[p.id] || {};
     const infoBase = `
       <div class="info">
         <b>${escapeHtml(p.motorista||p.email)}</b> — ${fmtDate(p.data)} · ${escapeHtml(p.equipamento||'—')} · ${escapeHtml(p.produto||'—')}
@@ -4963,8 +4986,8 @@ function renderListaPendentes(){
     return `
       <div class="aprov-item" data-id="${escapeHtml(p.id)}" style="flex-direction:column;align-items:stretch;gap:10px;">
         ${infoBase}
-        <p class="helper" style="margin:0;">📋 Requisição <b>${escapeHtml(String(p.requisicao))}</b> gerada — falta só a Nota Fiscal.</p>
-        <details>
+        <p class="helper" style="margin:0;">📋 Requisição <b>${escapeHtml(String(p.requisicao))}</b> gerada — falta só a Nota Fiscal.${np.arquivo ? ` <span style="color:var(--ok,#1a8f3c);font-weight:700;">📄 Preenchido pela nota PDF (${escapeHtml(np.arquivo)}) — confere e confirma.</span>` : ''}</p>
+        <details ${np.arquivo ? 'open' : ''}>
           <summary style="cursor:pointer;font-size:12px;color:var(--gray);font-weight:600;">✏️ Editar dados antes de confirmar</summary>
           <div class="form-grid" style="margin-top:10px;">
             <div class="field" style="margin:0;">
@@ -4973,26 +4996,26 @@ function renderListaPendentes(){
             </div>
             <div class="field" style="margin:0;">
               <label style="font-size:11px;">Quantidade</label>
-              <input type="number" step="0.001" class="pendente-edit" data-edit-quantidade="${escapeHtml(p.id)}" value="${p.quantidade!=null?p.quantidade:''}">
+              <input type="number" step="0.001" class="pendente-edit" data-edit-quantidade="${escapeHtml(p.id)}" value="${np.quantidade!=null?np.quantidade:(p.quantidade!=null?p.quantidade:'')}">
             </div>
             <div class="field" style="margin:0;">
               <label style="font-size:11px;">Preço Unit.</label>
-              <input type="number" step="0.001" class="pendente-edit" data-edit-precounit="${escapeHtml(p.id)}" value="${p.precoUnit!=null?p.precoUnit:''}">
+              <input type="number" step="0.001" class="pendente-edit" data-edit-precounit="${escapeHtml(p.id)}" value="${np.precoUnit!=null?np.precoUnit:(p.precoUnit!=null?p.precoUnit:'')}">
             </div>
             <div class="field" style="margin:0;">
               <label style="font-size:11px;">Preço Total</label>
-              <input type="number" step="0.01" class="pendente-edit" data-edit-precototal="${escapeHtml(p.id)}" value="${p.precoTotal!=null?p.precoTotal:''}">
+              <input type="number" step="0.01" class="pendente-edit" data-edit-precototal="${escapeHtml(p.id)}" value="${np.precoTotal!=null?np.precoTotal:(p.precoTotal!=null?p.precoTotal:'')}">
             </div>
             <div class="field" style="margin:0;">
               <label style="font-size:11px;">Km/Hor</label>
-              <input type="number" step="1" class="pendente-edit" data-edit-kmhor="${escapeHtml(p.id)}" value="${p.kmHor!=null?p.kmHor:''}">
+              <input type="number" step="1" class="pendente-edit" data-edit-kmhor="${escapeHtml(p.id)}" value="${np.kmHor!=null?np.kmHor:(p.kmHor!=null?p.kmHor:'')}">
             </div>
           </div>
         </details>
         <div class="btn-row" style="align-items:flex-end;">
           <div class="field" style="margin:0;">
             <label style="font-size:11px;">Nota Fiscal</label>
-            <input type="text" class="pendente-nf" data-nf-de="${escapeHtml(p.id)}" placeholder="Nº NF" value="${escapeHtml(p.nfSugerido||'')}">
+            <input type="text" class="pendente-nf" data-nf-de="${escapeHtml(p.id)}" placeholder="Nº NF" value="${escapeHtml(np.nf || p.nfSugerido || '')}">
           </div>
           <button class="btn secondary" data-confirmar="${escapeHtml(p.id)}">✅ Confirmar e enviar</button>
           <button class="btn ghost" data-rejeitar="${escapeHtml(p.id)}">🗑️ Rejeitar</button>
@@ -5024,6 +5047,276 @@ function renderListaPendentes(){
   box.querySelectorAll('[data-rejeitar]').forEach(btn=>{
     btn.addEventListener('click', ()=>rejeitarPendenteUI(btn.dataset.rejeitar));
   });
+}
+
+/* ---------------------------------------------------------------------
+   NOTA FISCAL EM PDF (aba Aprovações) — lê o PDF que o posto manda, acha o
+   NÚMERO DE REQUISIÇÃO impresso nele (a placa da nota costuma vir errada,
+   então o cruzamento é pela requisição), casa com o lançamento pendente e
+   já preenche a 1ª aprovação (requisição) e a NF/litros/valor da 2ª.
+--------------------------------------------------------------------- */
+let NOTA_PREENCHIDA = {};     // idPendente -> dados vindos da nota PDF
+let NOTAS_PDF_LIDAS = [];     // notas lidas nesta tela (cada uma com o cruzamento)
+let PDFJS_CARREGANDO = null;
+
+function carregarPdfJs(){
+  if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if(PDFJS_CARREGANDO) return PDFJS_CARREGANDO;
+  PDFJS_CARREGANDO = new Promise((resolve, reject)=>{
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    sc.onload = ()=>{
+      try{
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        resolve(window.pdfjsLib);
+      }catch(e){ reject(e); }
+    };
+    sc.onerror = ()=>{ PDFJS_CARREGANDO = null; reject(new Error('não consegui carregar o leitor de PDF (sem internet ou bloqueado)')); };
+    document.head.appendChild(sc);
+  });
+  return PDFJS_CARREGANDO;
+}
+
+async function textoDoPdf(arquivo){
+  const pdfjs = await carregarPdfJs();
+  const pdf = await pdfjs.getDocument({ data: await arquivo.arrayBuffer() }).promise;
+  let texto = '';
+  for(let pg = 1; pg <= pdf.numPages; pg++){
+    const page = await pdf.getPage(pg);
+    const content = await page.getTextContent();
+    const linhas = [];
+    content.items.forEach(it=>{
+      if(!it.str || !it.str.trim()) return;
+      const y = Math.round(it.transform[5]);
+      let l = linhas.find(x=>Math.abs(x.y - y) <= 2);
+      if(!l){ l = { y, itens: [] }; linhas.push(l); }
+      l.itens.push({ x: it.transform[4], s: it.str });
+    });
+    linhas.sort((a,b)=>b.y - a.y).forEach(l=>{
+      l.itens.sort((a,b)=>a.x - b.x);
+      texto += l.itens.map(i=>i.s).join(' ').replace(/\s+/g,' ').trim() + '\n';
+    });
+  }
+  return texto;
+}
+
+/* Tira os dados do texto da nota (extrato/cupom "a prazo" do posto). */
+function extrairDadosNotaPdf(texto){
+  const linhas = String(texto || '').replace(/\r/g,'').split('\n').map(l=>l.replace(/\s+/g,' ').trim()).filter(Boolean);
+  const plano = linhas.join('\n');
+  const out = { posto:null, data:null, nf:null, produto:null, quantidade:null, precoUnit:null, precoTotal:null, placa:null, requisicao:null, km:null, motorista:null, tokens:[] };
+  out.posto = linhas[0] || null;
+  let m = plano.match(/(\d{2})\/(\d{2})\/(\d{4})\s+\d{2}:\d{2}/);
+  if(m) out.data = `${m[3]}-${m[2]}-${m[1]}`;
+  m = plano.match(/Doc\.?\s*N[uú]mero\s*:?\s*(\d+)/i) || plano.match(/N[º°o]\.?\s*(?:da\s*)?(?:Nota|NF)\w*\s*:?\s*(\d+)/i);
+  if(m) out.nf = m[1];
+  const num = '\\d{1,3}(?:\\.\\d{3})*,';
+  m = plano.match(new RegExp('^\\s*([A-ZÀ-Ú][A-ZÀ-Ú0-9 .\\-/]{2,}?)\\s+(' + num + '\\d{1,3})\\s+(' + num + '\\d{2,4})\\s+(' + num + '\\d{2})\\s*$', 'm'));
+  if(m){
+    out.produto = m[1].trim();
+    out.quantidade = numBR(m[2]); out.precoUnit = numBR(m[3]); out.precoTotal = numBR(m[4]);
+  } else {
+    m = plano.match(/Valor\s*R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i);
+    if(m) out.precoTotal = numBR(m[1]);
+  }
+  m = plano.match(/Placa\s*:?\s*([A-Za-z0-9][A-Za-z0-9\-]*)(?:\s+(\d{2,}))?\s+Km\s*:?\s*(\d+)/i);
+  if(m){
+    out.placa = m[1].toUpperCase();
+    if(m[2]) out.requisicao = m[2];
+    out.km = parseInt(m[3], 10);
+  } else {
+    m = plano.match(/Placa\s*:?\s*([A-Za-z0-9][A-Za-z0-9\-]*)/i);
+    if(m) out.placa = m[1].toUpperCase();
+  }
+  if(!out.requisicao){
+    m = plano.match(/Req(?:uisi[cç][aã]o)?\.?\s*:?\s*(\d{3,})/i);
+    if(m) out.requisicao = m[1];
+  }
+  m = plano.match(/Motorista\s*:\s*([^\n]+)/i);
+  if(m) out.motorista = m[1].trim();
+  out.tokens = (plano.match(/\b\d{3,}\b/g) || []);
+  // normaliza o produto pro nome usado no sistema
+  if(out.produto){
+    const pu = out.produto.toUpperCase();
+    if(pu.indexOf('ETANOL') !== -1) out.produto = 'ETANOL';
+    else if(pu.indexOf('GASOLINA') !== -1) out.produto = 'GASOLINA';
+    else if(/DIESEL.*S-?10/.test(pu)) out.produto = 'DIESEL S-10';
+    else if(/DIESEL.*S-?500/.test(pu)) out.produto = 'DIESEL S-500';
+    else if(pu.indexOf('DIESEL') !== -1) out.produto = 'DIESEL';
+  }
+  return out;
+}
+
+function normReqNum(v){ return String(v == null ? '' : v).trim().replace(/^0+/,''); }
+function normPlaca(v){ return String(v == null ? '' : v).replace(/[^A-Za-z0-9]/g,'').toUpperCase(); }
+
+/* Cruza a nota com o que o sistema já tem: requisição emitida, lançamento
+   pendente (o do motorista) e lançamentos já confirmados. */
+function cruzarNotaComSistema(d){
+  const conhecidos = new Set();
+  (REQUISICOES_EMITIDAS || []).forEach(r=>{ if(r.numero) conhecidos.add(normReqNum(r.numero)); });
+  (PENDENTES || []).forEach(p=>{ if(p.requisicao) conhecidos.add(normReqNum(p.requisicao)); });
+  (DB || []).forEach(r=>{ if(r.requisicao) conhecidos.add(normReqNum(r.requisicao)); });
+
+  let numReq = d.requisicao ? normReqNum(d.requisicao) : null;
+  let origem = numReq ? 'lida na nota' : null;
+  if(!numReq || !conhecidos.has(numReq)){
+    // tenta qualquer número do texto que seja uma requisição conhecida (só 4+ dígitos, pra não confundir com PDV/caixa)
+    const achado = d.tokens.map(normReqNum).find(t=>t.length >= 4 && conhecidos.has(t));
+    if(achado){ numReq = achado; origem = 'achada no texto da nota'; }
+  }
+  const reqEmitida = numReq ? (REQUISICOES_EMITIDAS || []).find(r=>normReqNum(r.numero) === numReq) : null;
+  const jaLancado = numReq ? (DB || []).find(r=>normReqNum(r.requisicao) === numReq) : null;
+
+  const equipDaReq = reqEmitida ? (reqEmitida.terceiro === 'sim' ? null : String(reqEmitida.equipamento || '').toUpperCase()) : null;
+  const pontuar = p=>{
+    if(p.requisicao && normReqNum(p.requisicao) === numReq && numReq) return 20;
+    if(p.requisicao) return 0; // já tem outra requisição — não é esse
+    let pts = 0;
+    if(equipDaReq && String(p.equipamento || '').toUpperCase() === equipDaReq) pts += 5;
+    if(reqEmitida && reqEmitida.terceiro === 'sim' && normPlaca(p.equipamento) === normPlaca(reqEmitida.placa)) pts += 5;
+    if(d.quantidade != null && p.quantidade != null && Math.abs(Number(p.quantidade) - d.quantidade) <= 0.6) pts += 3;
+    if(d.precoTotal != null && p.precoTotal != null && Math.abs(Number(p.precoTotal) - d.precoTotal) <= 0.6) pts += 3;
+    if(d.data && p.data && d.data === p.data) pts += 2;
+    return pts;
+  };
+  const candidatos = (PENDENTES || []).map(p=>({ p, pts: pontuar(p) })).filter(x=>x.pts >= 5).sort((a,b)=>b.pts - a.pts);
+
+  const avisos = [];
+  if(!numReq) avisos.push('Não achei número de requisição nessa nota.');
+  else if(!reqEmitida && !candidatos.length) avisos.push(`A requisição ${numReq} (da nota) não existe no sistema — confere se o número está certo.`);
+  if(jaLancado) avisos.push(`A requisição ${numReq} já foi lançada em ${fmtDate(jaLancado.data)} (${jaLancado.equipamento||'—'}, ${fmtNum(jaLancado.quantidade,1)} L) — cuidado com nota duplicada.`);
+  if(d.placa && reqEmitida){
+    const veic = reqEmitida.terceiro === 'sim' ? { placa: reqEmitida.placa } : (VEICULOS || []).find(v=>String(v.equipamento || '').toUpperCase() === equipDaReq);
+    const placaSistema = veic && veic.placa;
+    if(placaSistema && normPlaca(placaSistema) !== normPlaca(d.placa)){
+      avisos.push(`A placa da nota (${d.placa}) não bate com a do veículo (${placaSistema}) — cruzei pela requisição ${numReq}, que é o que vale.`);
+    }
+  }
+  return { numReq, origem, reqEmitida, jaLancado, candidatos, avisos };
+}
+
+async function lerNotasPdfUI(arquivos){
+  const lista = [...arquivos].filter(f=>/\.pdf$/i.test(f.name) || f.type === 'application/pdf');
+  if(!lista.length){ toast('Escolhe um arquivo PDF.'); return; }
+  const status = document.getElementById('nota-pdf-status');
+  for(const f of lista){
+    try{
+      status.textContent = `⏳ Lendo ${f.name}...`;
+      const texto = await textoDoPdf(f);
+      if(!texto.trim()){ toast(`${f.name}: o PDF não tem texto (parece escaneado) — tira print/foto e usa a leitura de foto.`); continue; }
+      const dados = extrairDadosNotaPdf(texto);
+      NOTAS_PDF_LIDAS.unshift({ arquivo: f.name, dados, cruz: cruzarNotaComSistema(dados), aplicada: false });
+    }catch(err){
+      console.error(err);
+      toast(`Falha ao ler ${f.name}: ${err.message}`);
+    }
+  }
+  status.textContent = '';
+  renderNotasPdf();
+}
+
+function renderNotasPdf(){
+  const box = document.getElementById('nota-pdf-resultado');
+  if(!box) return;
+  if(!NOTAS_PDF_LIDAS.length){ box.innerHTML = ''; return; }
+  box.innerHTML = NOTAS_PDF_LIDAS.map((n, i)=>{
+    const d = n.dados, c = n.cruz;
+    const resumo = `<b>${escapeHtml(d.posto || 'Nota')}</b> · Doc/NF <b>${escapeHtml(d.nf || '—')}</b> · ${d.data ? fmtDate(d.data) : '—'}<br>
+      <span style="color:var(--gray);">${escapeHtml(d.produto || '—')} · ${d.quantidade != null ? fmtNum(d.quantidade,3) + ' L' : '—'} · ${d.precoUnit != null ? fmtMoney(d.precoUnit) + '/L' : ''} · total <b>${d.precoTotal != null ? fmtMoney(d.precoTotal) : '—'}</b> · placa na nota: ${escapeHtml(d.placa || '—')} · km: ${d.km != null ? fmtNum(d.km,0) : '—'} · requisição: <b>${escapeHtml(c.numReq || '—')}</b>${c.origem ? ' ('+c.origem+')' : ''}</span>`;
+    const avisos = c.avisos.map(a=>`<div style="color:var(--bad);font-size:12.5px;margin-top:4px;">⚠️ ${escapeHtml(a)}</div>`).join('');
+    let acao = '';
+    if(n.aplicada){
+      acao = `<div style="color:#1a8f3c;font-weight:700;margin-top:8px;">✅ Aplicada — confere os dados no lançamento abaixo e confirma.</div>`;
+    } else if(c.candidatos.length){
+      acao = `<div class="btn-row" style="margin-top:10px;align-items:flex-end;">
+        <div class="field" style="margin:0;min-width:260px;">
+          <label style="font-size:11px;">Lançamento pendente que casa com a nota</label>
+          <select id="nota-cand-${i}">${c.candidatos.map(x=>`<option value="${escapeHtml(x.p.id)}">${escapeHtml(x.p.motorista||x.p.email||'—')} · ${escapeHtml(x.p.equipamento||'—')} · ${fmtDate(x.p.data)} · ${fmtNum(x.p.quantidade,1)} L · ${fmtMoney(x.p.precoTotal)}${x.p.requisicao ? ' · req. '+escapeHtml(String(x.p.requisicao)) : ' · sem requisição'}</option>`).join('')}</select>
+        </div>
+        <button type="button" class="btn secondary" data-nota-aplicar="${i}">✅ Preencher aprovação com a nota</button>
+      </div>`;
+    } else if(c.reqEmitida && c.reqEmitida.status === 'aberta' && pode('aprovacoes_emitir') && d.quantidade && d.precoTotal){
+      acao = `<div class="btn-row" style="margin-top:10px;">
+        <button type="button" class="btn secondary" data-nota-criar="${i}">➕ Requisição ${escapeHtml(c.numReq)} está aberta (${escapeHtml(c.reqEmitida.motoristaNome||'—')} · ${escapeHtml(c.reqEmitida.equipamento||c.reqEmitida.placa||'—')}) — lançar com os dados da nota</button>
+      </div>`;
+    } else if(!c.avisos.length || c.reqEmitida){
+      acao = `<div class="helper" style="margin-top:8px;">Nenhum lançamento pendente casou com essa nota ainda. Se o motorista ainda não lançou, depois de lançar é só jogar o PDF de novo.</div>`;
+    }
+    return `<div class="aprov-item" style="flex-direction:column;align-items:stretch;gap:2px;">
+      <div style="display:flex;justify-content:space-between;gap:10px;"><div class="info">📄 <span style="color:var(--gray);">${escapeHtml(n.arquivo)}</span><br>${resumo}${avisos}</div>
+      <button type="button" class="btn ghost" data-nota-remover="${i}" title="Tirar da lista" style="align-self:flex-start;padding:2px 8px;">✕</button></div>
+      ${acao}
+    </div>`;
+  }).join('');
+  box.querySelectorAll('[data-nota-aplicar]').forEach(b=>b.addEventListener('click', ()=>aplicarNotaPdf(parseInt(b.dataset.notaAplicar,10))));
+  box.querySelectorAll('[data-nota-criar]').forEach(b=>b.addEventListener('click', ()=>criarPendenteDaNota(parseInt(b.dataset.notaCriar,10))));
+  box.querySelectorAll('[data-nota-remover]').forEach(b=>b.addEventListener('click', ()=>{ NOTAS_PDF_LIDAS.splice(parseInt(b.dataset.notaRemover,10),1); renderNotasPdf(); }));
+}
+
+function destacarPendente(id){
+  renderListaPendentes();
+  const el = document.querySelector(`#lista-pendentes .aprov-item[data-id="${CSS.escape(String(id))}"]`);
+  if(el){ el.classList.add('nota-destaque'); el.scrollIntoView({ behavior:'smooth', block:'center' }); }
+}
+
+async function aplicarNotaPdf(idx){
+  const n = NOTAS_PDF_LIDAS[idx];
+  if(!n) return;
+  const sel = document.getElementById('nota-cand-' + idx);
+  const pid = sel ? sel.value : null;
+  if(!pid){ toast('Não achei um lançamento pendente pra essa nota.'); return; }
+  let p = PENDENTES.find(x=>String(x.id) === String(pid));
+  if(!p){ toast('Esse lançamento pendente não existe mais — atualiza a tela.'); return; }
+  const d = n.dados;
+  if(!p.requisicao){
+    if(!n.cruz.numReq){ toast('A nota não tem número de requisição legível — gera a requisição na mão.'); return; }
+    await gerarRequisicaoUI(p.id, n.cruz.numReq); // 1ª aprovação, já com o número que veio na nota
+    p = PENDENTES.find(x=>String(x.id) === String(pid));
+    if(!p || !p.requisicao) return; // gerarRequisicaoUI já avisou o erro
+  }
+  NOTA_PREENCHIDA[p.id] = {
+    arquivo: n.arquivo, nf: d.nf || '',
+    quantidade: d.quantidade, precoUnit: d.precoUnit, precoTotal: d.precoTotal,
+    kmHor: (p.kmHor == null && d.km != null) ? d.km : null,
+  };
+  n.aplicada = true;
+  renderNotasPdf();
+  destacarPendente(p.id);
+  toast('Nota aplicada: requisição e dados preenchidos — confere e confirma.');
+}
+
+async function criarPendenteDaNota(idx){
+  const n = NOTAS_PDF_LIDAS[idx];
+  if(!n || !n.cruz.reqEmitida) return;
+  const d = n.dados, req = n.cruz.reqEmitida;
+  try{
+    const resp = await fetch(SYNC_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({
+      action:'marcarRequisicaoUsada', id: req.id, idToken: ID_TOKEN,
+      dados: { quantidade: d.quantidade, precoTotal: d.precoTotal, precoUnit: d.precoUnit, kmHor: d.km, data: d.data || todayStr() }
+    }) });
+    const json = await parseJsonResponse(resp);
+    if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao lançar com os dados da nota.'); return; }
+    REQUISICOES_EMITIDAS = json.requisicoesEmitidas || REQUISICOES_EMITIDAS;
+    PENDENTES = json.pendentes || PENDENTES;
+    const novo = PENDENTES.find(x=>normReqNum(x.requisicao) === normReqNum(req.numero));
+    if(novo) NOTA_PREENCHIDA[novo.id] = { arquivo: n.arquivo, nf: d.nf || '', quantidade: d.quantidade, precoUnit: d.precoUnit, precoTotal: d.precoTotal, kmHor: d.km };
+    n.aplicada = true;
+    renderListaRequisicoesAdmin();
+    renderNotasPdf();
+    if(novo) destacarPendente(novo.id); else renderListaPendentes();
+    toast('Lançado com os dados da nota — falta só confirmar.');
+  }catch(err){ console.error(err); toast('Falha ao lançar: ' + err.message); }
+}
+
+function initNotaPdf(){
+  const input = document.getElementById('nota-pdf-input');
+  const zona = document.getElementById('nota-pdf-zona');
+  if(!input || !zona) return;
+  input.addEventListener('change', async ()=>{ const fs = input.files; if(fs && fs.length) await lerNotasPdfUI(fs); input.value = ''; });
+  ['dragover','dragenter'].forEach(ev=>zona.addEventListener(ev, e=>{ e.preventDefault(); zona.classList.add('arrastando'); }));
+  ['dragleave','drop'].forEach(ev=>zona.addEventListener(ev, e=>{ e.preventDefault(); zona.classList.remove('arrastando'); }));
+  zona.addEventListener('drop', async e=>{ if(e.dataTransfer && e.dataTransfer.files.length) await lerNotasPdfUI(e.dataTransfer.files); });
 }
 
 async function gerarRequisicaoUI(id, requisicaoManual){
@@ -6618,6 +6911,7 @@ function initFormLancamento(){
       fotoUrlCupom: fotoUrlCupomAtual || (registroAnterior && registroAnterior.fotoUrlCupom) || null,
       fotoUrlRequisicao: fotoUrlRequisicaoAtual || (registroAnterior && registroAnterior.fotoUrlRequisicao) || null,
       obra: (registroAnterior && registroAnterior.obra) || obraParaNovo(equip.value),
+      alertasAceitos: null, // editou o lançamento: os alertas são conferidos de novo
     };
     const calc = calcMediaKmL(rec.equipamento, rec.data, rec.kmHor, rec.quantidade, rec.produto, rec.id);
     rec.mediaKmL = calc ? calc.media : null;
@@ -6825,6 +7119,112 @@ function initLancFilters(){
   });
 }
 
+/* ---------------------------------------------------------------------
+   ALERTAS DE POSSÍVEL FALHA nos lançamentos — fica em vermelho na Base de
+   lançamentos, com o motivo. Quem pode editar o registro pode "aceitar"
+   (está certo, o alerta some e fica gravado) ou corrigir.
+--------------------------------------------------------------------- */
+const ALERTA_LIM_ALTO = 1.8;   // KM/L acima de 1,8x a mediana do equipamento
+const ALERTA_LIM_BAIXO = 0.45; // KM/L abaixo de 0,45x a mediana do equipamento
+let FILTRO_ALERTAS = false;
+
+function calcularAlertasLancamentos(){
+  const mapa = new Map();
+  const add = (r, codigo, texto)=>{
+    if(!mapa.has(r.id)) mapa.set(r.id, []);
+    mapa.get(r.id).push({ codigo, texto });
+  };
+  const porEquip = {};
+  DB.forEach(r=>{ if(r.equipamento){ (porEquip[r.equipamento] = porEquip[r.equipamento] || []).push(r); } });
+  Object.values(porEquip).forEach(lista=>{
+    lista.sort((a,b)=> (a.data||'').localeCompare(b.data||'') || ((a.kmHor??0)-(b.kmHor??0)));
+    const medias = lista.map(r=>r.mediaKmL).filter(m=>typeof m==='number' && m>0).sort((a,b)=>a-b);
+    const mediana = medias.length >= 4 ? medias[Math.floor(medias.length/2)] : null;
+    let anterior = null;
+    lista.forEach(r=>{
+      const temKm = r.kmHor !== null && r.kmHor !== undefined && !isNaN(r.kmHor);
+      const combustivel = PRODUTOS_COMBUSTIVEL.has((r.produto||'').toUpperCase()) && r.quantidade > 0;
+      if(r.data && r.dataLancamento && r.data > r.dataLancamento){
+        add(r, 'data_futura', `A data do abastecimento (${fmtDate(r.data)}) é DEPOIS da data em que foi lançado (${fmtDate(r.dataLancamento)}) — provável erro de digitação na data.`);
+      }
+      if(temKm && anterior){
+        if(r.kmHor <= anterior.kmHor){
+          add(r, 'km_fora_ordem', `Km (${fmtNum(r.kmHor,0)}) é menor ou igual ao do abastecimento anterior (${fmtDate(anterior.data)}: ${fmtNum(anterior.kmHor,0)}) — data ou km digitado errado. O KM/L não é calculado assim.`);
+        } else if(combustivel && (r.mediaKmL === null || r.mediaKmL === undefined)){
+          add(r, 'sem_media', `KM/L não foi calculado: a diferença de km pro abastecimento anterior (${fmtDate(anterior.data)}: ${fmtNum(anterior.kmHor,0)}) é grande demais — provavelmente faltam lançamentos no meio ou o km está errado.`);
+        }
+      }
+      if(typeof r.mediaKmL === 'number' && r.mediaKmL > 25 && !(mediana && r.mediaKmL > mediana*ALERTA_LIM_ALTO)){
+        add(r, 'kml_alto', `KM/L de ${fmtNum(r.mediaKmL,2)} é improvável (acima de 25) — provavelmente faltam abastecimentos no meio ou o km está errado.`);
+      } else if(typeof r.mediaKmL === 'number' && r.mediaKmL > 0 && mediana){
+        if(r.mediaKmL > mediana*ALERTA_LIM_ALTO){
+          add(r, 'kml_alto', `KM/L de ${fmtNum(r.mediaKmL,2)} está muito acima do normal desse equipamento (mediana ${fmtNum(mediana,2)}) — pode estar faltando um abastecimento no meio ou o km está errado.`);
+        } else if(r.mediaKmL < mediana*ALERTA_LIM_BAIXO){
+          add(r, 'kml_baixo', `KM/L de ${fmtNum(r.mediaKmL,2)} está muito abaixo do normal desse equipamento (mediana ${fmtNum(mediana,2)}) — km digitado errado, litros a mais ou consumo anormal.`);
+        }
+      }
+      if(temKm) anterior = r;
+    });
+  });
+  // tira o que já foi aceito (e remove a entrada se não sobrou nada)
+  const resultado = new Map();
+  const porId = new Map(DB.map(r=>[r.id, r]));
+  mapa.forEach((lista, id)=>{
+    const r = porId.get(id);
+    const aceitos = String((r && r.alertasAceitos) || '').split(',').map(x=>x.trim()).filter(Boolean);
+    const restantes = lista.filter(a=>aceitos.indexOf(a.codigo) === -1);
+    if(restantes.length) resultado.set(id, restantes);
+  });
+  return resultado;
+}
+
+function abrirAlertaLancamento(id){
+  const r = DB.find(x=>x.id === id);
+  if(!r) return;
+  const al = calcularAlertasLancamentos().get(id) || [];
+  let back = document.getElementById('modal-alerta');
+  if(!back){
+    back = document.createElement('div');
+    back.className = 'modal-backdrop';
+    back.id = 'modal-alerta';
+    document.body.appendChild(back);
+    back.addEventListener('click', e=>{ if(e.target === back) back.classList.remove('show'); });
+  }
+  const podeMexer = podeEditarRegistro(r);
+  back.innerHTML = `<div class="modal">
+    <h3>⚠️ Possível falha neste lançamento</h3>
+    <p style="margin:0 0 8px;font-size:13px;"><b>${escapeHtml(r.equipamento||'—')}</b> · ${fmtDate(r.data)} · ${escapeHtml(r.motorista||'—')} · ${fmtNum(r.quantidade,1)} L · Km ${r.kmHor!=null?fmtNum(r.kmHor,0):'—'}${r.requisicao?' · Req. '+escapeHtml(String(r.requisicao)):''}</p>
+    <ul class="alerta-lista">${al.map(a=>`<li>${escapeHtml(a.texto)}</li>`).join('') || '<li>Esse alerta já foi resolvido.</li>'}</ul>
+    <p class="helper" style="margin:8px 0 14px;">Se estiver certo (ex.: abasteceu em outro posto, hodômetro trocado, lançamentos que realmente não existem), é só <b>aceitar</b> e o alerta some. Se estiver errado, <b>corrige</b> o lançamento.</p>
+    <div class="btn-row" style="justify-content:flex-end;">
+      <button type="button" class="btn ghost" id="alerta-fechar">Fechar</button>
+      ${podeMexer ? `<button type="button" class="btn secondary" id="alerta-corrigir">✏️ Corrigir</button><button type="button" class="btn" id="alerta-aceitar">✅ Aceitar (está certo)</button>` : ''}
+    </div>
+  </div>`;
+  back.classList.add('show');
+  document.getElementById('alerta-fechar').addEventListener('click', ()=>back.classList.remove('show'));
+  if(podeMexer){
+    document.getElementById('alerta-corrigir').addEventListener('click', ()=>{ back.classList.remove('show'); editRecord(id); });
+    document.getElementById('alerta-aceitar').addEventListener('click', async ()=>{ back.classList.remove('show'); await aceitarAlertasLancamento(id); });
+  }
+}
+
+async function aceitarAlertasLancamento(id){
+  const r = DB.find(x=>x.id === id);
+  if(!r) return;
+  const codigos = (calcularAlertasLancamentos().get(id) || []).map(a=>a.codigo);
+  const ja = String(r.alertasAceitos || '').split(',').map(x=>x.trim()).filter(Boolean);
+  r.alertasAceitos = [...new Set(ja.concat(codigos))].join(',');
+  saveDB();
+  renderLancTable();
+  if(USUARIO_ATUAL){
+    const res = await pushToSheets(false);
+    toast(res && res.status === 'ok' ? 'Alerta aceito.' : 'Alerta aceito neste aparelho, mas NÃO sincronizou com o Sheets.');
+  } else {
+    toast('Alerta aceito.');
+  }
+}
+
 function renderLancTable(){
   const search = (document.getElementById('lanc-search').value || '').toUpperCase();
   const tbody = document.querySelector('#lanc-table tbody');
@@ -6839,7 +7239,9 @@ function renderLancTable(){
       th.insertAdjacentHTML('beforeend', `<span class="seta-ordem">${LANC_ORDEM.direcao==='asc'?'▲':'▼'}</span>`);
     }
   });
+  const alertas = calcularAlertasLancamentos();
   if(FILTRO_SEM_EQUIPAMENTO) rows = rows.filter(r => !r.equipamento || !String(r.equipamento).trim());
+  if(FILTRO_ALERTAS) rows = rows.filter(r => alertas.has(r.id));
   if(search){
     rows = rows.filter(r => [r.motorista,r.equipamento,r.posto,r.produto,r.requisicao].join(' ').toUpperCase().includes(search));
   }
@@ -6869,8 +7271,25 @@ function renderLancTable(){
     }
   }
 
-  tbody.innerHTML = rows.slice(0,400).map(r=>`
-    <tr>
+  // banner de alertas (possíveis falhas: km fora de ordem, KM/L fora do normal...)
+  const bannerAl = document.getElementById('alerta-lancamentos');
+  if(bannerAl){
+    if(alertas.size > 0){
+      bannerAl.style.display = 'block';
+      bannerAl.innerHTML = FILTRO_ALERTAS
+        ? `🔴 Mostrando só os <b>${alertas.size}</b> lançamento(s) com possível falha. <button type="button" class="btn ghost" id="btn-ver-alertas" style="margin-left:8px;">← Voltar pra lista completa</button>`
+        : `🔴 <b>${alertas.size}</b> lançamento(s) com possível falha (km fora de ordem, KM/L fora do normal, data suspeita...) — aparecem em vermelho. Clica no ⚠️ da linha pra ver o motivo e aceitar ou corrigir. <button type="button" class="btn ghost" id="btn-ver-alertas" style="margin-left:8px;">Ver só esses</button>`;
+      document.getElementById('btn-ver-alertas').addEventListener('click', ()=>{ FILTRO_ALERTAS = !FILTRO_ALERTAS; renderLancTable(); });
+    } else {
+      bannerAl.style.display = 'none';
+      FILTRO_ALERTAS = false;
+    }
+  }
+
+  tbody.innerHTML = rows.slice(0,400).map(r=>{
+    const al = alertas.get(r.id);
+    return `
+    <tr class="${al ? 'linha-alerta' : ''}">
       <td>${fmtDate(r.data)}</td>
       <td>${r.dataLancamento?fmtDate(r.dataLancamento):'—'}</td>
       <td>${r.nf ?? '—'}</td>
@@ -6885,11 +7304,13 @@ function renderLancTable(){
       <td class="num">${r.kmHor!=null?fmtNum(r.kmHor,0):'—'}</td>
       <td class="num">${r.mediaKmL!=null?fmtNum(r.mediaKmL,2):'—'}</td>
       <td class="row-actions">
+        ${al ? `<button class="btn-alerta" onclick="abrirAlertaLancamento('${r.id}')" title="${escapeHtml(al.map(a=>a.texto).join(' | '))}">⚠️</button>` : ''}
         ${podeEditarRegistro(r) ? `
         <button onclick="editRecord('${r.id}')" title="Editar">✏️</button>
         <button class="del" onclick="deleteRecord('${r.id}')" title="Excluir">🗑️</button>` : ''}
       </td>
-    </tr>`).join('') || `<tr><td colspan="14" class="empty-state">Nenhum lançamento encontrado.</td></tr>`;
+    </tr>`;
+  }).join('') || `<tr><td colspan="14" class="empty-state">Nenhum lançamento encontrado.</td></tr>`;
 }
 
 /* ---------------------------------------------------------------------
@@ -7912,6 +8333,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     initDashboardControls();
     initLancFilters();
     initSeletorObra();
+    initNotaPdf();
     initFormLancamento();
     initPerfis();
     initAutocompletes();
