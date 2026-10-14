@@ -897,6 +897,10 @@ td.num, th.num{text-align:right;font-variant-numeric:tabular-nums;}
   gap:12px;
 }
 .form-grid .field.wide{grid-column:span 2;}
+/* evita campos sobrepostos: a coluna manda no tamanho, não o campo */
+.form-grid > .field{min-width:0;}
+.form-grid .field input, .form-grid .field select{width:100%;min-width:0;}
+.form-grid .autocomplete{width:100%;}
 .helper{font-size:11.5px;color:var(--gray);margin-top:6px;}
 .calc-preview{
   background:var(--navy-light);
@@ -2345,7 +2349,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.14-56';
+const APP_VERSION = 'v2026.10.14-57';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -3418,7 +3422,13 @@ async function enviarLancamentoMotorista(){
 
 /* Lançamento manual (nível 3+): não grava direto — cai em Aprovações,
    igual ao do motorista, e só vira oficial depois de conferido. */
+let ENVIANDO_MANUAL = false;
 async function enviarLancamentoManual(){
+  if(ENVIANDO_MANUAL) return; // evita enviar duas vezes com clique/Enter duplo
+  ENVIANDO_MANUAL = true;
+  try{ await enviarLancamentoManualInterno(); } finally { ENVIANDO_MANUAL = false; }
+}
+async function enviarLancamentoManualInterno(){
   let motivoAuth = null;
   const km = numBR(document.getElementById('l-kmhor').value);
   const q = numBR(document.getElementById('l-quantidade').value);
@@ -9013,81 +9023,37 @@ document.addEventListener('DOMContentLoaded', async ()=>{
 });
 
 
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
-}
+/* ENTER avança pro próximo campo do formulário (no último, envia).
+   Não interfere em textarea, botões, sugestões de autocomplete abertas
+   nem em quem já tratou a tecla. */
+document.addEventListener('keydown', ev=>{
+  if(ev.key !== 'Enter' || ev.defaultPrevented || ev.isComposing || ev.shiftKey || ev.ctrlKey || ev.altKey || ev.metaKey) return;
+  const el = ev.target;
+  if(!el || !el.closest) return;
+  const form = el.closest('form');
+  if(!form) return;
+  const tag = el.tagName;
+  if(tag !== 'INPUT' && tag !== 'SELECT') return;
+  const tipo = (el.type || '').toLowerCase();
+  if(['submit','button','file','checkbox','radio','reset'].includes(tipo)) return;
+  if(el.closest('.autocomplete') && el.closest('.autocomplete').querySelector('.autocomplete-list.show .autocomplete-item.active')) return;
+  const campos = [...form.querySelectorAll('input, select, textarea')].filter(c=>{
+    const t = (c.type||'').toLowerCase();
+    return !c.disabled && !c.readOnly && t !== 'hidden' && t !== 'file' && t !== 'checkbox' && t !== 'radio' && t !== 'submit' && t !== 'button' && c.offsetParent !== null;
+  });
+  const i = campos.indexOf(el);
+  if(i === -1) return;
+  const prox = campos[i+1];
+  if(!prox) return; // último campo: deixa o Enter enviar o formulário normalmente
+  ev.preventDefault();
+  prox.focus();
+  if(prox.select && ['text','number','search','tel',''].includes((prox.type||'').toLowerCase())){ try{ prox.select(); }catch(e){} }
+});
 
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
 }
 
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
-}
-
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
-}
-
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
-}
-
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
-}
-
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
-}
-
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
-}
-
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
-}
-
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
-}
-
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
-}
-
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
-}
-
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
-}
-
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
-}
-
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
-}
-
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
-}
-
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
-}
-
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
-}
-
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
-}
 </script>
 </body>
 </html>
