@@ -1629,7 +1629,7 @@ body.preview-motorista #view-lancamentos::before{
         </div>
         </div>
       </div>
-      <div class="btn-row" style="margin:0 0 8px;"><button type="button" class="btn secondary" id="btn-datas-emissao-2">📅 Corrigir datas de hoje pela emissão da requisição</button></div>
+      <div class="btn-row" style="margin:0 0 8px;"><button type="button" class="btn secondary" id="btn-datas-emissao-2">📅 Corrigir datas pela emissão da requisição</button></div>
       <div id="lanc-totais"></div>
       <div class="table-scroll">
         <table id="lanc-table">
@@ -2273,7 +2273,7 @@ body.preview-motorista #view-lancamentos::before{
         📎 Clique pra escolher o PDF (ou arraste aqui) — pode ser mais de um
         <input type="file" id="nota-pdf-input" accept="application/pdf,.pdf" multiple style="display:none;">
       </label>
-      <div class="btn-row" style="margin:8px 0 0;"><button type="button" class="btn secondary" id="btn-datas-emissao" title="Acerta a data dos lançamentos de hoje pela data em que a requisição foi emitida">📅 Corrigir datas de hoje pela emissão da requisição</button></div>
+      <div class="btn-row" style="margin:8px 0 0;"><button type="button" class="btn secondary" id="btn-datas-emissao" title="Acerta a data dos lançamentos de hoje pela data em que a requisição foi emitida">📅 Corrigir datas pela emissão da requisição</button></div>
       <div id="nota-pdf-status" class="helper" style="margin:6px 0 0;"></div>
       <div id="nota-pdf-resultado" style="margin-top:10px;"></div>
     </div>
@@ -2352,7 +2352,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.14-62';
+const APP_VERSION = 'v2026.10.14-63';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -5696,7 +5696,9 @@ function datasPelaEmissaoDaRequisicao(){
   const alvo = [];
   (DB || []).forEach(r=>{
     if(!r.requisicao) return;
-    if(!(String(r.data||'').slice(0,10) === hoje || String(r.dataLancamento||'').slice(0,10) === hoje)) return;
+    // suspeito = data igual à data em que foi lançado/baixado no sistema (ou a de hoje)
+    const d = String(r.data||'').slice(0,10), dl = String(r.dataLancamento||'').slice(0,10);
+    if(!(d === hoje || dl === hoje || (dl && d === dl))) return;
     const rq = (REQUISICOES_EMITIDAS || []).find(x=>normReqNum(x.numero) === normReqNum(r.requisicao));
     if(!rq || !rq.criadoEm) return;
     const dt = new Date(rq.criadoEm); if(isNaN(dt)) return;
@@ -5710,7 +5712,7 @@ async function corrigirDatasPelaEmissaoUI(){
   const alvo = datasPelaEmissaoDaRequisicao();
   if(!alvo.length){
     const hoje = todayStr();
-    const comReq = (DB||[]).filter(r=>r.requisicao && (String(r.data||'').slice(0,10) === hoje || String(r.dataLancamento||'').slice(0,10) === hoje));
+    const comReq = (DB||[]).filter(r=>r.requisicao && (String(r.data||'').slice(0,10) === hoje || String(r.dataLancamento||'').slice(0,10) === hoje || (r.dataLancamento && String(r.data||'').slice(0,10) === String(r.dataLancamento).slice(0,10))));
     const datas = new Set();
     comReq.forEach(r=>{ const rq = (REQUISICOES_EMITIDAS||[]).find(x=>normReqNum(x.numero) === normReqNum(r.requisicao)); if(rq && rq.criadoEm){ const dt = new Date(rq.criadoEm); if(!isNaN(dt)) datas.add(fmtDate(dataLocalIso(dt))); } });
     alert(comReq.length
@@ -5718,8 +5720,8 @@ async function corrigirDatasPelaEmissaoUI(){
       : 'Nenhum lançamento de hoje com requisição encontrado.');
     return;
   }
-  const exemplo = alvo.slice(0,5).map(x=>`• Req. ${x.r.requisicao} (${x.r.equipamento||'—'}): ${fmtDate(x.r.data)} → ${fmtDate(x.nova)}`).join('\n');
-  if(!confirm(`Corrigir a data de ${alvo.length} lançamento(s) pra data em que a requisição foi emitida?\n\n${exemplo}${alvo.length>5?'\n…':''}`)) return;
+  const exemplo = alvo.slice(0,12).map(x=>`• Req. ${x.r.requisicao} (${x.r.equipamento||'—'}): ${fmtDate(x.r.data)} → ${fmtDate(x.nova)}`).join('\n');
+  if(!confirm(`Corrigir a data de ${alvo.length} lançamento(s) pra data em que a requisição foi emitida?\n\n${exemplo}${alvo.length>12?'\n… e mais '+(alvo.length-12):''}`)) return;
   alvo.forEach(x=>{ x.r.data = x.nova; x.r.mediaKmL = null; });
   recalcularTodasMedias(); saveDB();
   try{ populateFilterSelects(); renderLancTable(); }catch(e){}
