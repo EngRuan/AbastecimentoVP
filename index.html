@@ -2337,7 +2337,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.14-52';
+const APP_VERSION = 'v2026.10.14-53';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -5205,7 +5205,7 @@ function renderListaPendentes(){
             <input type="text" class="pendente-req" data-req-de="${escapeHtml(p.id)}" placeholder="auto" value="${escapeHtml(rasc.reqDigitada || '')}">
           </div>
           <div class="field" style="margin:0;">
-            <label style="font-size:11px;">NF mãe / fechamento (opcional)</label>
+            <label style="font-size:11px;">NF mãe / fechamento ${postoPendenteCadastrado(p.id, {posto: rasc.posto}) ? '<b style="color:var(--bad);">(obrigatório — posto cadastrado)</b>' : '(opcional)'}</label>
             <input type="text" class="pendente-nf" data-nf-de="${escapeHtml(p.id)}" placeholder="Nº da NF mãe" value="${escapeHtml(rasc.nf !== undefined ? rasc.nf : (p.nfSugerido || ''))}">
             <div class="helper nf-total" data-nf-total="${escapeHtml(p.id)}" style="margin:3px 0 0;font-size:11.5px;"></div>
           </div>
@@ -5225,7 +5225,7 @@ function renderListaPendentes(){
         ${pendEditHtml(p, np, rasc)}
         <div class="btn-row" style="align-items:flex-end;">
           <div class="field" style="margin:0;">
-            <label style="font-size:11px;">NF mãe / fechamento (opcional)</label>
+            <label style="font-size:11px;">NF mãe / fechamento ${postoPendenteCadastrado(p.id, {posto: rasc.posto}) ? '<b style="color:var(--bad);">(obrigatório — posto cadastrado)</b>' : '(opcional)'}</label>
             <input type="text" class="pendente-nf" data-nf-de="${escapeHtml(p.id)}" placeholder="Nº da NF mãe" value="${escapeHtml(rasc.nf !== undefined ? rasc.nf : (p.nfSugerido || ''))}">
             <div class="helper nf-total" data-nf-total="${escapeHtml(p.id)}" style="margin:3px 0 0;font-size:11.5px;"></div>
           </div>
@@ -5610,8 +5610,21 @@ async function gerarRequisicaoUI(id, requisicaoManual){
   }
 }
 
+function postoPendenteCadastrado(id, edicoes){
+  const p = PENDENTES.find(x=>x.id === id);
+  const nome = String((edicoes && edicoes.posto) || (p && p.posto) || '').trim().toUpperCase();
+  return !!nome && (POSTOS || []).some(x=>String(x.nome||'').trim().toUpperCase() === nome);
+}
+
 async function confirmarPendenteUI(id, nf, edicoes){
-  // NF mãe é opcional (pode ser preenchida depois, no fechamento); o cupom do posto vai separado
+  // NF mãe: obrigatória quando o posto é cadastrado; opcional pra posto externo
+  if(!nf && postoPendenteCadastrado(id, edicoes)){
+    const inp = document.querySelector(`#lista-pendentes [data-nf-de="${CSS.escape(id)}"]`);
+    if(inp){ inp.style.borderColor = 'var(--bad)'; inp.focus(); }
+    toast('Posto cadastrado: informe o número da NF mãe (fechamento) pra confirmar.');
+    return;
+  }
+  // o cupom do posto vai separado
   const npC = NOTA_PREENCHIDA[id];
   if(npC && npC.docPosto){ edicoes = Object.assign({}, edicoes, { cupom: npC.docPosto }); }
   try{
@@ -8750,6 +8763,10 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   }
 });
 
+
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
+}
 
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
