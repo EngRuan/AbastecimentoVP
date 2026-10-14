@@ -1629,6 +1629,7 @@ body.preview-motorista #view-lancamentos::before{
         </div>
         </div>
       </div>
+      <div class="btn-row" style="margin:0 0 8px;"><button type="button" class="btn secondary" id="btn-datas-emissao-2">📅 Corrigir datas de hoje pela emissão da requisição</button></div>
       <div id="lanc-totais"></div>
       <div class="table-scroll">
         <table id="lanc-table">
@@ -2351,7 +2352,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.14-61';
+const APP_VERSION = 'v2026.10.14-62';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -5707,7 +5708,16 @@ function datasPelaEmissaoDaRequisicao(){
 async function corrigirDatasPelaEmissaoUI(){
   if(!pode('editar_base')){ toast('Seu nível não tem permissão para editar lançamentos.'); return; }
   const alvo = datasPelaEmissaoDaRequisicao();
-  if(!alvo.length){ toast('Nenhum lançamento de hoje com data diferente da emissão da requisição.'); return; }
+  if(!alvo.length){
+    const hoje = todayStr();
+    const comReq = (DB||[]).filter(r=>r.requisicao && (String(r.data||'').slice(0,10) === hoje || String(r.dataLancamento||'').slice(0,10) === hoje));
+    const datas = new Set();
+    comReq.forEach(r=>{ const rq = (REQUISICOES_EMITIDAS||[]).find(x=>normReqNum(x.numero) === normReqNum(r.requisicao)); if(rq && rq.criadoEm){ const dt = new Date(rq.criadoEm); if(!isNaN(dt)) datas.add(fmtDate(dataLocalIso(dt))); } });
+    alert(comReq.length
+      ? `Achei ${comReq.length} lançamento(s) de hoje com requisição, mas as requisições foram emitidas em ${[...datas].join(', ') || 'data desconhecida'} — a mesma data que já está no lançamento. Por esse caminho não tem o que corrigir.\n\nPra pegar a data real do abastecimento, jogue os PDFs das notas em Aprovações > Nota PDF (o app lê a data do cupom).`
+      : 'Nenhum lançamento de hoje com requisição encontrado.');
+    return;
+  }
   const exemplo = alvo.slice(0,5).map(x=>`• Req. ${x.r.requisicao} (${x.r.equipamento||'—'}): ${fmtDate(x.r.data)} → ${fmtDate(x.nova)}`).join('\n');
   if(!confirm(`Corrigir a data de ${alvo.length} lançamento(s) pra data em que a requisição foi emitida?\n\n${exemplo}${alvo.length>5?'\n…':''}`)) return;
   alvo.forEach(x=>{ x.r.data = x.nova; x.r.mediaKmL = null; });
@@ -8315,6 +8325,7 @@ function initImportExport(){
   document.getElementById('file-restore').addEventListener('change', handleRestoreJson);
   document.getElementById('btn-corrigir-placas').addEventListener('click', corrigirPlacasHistoricoUI);
   document.getElementById('btn-datas-emissao').addEventListener('click', corrigirDatasPelaEmissaoUI);
+  document.getElementById('btn-datas-emissao-2').addEventListener('click', corrigirDatasPelaEmissaoUI);
 }
 
 function excelDateToIso(v){
