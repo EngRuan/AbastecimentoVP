@@ -2272,6 +2272,7 @@ body.preview-motorista #view-lancamentos::before{
         📎 Clique pra escolher o PDF (ou arraste aqui) — pode ser mais de um
         <input type="file" id="nota-pdf-input" accept="application/pdf,.pdf" multiple style="display:none;">
       </label>
+      <div class="btn-row" style="margin:8px 0 0;"><button type="button" class="btn secondary" id="btn-datas-emissao" title="Acerta a data dos lançamentos de hoje pela data em que a requisição foi emitida">📅 Corrigir datas de hoje pela emissão da requisição</button></div>
       <div id="nota-pdf-status" class="helper" style="margin:6px 0 0;"></div>
       <div id="nota-pdf-resultado" style="margin-top:10px;"></div>
     </div>
@@ -2350,7 +2351,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.14-60';
+const APP_VERSION = 'v2026.10.14-61';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -5687,6 +5688,35 @@ async function lerNotasPdfUI(arquivos){
   renderNotasPdf();
 }
 
+/* Atalho: acerta a data de lançamentos recentes pela data em que a
+   REQUISIÇÃO foi emitida (quando não tem a nota PDF pra conferir). */
+function datasPelaEmissaoDaRequisicao(){
+  const hoje = todayStr();
+  const alvo = [];
+  (DB || []).forEach(r=>{
+    if(!r.requisicao) return;
+    if(!(String(r.data||'').slice(0,10) === hoje || String(r.dataLancamento||'').slice(0,10) === hoje)) return;
+    const rq = (REQUISICOES_EMITIDAS || []).find(x=>normReqNum(x.numero) === normReqNum(r.requisicao));
+    if(!rq || !rq.criadoEm) return;
+    const dt = new Date(rq.criadoEm); if(isNaN(dt)) return;
+    const nova = dataLocalIso(dt);
+    if(nova !== String(r.data||'').slice(0,10)) alvo.push({ r, nova });
+  });
+  return alvo;
+}
+async function corrigirDatasPelaEmissaoUI(){
+  if(!pode('editar_base')){ toast('Seu nível não tem permissão para editar lançamentos.'); return; }
+  const alvo = datasPelaEmissaoDaRequisicao();
+  if(!alvo.length){ toast('Nenhum lançamento de hoje com data diferente da emissão da requisição.'); return; }
+  const exemplo = alvo.slice(0,5).map(x=>`• Req. ${x.r.requisicao} (${x.r.equipamento||'—'}): ${fmtDate(x.r.data)} → ${fmtDate(x.nova)}`).join('\n');
+  if(!confirm(`Corrigir a data de ${alvo.length} lançamento(s) pra data em que a requisição foi emitida?\n\n${exemplo}${alvo.length>5?'\n…':''}`)) return;
+  alvo.forEach(x=>{ x.r.data = x.nova; x.r.mediaKmL = null; });
+  recalcularTodasMedias(); saveDB();
+  try{ populateFilterSelects(); renderLancTable(); }catch(e){}
+  const res = await pushToSheets(false);
+  toast(res && res.status === 'ok' ? `${alvo.length} data(s) corrigida(s) e sincronizada(s).` : `${alvo.length} corrigida(s) aqui — falhou sincronizar: ${(res && res.mensagem) || 'tente na aba Sincronização'}.`);
+}
+
 /* Lançamento JÁ gravado cuja data difere da data do cupom (nota PDF):
    casa pela requisição ou pelo nº do cupom. Serve pra corrigir datas que
    entraram como "hoje" no dia da baixa. */
@@ -8284,6 +8314,7 @@ function initImportExport(){
   document.getElementById('btn-restore-json').addEventListener('click', ()=> document.getElementById('file-restore').click());
   document.getElementById('file-restore').addEventListener('change', handleRestoreJson);
   document.getElementById('btn-corrigir-placas').addEventListener('click', corrigirPlacasHistoricoUI);
+  document.getElementById('btn-datas-emissao').addEventListener('click', corrigirDatasPelaEmissaoUI);
 }
 
 function excelDateToIso(v){
@@ -8388,7 +8419,8 @@ function exportXlsx(){
   XLSX.writeFile(wb, `abastecimento_tripoloni_${todayStr()}.xlsx`);
 }
 
-function todayStr(){ return new Date().toISOString().slice(0,10); }
+function dataLocalIso(d){ const p = n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
+function todayStr(){ return dataLocalIso(new Date()); } // data LOCAL (antes usava UTC e virava "amanhã" depois das 21h)
 
 function backupJson(){
   const blob = new Blob([JSON.stringify(DB, null, 2)], {type:'application/json'});
