@@ -2350,7 +2350,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.14-58';
+const APP_VERSION = 'v2026.10.14-60';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -5301,7 +5301,7 @@ let PEND_RASCUNHO = {};
 function capturarRascunhoPendentes(){
   const box = document.getElementById('lista-pendentes');
   if(!box) return;
-  const mapa = { 'data-nf-de':'nf', 'data-edit-posto':'posto', 'data-edit-quantidade':'quantidade', 'data-edit-precounit':'precoUnit', 'data-edit-precototal':'precoTotal', 'data-edit-kmhor':'kmHor', 'data-req-de':'reqDigitada' };
+  const mapa = { 'data-nf-de':'nf', 'data-edit-posto':'posto', 'data-edit-quantidade':'quantidade', 'data-edit-precounit':'precoUnit', 'data-edit-precototal':'precoTotal', 'data-edit-kmhor':'kmHor', 'data-edit-data':'data', 'data-req-de':'reqDigitada' };
   Object.keys(mapa).forEach(attr=>{
     box.querySelectorAll('['+attr+']').forEach(inp=>{
       const id = inp.getAttribute(attr);
@@ -5324,8 +5324,12 @@ function pendEditHtml(p, np, rasc){
           <summary style="cursor:pointer;font-size:12px;color:var(--gray);font-weight:600;">✏️ Editar dados antes de confirmar</summary>
           <div class="form-grid" style="margin-top:10px;">
             <div class="field" style="margin:0;">
+              <label style="font-size:11px;">Data do abastecimento${(np.data && p.data && String(p.data).slice(0,10) !== np.data) ? ' <b style="color:var(--bad);">(da nota)</b>' : ''}</label>
+              <input type="date" class="pendente-edit" data-edit-data="${escapeHtml(p.id)}" value="${escapeHtml(rasc.data !== undefined ? rasc.data : (np.data || String(p.data||'').slice(0,10)))}">
+            </div>
+            <div class="field" style="margin:0;">
               <label style="font-size:11px;">Posto</label>
-              <input type="text" class="pendente-edit" data-edit-posto="${escapeHtml(p.id)}" value="${escapeHtml(rasc.posto !== undefined ? rasc.posto : (p.posto||''))}">
+              <input type="text" class="pendente-edit" data-edit-posto=""${escapeHtml(p.id)}" value="${escapeHtml(rasc.posto !== undefined ? rasc.posto : (p.posto||''))}">
             </div>
             <div class="field" style="margin:0;">
               <label style="font-size:11px;">Quantidade</label>
@@ -5452,6 +5456,7 @@ function renderListaPendentes(){
         precoUnit: box.querySelector(`[data-edit-precounit="${CSS.escape(id)}"]`)?.value || '',
         precoTotal: box.querySelector(`[data-edit-precototal="${CSS.escape(id)}"]`)?.value || '',
         kmHor: box.querySelector(`[data-edit-kmhor="${CSS.escape(id)}"]`)?.value || '',
+        data: box.querySelector(`[data-edit-data="${CSS.escape(id)}"]`)?.value || '',
       };
       gerarEConfirmarUI(id, reqManual, nf, edicoes);
     });
@@ -5466,6 +5471,7 @@ function renderListaPendentes(){
         precoUnit: box.querySelector(`[data-edit-precounit="${CSS.escape(id)}"]`)?.value || '',
         precoTotal: box.querySelector(`[data-edit-precototal="${CSS.escape(id)}"]`)?.value || '',
         kmHor: box.querySelector(`[data-edit-kmhor="${CSS.escape(id)}"]`)?.value || '',
+        data: box.querySelector(`[data-edit-data="${CSS.escape(id)}"]`)?.value || '',
       };
       confirmarPendenteUI(id, nfInput ? nfInput.value.trim() : '', edicoes);
     });
@@ -5571,6 +5577,7 @@ function extrairDadosNotaPdf(texto){
   const out = { posto:null, data:null, nf:null, produto:null, quantidade:null, precoUnit:null, precoTotal:null, placa:null, requisicao:null, km:null, motorista:null, tokens:[] };
   out.posto = linhas[0] || null;
   let m = plano.match(/(\d{2})\/(\d{2})\/(\d{4})\s+\d{2}:\d{2}/);
+  if(!m) m = plano.match(/(\d{2})\/(\d{2})\/(\d{4})/); // nota sem horário
   if(m) out.data = `${m[3]}-${m[2]}-${m[1]}`;
   m = plano.match(/Doc\.?\s*N[uú]mero\s*:?\s*(\d+)/i) || plano.match(/N[º°o]\.?\s*(?:da\s*)?(?:Nota|NF)\w*\s*:?\s*(\d+)/i);
   if(m) out.nf = m[1];
@@ -5680,11 +5687,37 @@ async function lerNotasPdfUI(arquivos){
   renderNotasPdf();
 }
 
+/* Lançamento JÁ gravado cuja data difere da data do cupom (nota PDF):
+   casa pela requisição ou pelo nº do cupom. Serve pra corrigir datas que
+   entraram como "hoje" no dia da baixa. */
+function registroComDataDivergente(n){
+  const d = n.dados;
+  if(!d || !d.data || !pode('editar_base')) return null;
+  const req = n.cruz && n.cruz.numReq;
+  const r = (DB || []).find(x=>(req && normReqNum(x.requisicao) === req) || (d.nf && x.cupom && String(x.cupom).trim() === String(d.nf).trim()));
+  return (r && String(r.data||'').slice(0,10) !== d.data) ? r : null;
+}
+async function corrigirDatasPelasNotas(indices){
+  let n = 0;
+  indices.forEach(i=>{
+    const nota = NOTAS_PDF_LIDAS[i]; const r = nota && registroComDataDivergente(nota);
+    if(r){ r.data = nota.dados.data; r.mediaKmL = null; n++; }
+  });
+  if(!n){ toast('Nenhuma data pra corrigir.'); return; }
+  recalcularTodasMedias(); saveDB();
+  try{ populateFilterSelects(); renderLancTable(); }catch(e){}
+  renderNotasPdf();
+  const res = await pushToSheets(false);
+  toast(res && res.status === 'ok' ? `${n} data(s) corrigida(s) pela nota e sincronizada(s).` : `${n} data(s) corrigida(s) aqui — falhou sincronizar: ${(res && res.mensagem) || 'tente na aba Sincronização'}.`);
+}
+
 function renderNotasPdf(){
   const box = document.getElementById('nota-pdf-resultado');
   if(!box) return;
   if(!NOTAS_PDF_LIDAS.length){ box.innerHTML = ''; return; }
-  box.innerHTML = NOTAS_PDF_LIDAS.map((n, i)=>{
+  const idxDiverg = NOTAS_PDF_LIDAS.map((n,i)=>registroComDataDivergente(n) ? i : -1).filter(i=>i>=0);
+  const barraDatas = idxDiverg.length ? `<div class="aprov-item" style="border-color:var(--bad);"><div class="info">📅 <b>${idxDiverg.length}</b> lançamento(s) já gravado(s) estão com a data diferente da do cupom.</div><button type="button" class="btn" data-nota-datafix-todas="1">Corrigir todas as datas pelas notas</button></div>` : '';
+  box.innerHTML = barraDatas + NOTAS_PDF_LIDAS.map((n, i)=>{
     const d = n.dados, c = n.cruz;
     const resumo = `<b>${escapeHtml(d.posto || 'Nota')}</b> · Cupom/Doc do posto <b>${escapeHtml(d.nf || '—')}</b> · ${d.data ? fmtDate(d.data) : '—'}<br>
       <span style="color:var(--gray);">${escapeHtml(d.produto || '—')} · ${d.quantidade != null ? fmtNum(d.quantidade,3) + ' L' : '—'} · ${d.precoUnit != null ? fmtMoney(d.precoUnit) + '/L' : ''} · total <b>${d.precoTotal != null ? fmtMoney(d.precoTotal) : '—'}</b> · placa na nota: ${escapeHtml(d.placa || '—')} · km: ${d.km != null ? fmtNum(d.km,0) : '—'} · requisição: <b>${escapeHtml(c.numReq || '—')}</b>${c.origem ? ' ('+c.origem+')' : ''}</span>`;
@@ -5707,6 +5740,8 @@ function renderNotasPdf(){
     } else if(!c.avisos.length || c.reqEmitida){
       acao = `<div class="helper" style="margin-top:8px;">Nenhum lançamento pendente casou com essa nota ainda. Se o motorista ainda não lançou, depois de lançar é só jogar o PDF de novo.</div>`;
     }
+    const rDiv = registroComDataDivergente(n);
+    if(rDiv) acao += `<div class="btn-row" style="margin-top:8px;"><button type="button" class="btn secondary" data-nota-datafix="${i}">📅 Corrigir data do lançamento gravado (${escapeHtml(rDiv.equipamento||'—')}): ${fmtDate(rDiv.data)} → ${fmtDate(d.data)}</button></div>`;
     return `<div class="aprov-item" style="flex-direction:column;align-items:stretch;gap:2px;">
       <div style="display:flex;justify-content:space-between;gap:10px;"><div class="info">📄 <span style="color:var(--gray);">${escapeHtml(n.arquivo)}</span><br>${resumo}${avisos}</div>
       <button type="button" class="btn ghost" data-nota-remover="${i}" title="Tirar da lista" style="align-self:flex-start;padding:2px 8px;">✕</button></div>
@@ -5724,6 +5759,8 @@ function renderNotasPdf(){
     const v = (document.getElementById('nota-req-' + i).value || '').replace(/\D/g,'');
     n.dados.requisicao = v || null; n.cruz = cruzarNotaComSistema(n.dados); n.aplicada = false; renderNotasPdf();
   }));
+  box.querySelectorAll('[data-nota-datafix]').forEach(b=>b.addEventListener('click', ()=>corrigirDatasPelasNotas([parseInt(b.dataset.notaDatafix,10)])));
+  box.querySelectorAll('[data-nota-datafix-todas]').forEach(b=>b.addEventListener('click', ()=>corrigirDatasPelasNotas(idxDiverg)));
   box.querySelectorAll('[data-nota-aplicar]').forEach(b=>b.addEventListener('click', ()=>aplicarNotaPdf(parseInt(b.dataset.notaAplicar,10))));
   box.querySelectorAll('[data-nota-criar]').forEach(b=>b.addEventListener('click', ()=>criarPendenteDaNota(parseInt(b.dataset.notaCriar,10))));
   box.querySelectorAll('[data-nota-remover]').forEach(b=>b.addEventListener('click', ()=>{ NOTAS_PDF_LIDAS.splice(parseInt(b.dataset.notaRemover,10),1); renderNotasPdf(); }));
@@ -5751,12 +5788,12 @@ async function aplicarNotaPdf(idx){
     if(!p || !p.requisicao) return; // gerarRequisicaoUI já avisou o erro
   }
   NOTA_PREENCHIDA[p.id] = {
-    arquivo: n.arquivo, docPosto: d.nf || '',
+    arquivo: n.arquivo, docPosto: d.nf || '', data: d.data || null,
     quantidade: d.quantidade, precoUnit: d.precoUnit, precoTotal: d.precoTotal,
     kmHor: (p.kmHor == null && d.km != null) ? d.km : null,
   };
   n.aplicada = true;
-  { const rr = PEND_RASCUNHO[p.id]; if(rr){ ['quantidade','precoUnit','precoTotal','kmHor'].forEach(k=>delete rr[k]); rr._aberto = true; } }
+  { const rr = PEND_RASCUNHO[p.id]; if(rr){ ['quantidade','precoUnit','precoTotal','kmHor','data'].forEach(k=>delete rr[k]); rr._aberto = true; } }
   renderNotasPdf();
   destacarPendente(p.id);
   toast('Nota aplicada: requisição e dados preenchidos — confere e confirma.');
@@ -5776,7 +5813,7 @@ async function criarPendenteDaNota(idx){
     REQUISICOES_EMITIDAS = json.requisicoesEmitidas || REQUISICOES_EMITIDAS;
     PENDENTES = json.pendentes || PENDENTES;
     const novo = PENDENTES.find(x=>normReqNum(x.requisicao) === normReqNum(req.numero));
-    if(novo) NOTA_PREENCHIDA[novo.id] = { arquivo: n.arquivo, docPosto: d.nf || '', quantidade: d.quantidade, precoUnit: d.precoUnit, precoTotal: d.precoTotal, kmHor: d.km };
+    if(novo) NOTA_PREENCHIDA[novo.id] = { arquivo: n.arquivo, docPosto: d.nf || '', data: d.data || null, quantidade: d.quantidade, precoUnit: d.precoUnit, precoTotal: d.precoTotal, kmHor: d.km };
     n.aplicada = true;
     renderListaRequisicoesAdmin();
     renderNotasPdf();
