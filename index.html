@@ -1417,8 +1417,12 @@ body.preview-motorista #view-lancamentos::before{
             <input type="date" id="l-data" required>
           </div>
           <div class="field hide-motorista">
-            <label>Nota Fiscal / Doc.</label>
-            <input type="text" id="l-nf" placeholder="Nº NF ou código">
+            <label>NF mãe / fechamento <span style="font-weight:400;color:var(--gray);">(opcional)</span></label>
+            <input type="text" id="l-nf" placeholder="Nº da NF mãe">
+          </div>
+          <div class="field hide-motorista">
+            <label>Cupom do posto <span style="font-weight:400;color:var(--gray);">(opcional)</span></label>
+            <input type="text" id="l-cupom" placeholder="Nº do cupom / doc.">
           </div>
           <div class="field hide-motorista">
             <label>Posto</label>
@@ -1619,6 +1623,7 @@ body.preview-motorista #view-lancamentos::before{
         </div>
         </div>
       </div>
+      <div id="lanc-totais"></div>
       <div class="table-scroll">
         <table id="lanc-table">
           <thead>
@@ -2332,7 +2337,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.13-48';
+const APP_VERSION = 'v2026.10.14-52';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -2451,7 +2456,7 @@ function fmtNum(v, digits=2){
 }
 function fmtDate(iso){
   if(!iso) return '—';
-  const [y,m,d] = iso.split('-');
+  const [y,m,d] = String(iso).slice(0,10).split('-');
   return `${d}/${m}/${y}`;
 }
 function toast(msg){
@@ -2529,6 +2534,7 @@ function sanitizeRecord(r){
     fotoUrlRequisicao: toStrOrNull(r.fotoUrlRequisicao),
     obra: toStrOrNull(r.obra),
     alertasAceitos: toStrOrNull(r.alertasAceitos),
+    cupom: toStrOrNull(r.cupom),
   };
 }
 /* Comparador de datas seguro: nunca quebra mesmo se o valor não for string. */
@@ -3423,6 +3429,7 @@ async function enviarLancamentoManual(){
     precoTotal: numBR(document.getElementById('l-precototal').value) || null,
     kmHor: isNaN(km) ? null : km,
     nfSugerido: document.getElementById('l-nf').value.trim() || null,
+    cupom: (document.getElementById('l-cupom')?.value || '').trim() || null,
     requisicao: document.getElementById('l-requisicao').value.trim() || null,
     motorista: document.getElementById('l-motorista').value.trim().toUpperCase() || null,
     empresa: document.getElementById('l-empresa').value.trim().toUpperCase() || null,
@@ -4276,6 +4283,7 @@ function initRequisicoesTab(){
   document.getElementById('btn-emitir-requisicao').addEventListener('click', emitirRequisicaoUI);
   document.getElementById('req-filtro-status').addEventListener('change', renderListaRequisicoesAdmin);
   document.getElementById('req-busca').addEventListener('input', (e)=>{
+    renderListaPendentes();
     // ao buscar, já muda pra "Todas" sozinho — senão uma requisição
     // cancelada nunca aparece na busca (o filtro "Só abertas" escondia
     // ela antes mesmo da busca rodar)
@@ -4288,6 +4296,7 @@ function initRequisicoesTab(){
       // não só as abertas de hoje
       document.getElementById('req-filtro-status').value = 'todas';
       renderListaRequisicoesAdmin();
+      renderListaPendentes();
     });
   });
   document.getElementById('btn-auto-emitir-requisicao').addEventListener('click', autoEmitirRequisicaoUI);
@@ -5041,6 +5050,51 @@ async function tratarLimiteAtingido(){
    e ainda estão esperando o admin conferir/confirmar (com a NF) antes de
    virarem lançamento oficial.
 --------------------------------------------------------------------- */
+/* Média km/L e alertas de um lançamento PENDENTE (antes de confirmar) —
+   usa os valores digitados nos campos de edição, se houver. */
+function analisePendente(p, ov){
+  ov = ov || {};
+  const km = ov.kmHor !== undefined ? ov.kmHor : (p.kmHor != null && p.kmHor !== '' ? Number(p.kmHor) : null);
+  const q = ov.quantidade !== undefined ? ov.quantidade : (p.quantidade != null && p.quantidade !== '' ? Number(p.quantidade) : null);
+  const data = String(p.data || '').slice(0,10);
+  const eq = p.equipamento;
+  const out = { media:null, distancia:null, anterior:null, avisos:[] };
+  const temKm = km != null && !isNaN(km);
+  const combustivel = PRODUTOS_COMBUSTIVEL.has((p.produto||'').toUpperCase()) && q > 0;
+  if(data && data > todayStr()) out.avisos.push(`A data (${fmtDate(data)}) é no futuro — provável erro de digitação.`);
+  if(!eq){ out.avisos.push('Lançamento sem equipamento.'); return out; }
+  if(!temKm){
+    if(combustivel) out.avisos.push('Sem Km/Hor — não dá pra calcular o KM/L.');
+    return out;
+  }
+  const lim = limitesKm(eq, data, p.id);
+  if(lim.lower && km < lim.lower.km) out.avisos.push(`Km (${fmtNum(km,0)}) é MENOR que a leitura anterior (${fmtNum(lim.lower.km,0)}${lim.lower.data?' em '+fmtDate(lim.lower.data):''}) — data ou km digitado errado.`);
+  else if(lim.lower && km === lim.lower.km) out.avisos.push(`Km (${fmtNum(km,0)}) é IGUAL ao da leitura anterior${lim.lower.data?' ('+fmtDate(lim.lower.data)+')':''}.`);
+  if(lim.upper && km > lim.upper.km) out.avisos.push(`Km (${fmtNum(km,0)}) é MAIOR que uma leitura posterior (${fmtNum(lim.upper.km,0)}${lim.upper.data?' em '+fmtDate(lim.upper.data):''}) — confere a data ou o km.`);
+  if(combustivel){
+    const calc = calcMediaKmL(eq, data, km, q, p.produto, p.id);
+    if(calc){
+      out.media = calc.media; out.distancia = calc.distancia; out.anterior = calc.anterior;
+      const medias = DB.filter(r=>(r.equipamento||'').toUpperCase()===(eq||'').toUpperCase() && typeof r.mediaKmL==='number' && r.mediaKmL>0).map(r=>r.mediaKmL).sort((a,b)=>a-b);
+      const mediana = medias.length >= 4 ? medias[Math.floor(medias.length/2)] : null;
+      if(calc.media > 25 && !(mediana && calc.media > mediana*ALERTA_LIM_ALTO)) out.avisos.push(`KM/L de ${fmtNum(calc.media,2)} é improvável (acima de 25) — provavelmente faltam abastecimentos no meio ou o km está errado.`);
+      else if(mediana && calc.media > mediana*ALERTA_LIM_ALTO) out.avisos.push(`KM/L de ${fmtNum(calc.media,2)} muito acima do normal desse equipamento (mediana ${fmtNum(mediana,2)}).`);
+      else if(mediana && calc.media < mediana*ALERTA_LIM_BAIXO) out.avisos.push(`KM/L de ${fmtNum(calc.media,2)} muito abaixo do normal desse equipamento (mediana ${fmtNum(mediana,2)}) — km errado, litros a mais ou consumo anormal.`);
+    } else if(lim.lower && km > lim.lower.km){
+      out.avisos.push('KM/L não calculado: diferença de km pro abastecimento anterior grande demais — provavelmente faltam lançamentos no meio ou o km está errado.');
+    }
+  }
+  return out;
+}
+function analisePendenteHtml(p, ov){
+  const a = analisePendente(p, ov);
+  let h = '';
+  if(a.media != null) h += `<div style="font-size:12.5px;margin-top:4px;">📊 <b>KM/L: ${fmtNum(a.media,2)}</b> <span style="color:var(--gray);">— ${fmtNum(a.distancia,0)} km desde a leitura anterior (${fmtNum(a.anterior.kmHor,0)}${a.anterior.data?' em '+fmtDate(a.anterior.data):''})</span></div>`;
+  h += a.avisos.map(t=>`<div style="color:var(--bad);font-size:12.5px;margin-top:3px;">⚠️ ${escapeHtml(t)}</div>`).join('');
+  if(!h) h = `<div style="color:var(--gray);font-size:12px;margin-top:4px;">Sem média calculada (sem leitura anterior ou sem Km).</div>`;
+  return h;
+}
+
 let _PEND_QTD_ANTERIOR = 0;
 function atualizarCardPendentes(){
   const card = document.getElementById('card-pendentes');
@@ -5057,6 +5111,52 @@ function atualizarCardPendentes(){
   if(n > _PEND_QTD_ANTERIOR) card.classList.remove('colapsado');
   _PEND_QTD_ANTERIOR = n;
 }
+/* Rascunho do que foi digitado nos pendentes — sobrevive aos re-renders (busca, gerar requisição, atualizar). */
+let PEND_RASCUNHO = {};
+function capturarRascunhoPendentes(){
+  const box = document.getElementById('lista-pendentes');
+  if(!box) return;
+  const mapa = { 'data-nf-de':'nf', 'data-edit-posto':'posto', 'data-edit-quantidade':'quantidade', 'data-edit-precounit':'precoUnit', 'data-edit-precototal':'precoTotal', 'data-edit-kmhor':'kmHor', 'data-req-de':'reqDigitada' };
+  Object.keys(mapa).forEach(attr=>{
+    box.querySelectorAll('['+attr+']').forEach(inp=>{
+      const id = inp.getAttribute(attr);
+      const r = PEND_RASCUNHO[id] = PEND_RASCUNHO[id] || {};
+      r[mapa[attr]] = inp.value;
+    });
+  });
+  box.querySelectorAll('details[data-det-edit]').forEach(d=>{
+    const id = d.getAttribute('data-det-edit');
+    (PEND_RASCUNHO[id] = PEND_RASCUNHO[id] || {})._aberto = d.open;
+  });
+}
+function pendEditHtml(p, np, rasc){
+  return `<details data-det-edit="${escapeHtml(p.id)}" ${(np.arquivo || rasc._aberto) ? 'open' : ''}>
+          <summary style="cursor:pointer;font-size:12px;color:var(--gray);font-weight:600;">✏️ Editar dados antes de confirmar</summary>
+          <div class="form-grid" style="margin-top:10px;">
+            <div class="field" style="margin:0;">
+              <label style="font-size:11px;">Posto</label>
+              <input type="text" class="pendente-edit" data-edit-posto="${escapeHtml(p.id)}" value="${escapeHtml(rasc.posto !== undefined ? rasc.posto : (p.posto||''))}">
+            </div>
+            <div class="field" style="margin:0;">
+              <label style="font-size:11px;">Quantidade</label>
+              <input type="number" step="0.001" class="pendente-edit" data-edit-quantidade="${escapeHtml(p.id)}" value="${rasc.quantidade !== undefined ? rasc.quantidade : (np.quantidade!=null?np.quantidade:(p.quantidade!=null?p.quantidade:''))}">
+            </div>
+            <div class="field" style="margin:0;">
+              <label style="font-size:11px;">Preço Unit.</label>
+              <input type="number" step="0.001" class="pendente-edit" data-edit-precounit="${escapeHtml(p.id)}" value="${rasc.precoUnit !== undefined ? rasc.precoUnit : (np.precoUnit!=null?np.precoUnit:(p.precoUnit!=null?p.precoUnit:''))}">
+            </div>
+            <div class="field" style="margin:0;">
+              <label style="font-size:11px;">Preço Total</label>
+              <input type="number" step="0.01" class="pendente-edit" data-edit-precototal="${escapeHtml(p.id)}" value="${rasc.precoTotal !== undefined ? rasc.precoTotal : (np.precoTotal!=null?np.precoTotal:(p.precoTotal!=null?p.precoTotal:''))}">
+            </div>
+            <div class="field" style="margin:0;">
+              <label style="font-size:11px;">Km/Hor</label>
+              <input type="number" step="1" class="pendente-edit" data-edit-kmhor="${escapeHtml(p.id)}" value="${rasc.kmHor !== undefined ? rasc.kmHor : (np.kmHor!=null?np.kmHor:(p.kmHor!=null?p.kmHor:''))}">
+            </div>
+          </div>
+        </details>`;
+}
+
 function renderListaPendentes(){
   const box = document.getElementById('lista-pendentes');
   if(!box) return;
@@ -5065,12 +5165,30 @@ function renderListaPendentes(){
     box.innerHTML = `<p class="helper">Nenhum lançamento pendente no momento.</p>`;
     return;
   }
-  box.innerHTML = PENDENTES.map(p=>{
+  // a busca e o período de "Requisições emitidas" também filtram a 2ª aprovação
+  const busca = (document.getElementById('req-busca')?.value || '').trim().toUpperCase();
+  const dIni = document.getElementById('req-data-ini')?.value || '';
+  const dFim = document.getElementById('req-data-fim')?.value || '';
+  const visiveis = PENDENTES.filter(p=>{
+    const d = String(p.data || '').slice(0,10);
+    if(dIni && (!d || d < dIni)) return false;
+    if(dFim && (!d || d > dFim)) return false;
+    if(!busca) return true;
+    return [p.requisicao, p.motorista, p.email, p.equipamento, p.produto, p.posto, p.nfSugerido, p.empresa, d ? fmtDate(d) : ''].join(' ').toUpperCase().includes(busca);
+  });
+  if(!visiveis.length){
+    box.innerHTML = `<p class="helper">Nenhum lançamento pendente corresponde à busca (${PENDENTES.length} no total).</p>`;
+    return;
+  }
+  capturarRascunhoPendentes();
+  box.innerHTML = visiveis.map(p=>{
     const np = NOTA_PREENCHIDA[p.id] || {};
+    const rasc = PEND_RASCUNHO[p.id] || {};
     const infoBase = `
       <div class="info">
         <b>${escapeHtml(p.motorista||p.email)}</b> — ${fmtDate(p.data)} · ${escapeHtml(p.equipamento||'—')} · ${escapeHtml(p.produto||'—')}
         <br><span style="color:var(--gray);">${fmtNum(p.quantidade,1)} L · ${fmtMoney(p.precoTotal)} (${fmtMoney(p.precoUnit)}/L) · Km/Hor: ${p.kmHor!=null?fmtNum(p.kmHor,0):'—'} · Posto: ${escapeHtml(p.posto||'—')}</span>
+        <div class="pend-analise" data-analise="${escapeHtml(p.id)}">${analisePendenteHtml(p, {kmHor: (rasc.kmHor !== undefined && rasc.kmHor !== '') ? Number(rasc.kmHor) : (np.kmHor != null ? Number(np.kmHor) : undefined), quantidade: (rasc.quantidade !== undefined && rasc.quantidade !== '') ? Number(rasc.quantidade) : (np.quantidade != null ? Number(np.quantidade) : undefined)})}</div>
         ${(p.fotoUrlCupom||p.fotoUrlRequisicao) ? `<br><span style="color:var(--gray);">${p.fotoUrlCupom?`<a href="${escapeHtml(p.fotoUrlCupom)}" target="_blank" rel="noopener">📎 foto do cupom</a>`:''} ${p.fotoUrlRequisicao?`<a href="${escapeHtml(p.fotoUrlRequisicao)}" target="_blank" rel="noopener">📎 foto da requisição</a>`:''}</span>` : ''}
       </div>`;
 
@@ -5079,10 +5197,17 @@ function renderListaPendentes(){
       return `
       <div class="aprov-item" data-id="${escapeHtml(p.id)}" style="flex-direction:column;align-items:stretch;gap:10px;">
         ${infoBase}
+        ${np.arquivo ? `<p class="helper" style="margin:0;"><span style="color:var(--ok,#1a8f3c);font-weight:700;">📄 Dados da nota PDF (${escapeHtml(np.arquivo)})${np.docPosto ? ' · cupom do posto nº '+escapeHtml(np.docPosto) : ''} — confere abaixo.</span></p>` : ''}
+        ${pendEditHtml(p, np, rasc)}
         <div class="btn-row" style="align-items:flex-end;">
           <div class="field" style="margin:0;">
             <label style="font-size:11px;">Nº Requisição (deixa em branco pra gerar automático)</label>
-            <input type="text" class="pendente-req" data-req-de="${escapeHtml(p.id)}" placeholder="auto">
+            <input type="text" class="pendente-req" data-req-de="${escapeHtml(p.id)}" placeholder="auto" value="${escapeHtml(rasc.reqDigitada || '')}">
+          </div>
+          <div class="field" style="margin:0;">
+            <label style="font-size:11px;">NF mãe / fechamento (opcional)</label>
+            <input type="text" class="pendente-nf" data-nf-de="${escapeHtml(p.id)}" placeholder="Nº da NF mãe" value="${escapeHtml(rasc.nf !== undefined ? rasc.nf : (p.nfSugerido || ''))}">
+            <div class="helper nf-total" data-nf-total="${escapeHtml(p.id)}" style="margin:3px 0 0;font-size:11.5px;"></div>
           </div>
           <button class="btn secondary" data-gerar-req="${escapeHtml(p.id)}">🔢 Gerar requisição</button>
           <button class="btn ghost" data-rejeitar="${escapeHtml(p.id)}">🗑️ Rejeitar</button>
@@ -5097,35 +5222,12 @@ function renderListaPendentes(){
       <div class="aprov-item" data-id="${escapeHtml(p.id)}" style="flex-direction:column;align-items:stretch;gap:10px;">
         ${infoBase}
         <p class="helper" style="margin:0;">📋 Requisição <b>${escapeHtml(String(p.requisicao))}</b> gerada — falta só a Nota Fiscal.${np.arquivo ? ` <span style="color:var(--ok,#1a8f3c);font-weight:700;">📄 Preenchido pela nota PDF (${escapeHtml(np.arquivo)})${np.docPosto ? ' · cupom do posto nº '+escapeHtml(np.docPosto)+' (não é a NF do fechamento)' : ''} — confere e confirma.</span>` : ''}</p>
-        <details ${np.arquivo ? 'open' : ''}>
-          <summary style="cursor:pointer;font-size:12px;color:var(--gray);font-weight:600;">✏️ Editar dados antes de confirmar</summary>
-          <div class="form-grid" style="margin-top:10px;">
-            <div class="field" style="margin:0;">
-              <label style="font-size:11px;">Posto</label>
-              <input type="text" class="pendente-edit" data-edit-posto="${escapeHtml(p.id)}" value="${escapeHtml(p.posto||'')}">
-            </div>
-            <div class="field" style="margin:0;">
-              <label style="font-size:11px;">Quantidade</label>
-              <input type="number" step="0.001" class="pendente-edit" data-edit-quantidade="${escapeHtml(p.id)}" value="${np.quantidade!=null?np.quantidade:(p.quantidade!=null?p.quantidade:'')}">
-            </div>
-            <div class="field" style="margin:0;">
-              <label style="font-size:11px;">Preço Unit.</label>
-              <input type="number" step="0.001" class="pendente-edit" data-edit-precounit="${escapeHtml(p.id)}" value="${np.precoUnit!=null?np.precoUnit:(p.precoUnit!=null?p.precoUnit:'')}">
-            </div>
-            <div class="field" style="margin:0;">
-              <label style="font-size:11px;">Preço Total</label>
-              <input type="number" step="0.01" class="pendente-edit" data-edit-precototal="${escapeHtml(p.id)}" value="${np.precoTotal!=null?np.precoTotal:(p.precoTotal!=null?p.precoTotal:'')}">
-            </div>
-            <div class="field" style="margin:0;">
-              <label style="font-size:11px;">Km/Hor</label>
-              <input type="number" step="1" class="pendente-edit" data-edit-kmhor="${escapeHtml(p.id)}" value="${np.kmHor!=null?np.kmHor:(p.kmHor!=null?p.kmHor:'')}">
-            </div>
-          </div>
-        </details>
+        ${pendEditHtml(p, np, rasc)}
         <div class="btn-row" style="align-items:flex-end;">
           <div class="field" style="margin:0;">
-            <label style="font-size:11px;">Nota Fiscal</label>
-            <input type="text" class="pendente-nf" data-nf-de="${escapeHtml(p.id)}" placeholder="Nº NF" value="${escapeHtml(p.nfSugerido || '')}">
+            <label style="font-size:11px;">NF mãe / fechamento (opcional)</label>
+            <input type="text" class="pendente-nf" data-nf-de="${escapeHtml(p.id)}" placeholder="Nº da NF mãe" value="${escapeHtml(rasc.nf !== undefined ? rasc.nf : (p.nfSugerido || ''))}">
+            <div class="helper nf-total" data-nf-total="${escapeHtml(p.id)}" style="margin:3px 0 0;font-size:11.5px;"></div>
           </div>
           <button class="btn secondary" data-confirmar="${escapeHtml(p.id)}">✅ Confirmar e enviar</button>
           <button class="btn ghost" data-rejeitar="${escapeHtml(p.id)}">🗑️ Rejeitar</button>
@@ -5156,6 +5258,34 @@ function renderListaPendentes(){
   });
   box.querySelectorAll('[data-rejeitar]').forEach(btn=>{
     btn.addEventListener('click', ()=>rejeitarPendenteUI(btn.dataset.rejeitar));
+  });
+  // total da NF mãe digitada (o que já está lançado nela + este)
+  box.querySelectorAll('.pendente-nf').forEach(inp=>{
+    const id = inp.dataset.nfDe, p = PENDENTES.find(x=>x.id===id);
+    const alvo = box.querySelector(`[data-nf-total="${CSS.escape(id)}"]`);
+    const atual = ()=>{
+      const nf = inp.value.trim();
+      if(!nf || !alvo || !p){ if(alvo) alvo.textContent = ''; return; }
+      const ja = DB.filter(r=>String(r.nf||'').trim() === nf);
+      const valJa = ja.reduce((t,r)=>t+(Number(r.precoTotal)||0),0);
+      const valEste = Number(box.querySelector(`[data-edit-precototal="${CSS.escape(id)}"]`)?.value ?? p.precoTotal) || 0;
+      alvo.textContent = `NF ${nf}: ${ja.length} lançamento(s) = ${fmtMoney(valJa)} → com este: ${fmtMoney(valJa + valEste)}`;
+    };
+    inp.addEventListener('input', atual); atual();
+  });
+  // recalcula média/alertas enquanto edita Km ou Quantidade
+  PENDENTES.forEach(p=>{
+    const kmI = box.querySelector(`[data-edit-kmhor="${CSS.escape(p.id)}"]`);
+    const qI = box.querySelector(`[data-edit-quantidade="${CSS.escape(p.id)}"]`);
+    const alvo = box.querySelector(`[data-analise="${CSS.escape(p.id)}"]`);
+    if(!alvo || (!kmI && !qI)) return;
+    const refaz = ()=>{
+      const k = kmI && kmI.value !== '' ? Number(kmI.value) : null;
+      const q = qI && qI.value !== '' ? Number(qI.value) : null;
+      alvo.innerHTML = analisePendenteHtml(p, { kmHor: k, quantidade: q });
+    };
+    if(kmI) kmI.addEventListener('input', refaz);
+    if(qI) qI.addEventListener('input', refaz);
   });
 }
 
@@ -5402,6 +5532,7 @@ async function aplicarNotaPdf(idx){
     kmHor: (p.kmHor == null && d.km != null) ? d.km : null,
   };
   n.aplicada = true;
+  { const rr = PEND_RASCUNHO[p.id]; if(rr){ ['quantidade','precoUnit','precoTotal','kmHor'].forEach(k=>delete rr[k]); rr._aberto = true; } }
   renderNotasPdf();
   destacarPendente(p.id);
   toast('Nota aplicada: requisição e dados preenchidos — confere e confirma.');
@@ -5480,10 +5611,9 @@ async function gerarRequisicaoUI(id, requisicaoManual){
 }
 
 async function confirmarPendenteUI(id, nf, edicoes){
-  if(!nf){
-    const ok = await confirmModal('Confirmar sem Nota Fiscal?', 'Você não preencheu a Nota Fiscal. Quer confirmar mesmo assim (fica sem NF)?');
-    if(!ok) return;
-  }
+  // NF mãe é opcional (pode ser preenchida depois, no fechamento); o cupom do posto vai separado
+  const npC = NOTA_PREENCHIDA[id];
+  if(npC && npC.docPosto){ edicoes = Object.assign({}, edicoes, { cupom: npC.docPosto }); }
   try{
     const resp = await fetch(SYNC_URL, {
       method:'POST',
@@ -5492,6 +5622,7 @@ async function confirmarPendenteUI(id, nf, edicoes){
     });
     const json = await parseJsonResponse(resp);
     if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao confirmar.'); return; }
+    delete PEND_RASCUNHO[id]; delete NOTA_PREENCHIDA[id];
     PENDENTES = json.pendentes || PENDENTES.filter(p=>p.id!==id);
     renderListaPendentes();
     toast('Lançamento confirmado e enviado pra planilha.');
@@ -5695,7 +5826,7 @@ function limitesKm(equipamento, dataIso, excludeId){
   const eq = (equipamento||'').toUpperCase();
   let lower = null, upper = null, maiorGeral = null;
   const olhar = (r, ehPend)=>{
-    if(!ehPend && r.id === excludeId) return;
+    if(excludeId && r.id === excludeId) return;
     if((r.equipamento||'').toUpperCase() !== eq) return;
     if(r.kmHor === null || r.kmHor === undefined || r.kmHor === '' || isNaN(r.kmHor)) return;
     const k = Number(r.kmHor), d = String(r.data||'').slice(0,10);
@@ -7110,6 +7241,7 @@ function initFormLancamento(){
       // (mantém a original se estiver editando; carimba hoje se for novo)
       dataLancamento: registroAnterior ? (registroAnterior.dataLancamento || todayStr()) : todayStr(),
       nf: document.getElementById('l-nf').value.trim() || null,
+      cupom: (document.getElementById('l-cupom')?.value || '').trim() || (registroAnterior && registroAnterior.cupom) || null,
       posto: document.getElementById('l-posto').value.trim().toUpperCase() || null,
       requisicao: document.getElementById('l-requisicao').value.trim() || null,
       produto: produto.value,
@@ -7267,6 +7399,7 @@ function editRecord(id){
   document.getElementById('btn-cancel-edit').style.display = 'inline-block';
   document.getElementById('l-data').value = r.data || '';
   document.getElementById('l-nf').value = r.nf ?? '';
+  if(document.getElementById('l-cupom')) document.getElementById('l-cupom').value = r.cupom ?? '';
   document.getElementById('l-posto').value = r.posto || '';
   document.getElementById('l-requisicao').value = r.requisicao || '';
   document.getElementById('l-produto').value = r.produto || '';
@@ -7455,6 +7588,33 @@ async function aceitarAlertasLancamento(id){
   }
 }
 
+/* Somatório do que está filtrado na Base de lançamentos + totais por Nota Fiscal (mãe). */
+function renderTotaisLanc(rows){
+  const box = document.getElementById('lanc-totais');
+  if(!box) return;
+  const soma = (lista, k)=>lista.reduce((t,r)=>t + (Number(r[k]) || 0), 0);
+  const nNF = new Set(rows.map(r=>(r.nf||'').trim()).filter(Boolean)).size;
+  const porNF = {};
+  rows.forEach(r=>{
+    const nf = (r.nf||'').trim() || '(sem NF)';
+    const g = porNF[nf] = porNF[nf] || { n:0, litros:0, valor:0, ini:null, fim:null };
+    g.n++; g.litros += Number(r.quantidade)||0; g.valor += Number(r.precoTotal)||0;
+    const d = String(r.data||'').slice(0,10);
+    if(d){ if(!g.ini || d < g.ini) g.ini = d; if(!g.fim || d > g.fim) g.fim = d; }
+  });
+  const linhas = Object.entries(porNF).sort((a,b)=>b[1].valor - a[1].valor).map(([nf,g])=>
+    `<tr><td>${escapeHtml(nf)}</td><td>${g.n}</td><td>${fmtNum(g.litros,1)}</td><td><b>${fmtMoney(g.valor)}</b></td><td>${g.ini ? fmtDate(g.ini) + (g.fim && g.fim !== g.ini ? ' a ' + fmtDate(g.fim) : '') : '—'}</td></tr>`).join('');
+  box.innerHTML = `<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:0 0 10px;">
+      <div><span style="color:var(--gray);font-size:12px;">Lançamentos</span><br><b>${rows.length}</b></div>
+      <div><span style="color:var(--gray);font-size:12px;">Litros</span><br><b>${fmtNum(soma(rows,'quantidade'),1)}</b></div>
+      <div><span style="color:var(--gray);font-size:12px;">TOTAL (R$)</span><br><b style="font-size:17px;">${fmtMoney(soma(rows,'precoTotal'))}</b></div>
+      <div><span style="color:var(--gray);font-size:12px;">Notas fiscais</span><br><b>${nNF}</b></div>
+    </div>
+    <details style="margin-bottom:10px;"><summary style="cursor:pointer;font-size:12.5px;color:var(--gray);font-weight:600;">📑 Total por Nota Fiscal (mãe)</summary>
+      <div class="table-scroll" style="max-height:260px;margin-top:6px;"><table><thead><tr><th>NF</th><th>Lanç.</th><th>Litros</th><th>Total (R$)</th><th>Período</th></tr></thead><tbody>${linhas}</tbody></table></div>
+    </details>`;
+}
+
 function renderLancTable(){
   const search = (document.getElementById('lanc-search').value || '').toUpperCase();
   const tbody = document.querySelector('#lanc-table tbody');
@@ -7473,9 +7633,10 @@ function renderLancTable(){
   if(FILTRO_SEM_EQUIPAMENTO) rows = rows.filter(r => !r.equipamento || !String(r.equipamento).trim());
   if(FILTRO_ALERTAS) rows = rows.filter(r => alertas.has(r.id));
   if(search){
-    rows = rows.filter(r => [r.motorista,r.equipamento,r.posto,r.produto,r.requisicao].join(' ').toUpperCase().includes(search));
+    rows = rows.filter(r => [r.motorista,r.equipamento,r.posto,r.produto,r.requisicao,r.nf,r.cupom].join(' ').toUpperCase().includes(search));
   }
   document.getElementById('lanc-count').textContent = rows.length;
+  renderTotaisLanc(rows);
 
   // aviso de quantos lançamentos estão sem equipamento — não tem como
   // "puxar sozinho" um prefixo que nunca foi preenchido, só editando
@@ -8589,6 +8750,22 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   }
 });
 
+
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
+}
+
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
+}
+
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
+}
+
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
+}
 
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
