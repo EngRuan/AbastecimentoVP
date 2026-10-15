@@ -2352,7 +2352,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.14-63';
+const APP_VERSION = 'v2026.10.15-64';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -4283,11 +4283,17 @@ async function confirmarRequisicaoUsadaUIInterno(id){
   const precoTotal = numBR(valorEl.value);
   if(!precoTotal || precoTotal <= 0){ toast('Preenche o valor total direito.'); valorEl.focus(); return; }
   const kmHor = kmEl.value.trim() ? numBR(kmEl.value) : null;
+  const nfEl = document.getElementById(`usada-nf-${id}`);
+  const nf = nfEl ? nfEl.value.trim() : '';
+  const reqObj = REQUISICOES_EMITIDAS.find(x=>x.id === id);
+  if(!nf && reqObj && postoCadastradoPorNome(reqObj.posto)){ toast('Posto cadastrado: informe o número da NF mãe (fechamento).'); if(nfEl){ nfEl.style.borderColor = 'var(--bad)'; nfEl.focus(); } return; }
+  const dataEl = document.getElementById(`usada-data-${id}`);
+  const dataAbast = (dataEl && dataEl.value) || todayStr();
 
   try{
     const resp = await fetch(SYNC_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({
       action:'marcarRequisicaoUsada', id, idToken: ID_TOKEN,
-      dados: { quantidade, precoTotal, kmHor, data: todayStr() }
+      dados: { quantidade, precoTotal, kmHor, nf: nf || null, data: dataAbast }
     }) });
     const json = await parseJsonResponse(resp);
     if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao marcar.'); return; }
@@ -4428,8 +4434,16 @@ function renderListaRequisicoesAdmin(){
           <input type="text" inputmode="decimal" id="usada-valor-${escapeHtml(r.id)}" placeholder="Ex: 183,69">
         </div>
         <div class="field">
-          <label>Km/Hor (opcional)</label>
-          <input type="text" inputmode="decimal" id="usada-km-${escapeHtml(r.id)}" placeholder="Se souber">
+          <label>Km/Hor <span style="font-weight:400;color:var(--gray);">${r.kmEsperado ? '(sugerido pela requisição: '+escapeHtml(String(r.kmEsperado))+' — pode alterar)' : '(opcional)'}</span></label>
+          <input type="text" inputmode="decimal" id="usada-km-${escapeHtml(r.id)}" placeholder="Se souber" value="${r.kmEsperado ? escapeHtml(String(r.kmEsperado)) : ''}">
+        </div>
+        <div class="field">
+          <label>NF mãe / fechamento <span style="font-weight:400;color:var(--gray);">${postoCadastradoPorNome(r.posto) ? '(obrigatória — posto cadastrado)' : '(opcional)'}</span></label>
+          <input type="text" id="usada-nf-${escapeHtml(r.id)}" placeholder="Nº da NF mãe">
+        </div>
+        <div class="field">
+          <label>Data do abastecimento</label>
+          <input type="date" id="usada-data-${escapeHtml(r.id)}" value="${r.criadoEm && !isNaN(new Date(r.criadoEm)) ? dataLocalIso(new Date(r.criadoEm)) : todayStr()}">
         </div>
         <div class="field" style="align-self:flex-end;">
           <button type="button" class="btn" data-confirmar-usada="${escapeHtml(r.id)}">Confirmar — vai pra aprovação</button>
@@ -5936,6 +5950,10 @@ async function gerarEConfirmarUI(id, requisicaoManual, nf, edicoes){
   await confirmarPendenteUI(id, nf, edicoes);
 }
 
+function postoCadastradoPorNome(nome){
+  const n = String(nome||'').trim().toUpperCase();
+  return !!n && (POSTOS || []).some(x=>String(x.nome||'').trim().toUpperCase() === n);
+}
 function postoPendenteCadastrado(id, edicoes){
   const p = PENDENTES.find(x=>x.id === id);
   const nome = String((edicoes && edicoes.posto) || (p && p.posto) || '').trim().toUpperCase();
