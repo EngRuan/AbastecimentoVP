@@ -1117,6 +1117,7 @@ body.preview-motorista #view-lancamentos::before{
         <p class="helper" id="login-senha-status" style="margin-top:8px;"></p>
       </div>
     </details>
+    <p class="helper" id="login-versao" style="margin-top:14px;text-align:center;font-size:11px;opacity:.7;"></p>
   </div>
 </div>
 
@@ -2353,7 +2354,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.15-65';
+const APP_VERSION = 'v2026.10.15-66';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -9076,6 +9077,9 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   SYNC_URL = DEFAULT_SYNC_URL || localStorage.getItem(SYNC_URL_KEY) || '';
   const versaoEl = document.getElementById('app-version');
   if(versaoEl) versaoEl.textContent = APP_VERSION;
+  const versaoLogin = document.getElementById('login-versao');
+  if(versaoLogin) versaoLogin.textContent = APP_VERSION;
+  iniciarAutoAtualizacao();
   localStorage.setItem(SYNC_URL_KEY, SYNC_URL);
 
   // O LOGIN RODA PRIMEIRO, ANTES DE QUALQUER OUTRA COISA — se alguma das
@@ -9124,6 +9128,53 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   }
 });
 
+
+/* AUTO-ATUALIZAÇÃO: compara a versão que está rodando com a que está
+   publicada no GitHub (index.html sem cache). Se for diferente, limpa o
+   cache/service worker e recarrega sozinho. Roda ao abrir e sempre que a
+   pessoa volta pro app; durante o uso (a cada 10 min) só avisa com um
+   banner, pra não atropelar quem está digitando. */
+async function versaoPublicada(){
+  try{
+    const r = await fetch('index.html?_v=' + Date.now(), { cache:'no-store' });
+    if(!r.ok) return null;
+    const t = await r.text();
+    const m = t.match(/const APP_VERSION = '([^']+)'/);
+    return m ? m[1] : null;
+  }catch(e){ return null; }
+}
+async function limparCachesERecarregar(nova){
+  try{ sessionStorage.setItem('upd_tentativa', nova); }catch(e){}
+  try{
+    if('serviceWorker' in navigator){ const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map(r=>r.unregister())); }
+    if(window.caches){ const ks = await caches.keys(); await Promise.all(ks.map(k=>caches.delete(k))); }
+  }catch(e){}
+  location.replace(location.pathname + '?v=' + encodeURIComponent(nova));
+}
+function mostrarBannerAtualizacao(nova){
+  if(document.getElementById('banner-atualizacao')) return;
+  const b = document.createElement('div');
+  b.id = 'banner-atualizacao';
+  b.style.cssText = 'position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:300;background:#0b2a6f;color:#fff;padding:10px 16px;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.3);font-size:13px;display:flex;gap:12px;align-items:center;';
+  b.innerHTML = `<span>🔄 Nova versão disponível (${escapeHtml(nova)})</span><button type="button" class="btn" style="padding:4px 12px;">Atualizar agora</button>`;
+  b.querySelector('button').addEventListener('click', ()=>limparCachesERecarregar(nova));
+  document.body.appendChild(b);
+}
+async function checarAtualizacao(forcar){
+  const nova = await versaoPublicada();
+  if(!nova || nova === APP_VERSION) return;
+  let jaTentou = null; try{ jaTentou = sessionStorage.getItem('upd_tentativa'); }catch(e){}
+  if(forcar && jaTentou !== nova){ limparCachesERecarregar(nova); return; }
+  mostrarBannerAtualizacao(nova);
+}
+let AUTO_ATUALIZACAO_INICIADA = false;
+function iniciarAutoAtualizacao(){
+  if(AUTO_ATUALIZACAO_INICIADA) return;
+  AUTO_ATUALIZACAO_INICIADA = true;
+  checarAtualizacao(true);
+  document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState === 'visible') checarAtualizacao(true); });
+  setInterval(()=>checarAtualizacao(false), 10*60*1000);
+}
 
 /* ENTER avança pro próximo campo do formulário (no último, envia).
    Não interfere em textarea, botões, sugestões de autocomplete abertas
