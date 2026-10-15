@@ -2355,7 +2355,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.15-70';
+const APP_VERSION = 'v2026.10.15-71';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -4312,7 +4312,6 @@ async function confirmarRequisicaoUsadaUIInterno(id){
   const nfEl = document.getElementById(`usada-nf-${id}`);
   const nf = nfEl ? nfEl.value.trim() : '';
   const reqObj = REQUISICOES_EMITIDAS.find(x=>x.id === id);
-  if(!nf && reqObj && postoCadastradoPorNome(reqObj.posto)){ toast('Posto cadastrado: informe o número da NF mãe (fechamento).'); if(nfEl){ nfEl.style.borderColor = 'var(--bad)'; nfEl.focus(); } return; }
   const dataEl = document.getElementById(`usada-data-${id}`);
   const dataAbast = (dataEl && dataEl.value) || todayStr();
 
@@ -4465,7 +4464,7 @@ function renderListaRequisicoesAdmin(){
           <input type="text" inputmode="decimal" id="usada-km-${escapeHtml(r.id)}" placeholder="Se souber" value="${r.kmEsperado ? escapeHtml(String(r.kmEsperado)) : ''}">
         </div>
         <div class="field">
-          <label>NF mãe / fechamento <span style="font-weight:400;color:var(--gray);">${postoCadastradoPorNome(r.posto) ? '(obrigatória — posto cadastrado)' : '(opcional)'}</span></label>
+          <label>NF mãe / fechamento <span style="font-weight:400;color:var(--gray);">${postoCadastradoPorNome(r.posto) ? '(se já tiver, coloca aqui — senão vai ser pedida na 2ª aprovação)' : '(opcional)'}</span></label>
           <input type="text" id="usada-nf-${escapeHtml(r.id)}" placeholder="Nº da NF mãe">
         </div>
         <div class="field">
