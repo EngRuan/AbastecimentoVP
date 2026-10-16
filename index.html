@@ -2355,7 +2355,29 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.16-74';
+const APP_VERSION = 'v2026.10.16-77';
+
+/* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
+   em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
+(function(){
+  let mostrou = false;
+  function faixaErro(msg){
+    if(mostrou) return; mostrou = true;
+    try{
+      const b = document.createElement('div');
+      b.id = 'faixa-erro-app';
+      b.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:100000;background:#b3261e;color:#fff;padding:10px 14px;font:13px/1.4 Calibri,Arial,sans-serif;display:flex;gap:10px;align-items:center;flex-wrap:wrap;';
+      const t = document.createElement('span'); t.style.flex = '1 1 260px';
+      t.textContent = '⚠️ Deu um erro no app: ' + String(msg).slice(0,240);
+      const mk = (txt, fn)=>{ const x = document.createElement('button'); x.type='button'; x.textContent = txt; x.style.cssText='padding:5px 12px;border-radius:8px;border:0;background:#fff;color:#b3261e;font-weight:700;cursor:pointer;'; x.onclick = fn; return x; };
+      const limpar = async ()=>{ try{ if('serviceWorker' in navigator){ const rs = await navigator.serviceWorker.getRegistrations(); await Promise.all(rs.map(r=>r.unregister())); } if(window.caches){ const ks = await caches.keys(); await Promise.all(ks.map(k=>caches.delete(k))); } }catch(e){} location.replace(location.pathname + '?r=' + Date.now()); };
+      b.appendChild(t); b.appendChild(mk('Recarregar', ()=>location.reload())); b.appendChild(mk('Limpar cache e recarregar', limpar)); b.appendChild(mk('✕', ()=>{ b.remove(); mostrou = false; }));
+      document.body.appendChild(b);
+    }catch(e){}
+  }
+  window.addEventListener('error', ev=>{ if(ev && ev.message && !/ResizeObserver/i.test(ev.message)) faixaErro(ev.message + (ev.lineno ? ' (linha ' + ev.lineno + ')' : '')); });
+  window.addEventListener('unhandledrejection', ev=>{ const m = ev && ev.reason && (ev.reason.message || ev.reason); if(m) faixaErro(m); });
+})();
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -5036,8 +5058,10 @@ function formatarEquipeSisma(equip){
    unificado, que vai todo pro campo "Hora" (a segunda coluna com esse
    nome, que é a que aparece preenchida em todo exemplo que vi). */
 function exportarSisma(){
+  renderLancTable();
+  if(!LANC_VISIVEIS.length){ toast('Nenhum lançamento nos filtros atuais — nada pra exportar.'); return; }
   const linhas = ['dataabastecimento;hora;empresa;Especie;Equipe;KM;Hora;Ponto;Bomba;Combustivel;Quantidade'];
-  DB.forEach(r=>{
+  LANC_VISIVEIS.forEach(r=>{
     if(!r.data) return;
     const [ano,mes,dia] = r.data.split('-');
     const dataFmt = `${dia}/${mes}/${ano}`;
@@ -5060,7 +5084,7 @@ function exportarSisma(){
   a.href = url; a.download = `sisma_${todayStr()}.csv`;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  toast('CSV do SISMA gerado.');
+  toast(`CSV do SISMA gerado com ${LANC_VISIVEIS.length} lançamento(s) — só o que está nos filtros.`);
 }
 
 function initUsuariosTab(){
@@ -8050,6 +8074,7 @@ function renderTotaisLanc(rows){
     </details>`;
 }
 
+let LANC_VISIVEIS = [];
 function renderLancTable(){
   const search = (document.getElementById('lanc-search').value || '').toUpperCase();
   const tbody = document.querySelector('#lanc-table tbody');
@@ -8074,6 +8099,7 @@ function renderLancTable(){
   if(search){
     rows = rows.filter(r => [r.motorista,r.equipamento,r.posto,r.produto,r.requisicao,r.nf,r.cupom].join(' ').toUpperCase().includes(search));
   }
+  LANC_VISIVEIS = rows; // o que está na tela (com todos os filtros) — é o que os botões Exportar usam
   document.getElementById('lanc-count').textContent = rows.length;
   renderTotaisLanc(rows);
 
@@ -8507,8 +8533,12 @@ function numBRouNumero(v){
 }
 
 function exportXlsx(){
-  const rows = DB.map(r=>({
-    'Data': r.data, 'Data Lançamento': r.dataLancamento, 'NF': r.nf, 'Posto': r.posto, 'Requisição': r.requisicao,
+  renderLancTable(); // garante que a lista reflete os filtros atuais
+  const seq = new Map(DB.map((r,i)=>[r.id, i+1]));
+  const origem = LANC_VISIVEIS;
+  if(!origem.length){ toast('Nenhum lançamento nos filtros atuais — nada pra exportar.'); return; }
+  const rows = origem.map(r=>({
+    'Nº': seq.get(r.id), 'Data': r.data, 'Data Lançamento': r.dataLancamento, 'NF': r.nf, 'Posto': r.posto, 'Requisição': r.requisicao,
     'Produto': r.produto, 'Unidade': r.unidade, 'Quantidade': r.quantidade,
     'Preço Unit.': r.precoUnit, 'Preço Total': r.precoTotal, 'Motorista': r.motorista,
     'Empresa': r.empresa, 'Equipamento': r.equipamento, 'Km/Hor.': r.kmHor, 'Média Km/L': r.mediaKmL
@@ -8517,6 +8547,7 @@ function exportXlsx(){
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Abastecimento');
   XLSX.writeFile(wb, `abastecimento_tripoloni_${todayStr()}.xlsx`);
+  toast(`Excel gerado com ${origem.length} lançamento(s) — só o que está nos filtros.`);
 }
 
 function dataLocalIso(d){ const p = n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
@@ -9206,6 +9237,8 @@ async function versaoPublicada(){
     const r = await fetch('index.html?_v=' + Date.now(), { cache:'no-store' });
     if(!r.ok) return null;
     const t = await r.text();
+    // só aceita se a página veio COMPLETA (evita recarregar no meio de uma publicação do GitHub e cair em página quebrada)
+    if(t.length < 100000 || !/<\/html>\s*$/i.test(t)) return null;
     const m = t.match(/const APP_VERSION = '([^']+)'/);
     return m ? m[1] : null;
   }catch(e){ return null; }
@@ -9231,7 +9264,10 @@ async function checarAtualizacao(forcar){
   const nova = await versaoPublicada();
   if(!nova || nova === APP_VERSION) return;
   let jaTentou = null; try{ jaTentou = sessionStorage.getItem('upd_tentativa'); }catch(e){}
-  if(forcar && jaTentou !== nova){ limparCachesERecarregar(nova); return; }
+  // não derruba a tela de quem está digitando: se tem campo em foco/preenchido, só avisa com o banner
+  const ativo = document.activeElement;
+  const digitando = ativo && /^(INPUT|TEXTAREA|SELECT)$/.test(ativo.tagName) && ativo.type !== 'button';
+  if(forcar && jaTentou !== nova && !digitando){ limparCachesERecarregar(nova); return; }
   mostrarBannerAtualizacao(nova);
 }
 let AUTO_ATUALIZACAO_INICIADA = false;
