@@ -1636,7 +1636,7 @@ body.preview-motorista #view-lancamentos::before{
         <table id="lanc-table">
           <thead>
             <tr>
-              <th data-sort="data" class="th-ordenavel">Data</th><th data-sort="dataLancamento" class="th-ordenavel">Data Lanç.</th><th data-sort="nf" class="th-ordenavel">NF</th><th data-sort="requisicao" class="th-ordenavel">Requisição</th><th data-sort="posto" class="th-ordenavel">Posto</th><th data-sort="produto" class="th-ordenavel">Produto</th>
+              <th data-sort="_seq" class="th-ordenavel num" title="Ordem em que o abastecimento foi lançado na base">Nº</th><th data-sort="data" class="th-ordenavel">Data</th><th data-sort="dataLancamento" class="th-ordenavel">Data Lanç.</th><th data-sort="nf" class="th-ordenavel">NF</th><th data-sort="requisicao" class="th-ordenavel">Requisição</th><th data-sort="posto" class="th-ordenavel">Posto</th><th data-sort="produto" class="th-ordenavel">Produto</th>
               <th data-sort="quantidade" class="th-ordenavel num">Qtd</th><th data-sort="precoUnit" class="th-ordenavel num">Preç.Unit</th><th data-sort="precoTotal" class="th-ordenavel num">Preç.Total</th>
               <th data-sort="motorista" class="th-ordenavel">Motorista</th><th data-sort="equipamento" class="th-ordenavel">Equip.</th><th data-sort="kmHor" class="th-ordenavel num">Km/Hor</th><th data-sort="mediaKmL" class="th-ordenavel num">Km/L</th><th></th>
             </tr>
@@ -2355,7 +2355,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.15-71';
+const APP_VERSION = 'v2026.10.16-74';
 
 /* Client ID do Google (gerado no Google Cloud Console) — precisa disso
    pro botão "Entrar com Google" funcionar. Enquanto estiver com esse
@@ -2904,8 +2904,28 @@ async function autenticarComToken(idToken, silencioso){
   if(!silencioso) document.getElementById('login-status').textContent = 'Entrando...';
   try{
     const url = `${SYNC_URL}?action=pull&idToken=${encodeURIComponent(idToken)}&login=1`;
-    const resp = await fetch(url);
-    const json = await parseJsonResponse(resp);
+    // até 3 tentativas, cada uma com limite de 40s — antes ficava preso em "Entrando..." pra sempre
+    let json = null, ultimoErro = null;
+    const stEl = document.getElementById('login-status');
+    for(let tentativa = 1; tentativa <= 3; tentativa++){
+      const ctl = new AbortController();
+      const timer = setTimeout(()=>ctl.abort(), 40000);
+      try{
+        const resp = await fetch(url, { signal: ctl.signal });
+        json = await parseJsonResponse(resp);
+        clearTimeout(timer);
+        ultimoErro = null;
+        break;
+      }catch(e){
+        clearTimeout(timer);
+        ultimoErro = (e && e.name === 'AbortError') ? new Error('O servidor demorou demais pra responder (mais de 40s).') : e;
+        if(tentativa < 3){
+          if(!silencioso && stEl) stEl.textContent = `Servidor lento, tentando de novo (${tentativa+1}/3)...`;
+          await new Promise(r=>setTimeout(r, 1500));
+        }
+      }
+    }
+    if(ultimoErro) throw ultimoErro;
 
     if(json.naoCadastrado){
       localStorage.removeItem(ID_TOKEN_KEY);
@@ -2979,7 +2999,15 @@ async function autenticarComToken(idToken, silencioso){
   }catch(err){
     console.error(err);
     localStorage.removeItem(ID_TOKEN_KEY);
-    if(!silencioso) document.getElementById('login-status').textContent = '❌ Falha ao entrar: ' + err.message;
+    if(!silencioso){
+      const st = document.getElementById('login-status');
+      st.textContent = '❌ Falha ao entrar: ' + err.message + ' ';
+      const bt = document.createElement('button');
+      bt.type = 'button'; bt.textContent = '🔄 Tentar de novo';
+      bt.style.cssText = 'margin-top:8px;padding:6px 12px;border-radius:8px;border:1px solid #0b2a6f;background:#fff;color:#0b2a6f;font-weight:600;cursor:pointer;';
+      bt.onclick = ()=>window.location.reload();
+      st.appendChild(document.createElement('br')); st.appendChild(bt);
+    }
   }
 }
 
@@ -4067,7 +4095,7 @@ function addLinhaItem(boxId, it){
   div.className = 'linha-item';
   div.style.cssText = 'display:flex;gap:6px;align-items:center;margin:6px 0;flex-wrap:wrap;';
   div.innerHTML = `<input type="text" class="it-desc" list="lista-itens-req" placeholder="Item (ex: GASOLINA, ÓLEO 15W40)" style="flex:2;min-width:170px;" value="${escapeHtml(it.descricao||'')}">
-    <input type="text" inputmode="decimal" class="it-qtd" placeholder="Qtd" style="width:80px;" value="${it.quantidade != null ? escapeHtml(String(it.quantidade)) : ''}">
+    <input type="text" inputmode="decimal" class="it-qtd" placeholder="Qtd" style="width:80px;" value="${it.quantidade != null ? escapeHtml(String(it.quantidade).replace('.', ',')) : ''}">
     <select class="it-un" style="width:70px;">${['L','UN','KG','CX'].map(u=>`<option ${String(it.unidade||'L').toUpperCase()===u?'selected':''}>${u}</option>`).join('')}</select>
     <button type="button" class="btn ghost it-del" title="Remover item" style="padding:2px 9px;">✕</button>`;
   div.querySelector('.it-del').addEventListener('click', ()=>div.remove());
@@ -7794,6 +7822,9 @@ function resetForm(manterRepetidos){
   }
 }
 
+/* número -> texto com VÍRGULA (o campo é lido por numBR; mostrar com ponto fazia 0.125 virar 125) */
+function numParaInput(v){ return (v === null || v === undefined || v === '' || isNaN(v)) ? '' : String(v).replace('.', ','); }
+
 function editRecord(id){
   const r = DB.find(x=>x.id===id);
   if(!r) return;
@@ -7808,13 +7839,13 @@ function editRecord(id){
   document.getElementById('l-requisicao').value = r.requisicao || '';
   document.getElementById('l-produto').value = r.produto || '';
   document.getElementById('l-unidade').value = r.unidade || 'LT';
-  document.getElementById('l-quantidade').value = r.quantidade ?? '';
-  document.getElementById('l-precounit').value = r.precoUnit ?? '';
-  document.getElementById('l-precototal').value = r.precoTotal ?? '';
+  document.getElementById('l-quantidade').value = numParaInput(r.quantidade);
+  document.getElementById('l-precounit').value = numParaInput(r.precoUnit);
+  document.getElementById('l-precototal').value = numParaInput(r.precoTotal);
   document.getElementById('l-motorista').value = r.motorista || '';
   document.getElementById('l-equipamento').value = r.equipamento || '';
   document.getElementById('l-empresa').value = r.empresa || '';
-  document.getElementById('l-kmhor').value = r.kmHor ?? '';
+  document.getElementById('l-kmhor').value = numParaInput(r.kmHor);
   document.getElementById('l-equipamento').dispatchEvent(new Event('input'));
   const wrapLm = document.getElementById('card-lanc-manual');
   if(wrapLm && document.getElementById('form-lanc').closest('#card-lanc-manual')){
@@ -8023,8 +8054,12 @@ function renderLancTable(){
   const search = (document.getElementById('lanc-search').value || '').toUpperCase();
   const tbody = document.querySelector('#lanc-table tbody');
   let rows = applyFilters('bl');
+  // Nº = ordem em que cada abastecimento entrou na base (1 = o primeiro lançado), independente da data do abastecimento
+  const SEQ = new Map(DB.map((r,i)=>[r.id, i+1]));
   rows = LANC_ORDEM.campo
-    ? rows.sort((a,b)=>compararPorCampo(a,b,LANC_ORDEM.campo,LANC_ORDEM.direcao))
+    ? rows.sort((a,b)=> LANC_ORDEM.campo === '_seq'
+        ? (LANC_ORDEM.direcao==='asc' ? 1 : -1) * ((SEQ.get(a.id)||0) - (SEQ.get(b.id)||0))
+        : compararPorCampo(a,b,LANC_ORDEM.campo,LANC_ORDEM.direcao))
     : rows.sort(compareDataDesc);
   document.querySelectorAll('#lanc-table .th-ordenavel').forEach(th=>{
     const seta = th.querySelector('.seta-ordem');
@@ -8085,6 +8120,7 @@ function renderLancTable(){
     const al = alertas.get(r.id);
     return `
     <tr class="${al ? 'linha-alerta' : ''}">
+      <td class="num" style="color:var(--gray);font-weight:600;">${SEQ.get(r.id) || '—'}</td>
       <td>${fmtDate(r.data)}</td>
       <td>${r.dataLancamento?fmtDate(r.dataLancamento):'—'}</td>
       <td>${r.nf ?? '—'}</td>
@@ -8104,7 +8140,7 @@ function renderLancTable(){
         ${podeExcluirRegistro(r) ? `<button class="del" onclick="deleteRecord('${r.id}')" title="Excluir">🗑️</button>` : ''}
       </td>
     </tr>`;
-  }).join('') || `<tr><td colspan="14" class="empty-state">Nenhum lançamento encontrado.</td></tr>`;
+  }).join('') || `<tr><td colspan="15" class="empty-state">Nenhum lançamento encontrado.</td></tr>`;
 }
 
 /* ---------------------------------------------------------------------
