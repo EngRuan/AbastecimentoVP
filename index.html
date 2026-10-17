@@ -2355,7 +2355,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.16-77';
+const APP_VERSION = 'v2026.10.17-78';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -4747,6 +4747,8 @@ function initPostosTab(){
       obra: document.getElementById('p-obra').value.trim(),
     };
     if(!dados.nome){ toast('Preenche o nome do posto.'); return; }
+    dados.novo = !editandoPostoNome;
+    if(dados.novo && POSTOS.some(x=>String(x.nome||'').trim().toUpperCase() === dados.nome)){ toast('🚫 Já existe um posto com esse nome. Procura na lista e use Editar.'); return; }
     try{
       const resp = await fetch(SYNC_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ action:'salvarPosto', dados, idToken: ID_TOKEN }) });
       const json = await parseJsonResponse(resp);
@@ -4847,6 +4849,8 @@ function initEmpresasTab(){
       obra: document.getElementById('e-obra').value.trim(),
     };
     if(!dados.nome){ toast('Preenche o nome da empresa.'); return; }
+    dados.novo = !editandoEmpresaNome;
+    if(dados.novo && EMPRESAS.some(x=>String(x.nome||'').trim().toUpperCase() === dados.nome)){ toast('🚫 Já existe uma empresa com esse nome. Procura na lista e use Editar.'); return; }
     try{
       const resp = await fetch(SYNC_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ action:'salvarEmpresa', dados, idToken: ID_TOKEN }) });
       const json = await parseJsonResponse(resp);
@@ -4894,6 +4898,8 @@ function initVeiculosTab(){
       motivoDesmobilizacao: document.getElementById('v-motivo-desmob').value.trim(),
     };
     if(!dados.equipamento){ toast('Preenche o equipamento.'); return; }
+    dados.novo = !editandoVeiculoEquip;
+    if(dados.novo && VEICULOS.some(x=>String(x.equipamento||'').trim().toUpperCase() === String(dados.equipamento).trim().toUpperCase())){ toast('🚫 Esse equipamento já está cadastrado na Frota. Procura na lista e use Editar.'); return; }
     try{
       const resp = await fetch(SYNC_URL, {
         method:'POST',
@@ -5111,6 +5117,11 @@ function initUsuariosTab(){
       setor: document.getElementById('u-setor').value.trim(),
     };
     if(!dados.nome){ toast('Preenche pelo menos o nome.'); return; }
+    dados.novo = !editandoUsuarioEmail;
+    if(dados.novo){
+      if(dados.email && USUARIOS.some(x=>String(x.email||'').trim().toLowerCase() === dados.email)){ toast('🚫 Esse e-mail já está cadastrado. Procura na lista e use Editar.'); return; }
+      if(USUARIOS.some(x=>String(x.nome||'').trim().toUpperCase() === dados.nome)){ toast('🚫 Já existe uma pessoa cadastrada com esse nome. Procura na lista e use Editar.'); return; }
+    }
     try{
       const resp = await fetch(SYNC_URL, {
         method:'POST',
