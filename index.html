@@ -2355,7 +2355,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.17-78';
+const APP_VERSION = 'v2026.10.17-79';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -8609,9 +8609,23 @@ function initReportTab(){
   document.getElementById('r-nf').addEventListener('input', ()=>{ refreshFilterOptions('r'); renderReportPreview(); });
 }
 
+/* Resumo dos filtros aplicados no relatório (vai no título pra dar pra ver que foi filtrado) */
+function resumoFiltrosRelatorio(){
+  const partes = [];
+  const lista = (id, rot)=>{ const st = MS_STATE[id]; if(st && st.size > 0){ const v = [...st]; partes.push(rot + ': ' + (v.length > 4 ? v.slice(0,4).join(', ') + ' +' + (v.length-4) : v.join(', '))); } };
+  lista('r-equip','Equip.'); lista('r-motorista','Motorista'); lista('r-produto','Produto'); lista('r-posto','Posto'); lista('r-empresa','Empresa');
+  const nf = (document.getElementById('r-nf')?.value || '').trim(); if(nf) partes.push('NF: ' + nf);
+  return partes.join(' · ');
+}
+function tituloRelatorioCompleto(){
+  const base = document.getElementById('r-titulo').value || 'Relatório de Abastecimento';
+  const f = resumoFiltrosRelatorio();
+  return f ? base + ' — ' + f : base;
+}
+
 function renderReportPreview(){
   const rows = applyFilters('r');
-  const titulo = document.getElementById('r-titulo').value || 'Relatório de Abastecimento';
+  const titulo = tituloRelatorioCompleto();
   const dataIni = document.getElementById('r-data-ini').value;
   const dataFim = document.getElementById('r-data-fim').value;
   const periodo = (dataIni||dataFim) ? `${dataIni?fmtDate(dataIni):'início'} até ${dataFim?fmtDate(dataFim):'hoje'}` : 'todo o período disponível';
@@ -8785,7 +8799,7 @@ function gerarPdf(){
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 40;
 
-  const titulo = document.getElementById('r-titulo').value || 'Relatório de Abastecimento';
+  const titulo = tituloRelatorioCompleto();
   const rows = applyFilters('r');
   const dataIni = document.getElementById('r-data-ini').value;
   const dataFim = document.getElementById('r-data-fim').value;
@@ -8802,11 +8816,17 @@ function gerarPdf(){
 
   doc.addImage(`data:image/png;base64,${LOGO_B64}`, 'PNG', margin, 30, 110, 32);
   doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.setTextColor(0,38,116);
-  doc.text(titulo, margin+125, 45);
+  const larguraTitulo = pageWidth - margin*2 - 125;
+  let linhasTitulo = doc.splitTextToSize(titulo, larguraTitulo);
+  if(linhasTitulo.length > 1){ doc.setFontSize(11.5); linhasTitulo = doc.splitTextToSize(titulo, larguraTitulo).slice(0,3); }
+  const passoT = linhasTitulo.length > 1 ? 13 : 0;
+  doc.text(linhasTitulo, margin+125, linhasTitulo.length > 1 ? 38 : 45);
+  const yInfo = linhasTitulo.length > 1 ? 38 + passoT*(linhasTitulo.length-1) + 14 : 60;
   doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(90,90,90);
-  doc.text(`Período: ${periodo}  |  Gerado em ${new Date().toLocaleDateString('pt-BR')}  |  ${rows.length} lançamentos`, margin+125, 60);
+  doc.text(`Período: ${periodo}  |  Gerado em ${new Date().toLocaleDateString('pt-BR')}  |  ${rows.length} lançamentos`, margin+125, yInfo);
+  const yLinha = Math.max(75, yInfo + 15);
   doc.setDrawColor(0,38,116); doc.setLineWidth(1.4);
-  doc.line(margin, 75, pageWidth-margin, 75);
+  doc.line(margin, yLinha, pageWidth-margin, yLinha);
 
   const totalLitros = rows.filter(r=>PRODUTOS_COMBUSTIVEL.has(r.produto)).reduce((s,r)=>s+(r.quantidade||0),0);
   const totalGasto = rows.reduce((s,r)=>s+(r.precoTotal||0),0);
@@ -8816,7 +8836,7 @@ function gerarPdf(){
   const mediaGeral = medias.length ? medias.reduce((s,r)=>s+r.mediaKmL,0)/medias.length : null;
 
   doc.autoTable({
-    startY: 88,
+    startY: yLinha + 13,
     theme:'plain',
     styles:{fontSize:9},
     body:[[
@@ -9039,7 +9059,7 @@ function gerarPdf(){
     }
   });
 
-  doc.save(`relatorio_abastecimento_${todayStr()}.pdf`);
+  doc.save(`relatorio_abastecimento_${resumoFiltrosRelatorio() ? 'filtrado_' : ''}${todayStr()}.pdf`);
   toast('PDF gerado.');
 }
 
