@@ -499,7 +499,8 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   --shadow:0 1px 2px rgba(20,22,28,.06), 0 4px 14px rgba(20,22,28,.06);
 }
 *{box-sizing:border-box;}
-html,body{margin:0;padding:0;overflow-x:hidden;}
+html,body{margin:0;padding:0;}
+body{overflow-x:clip;} /* clip (e não hidden) pra não quebrar o cabeçalho fixo (sticky) */
 body{
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   background:var(--paper);
@@ -551,7 +552,9 @@ nav.tabs{
   background:var(--navy-dark);
   padding:0 14px;
   overflow-x:auto;
+  position:sticky;top:var(--hh,58px);z-index:49;
 }
+@media (max-width:700px){ header.app-header{position:static;} nav.tabs{top:0;} }
 nav.tabs button{
   appearance:none;
   border:none;
@@ -2355,7 +2358,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.17-79';
+const APP_VERSION = 'v2026.10.17-81';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -8617,6 +8620,14 @@ function resumoFiltrosRelatorio(){
   const nf = (document.getElementById('r-nf')?.value || '').trim(); if(nf) partes.push('NF: ' + nf);
   return partes.join(' · ');
 }
+/* Números de NF que entram no relatório (do que sobrou depois dos filtros) */
+function textoNotasFiscais(rows){
+  const nfs = [...new Set(rows.map(r=>String(r.nf ?? '').trim()).filter(Boolean))];
+  if(!nfs.length) return '';
+  nfs.sort((a,b)=>a.localeCompare(b,'pt-BR',{numeric:true}));
+  const mostra = nfs.length > 12 ? nfs.slice(0,12).join(', ') + ' +' + (nfs.length-12) : nfs.join(', ');
+  return (nfs.length === 1 ? 'Nota fiscal: ' : 'Notas fiscais (' + nfs.length + '): ') + mostra;
+}
 function tituloRelatorioCompleto(){
   const base = document.getElementById('r-titulo').value || 'Relatório de Abastecimento';
   const f = resumoFiltrosRelatorio();
@@ -8720,6 +8731,7 @@ function renderReportPreview(){
       <div>
         <div class="rep-title">${escapeHtml(titulo)}</div>
         <div class="rep-sub">Período: ${periodo} · Gerado em ${new Date().toLocaleDateString('pt-BR')} · ${rows.length} lançamentos</div>
+        ${textoNotasFiscais(rows) ? `<div class="rep-sub">${escapeHtml(textoNotasFiscais(rows))}</div>` : ''}
       </div>
     </div>
     <div class="rep-kpis">
@@ -8824,7 +8836,15 @@ function gerarPdf(){
   const yInfo = linhasTitulo.length > 1 ? 38 + passoT*(linhasTitulo.length-1) + 14 : 60;
   doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(90,90,90);
   doc.text(`Período: ${periodo}  |  Gerado em ${new Date().toLocaleDateString('pt-BR')}  |  ${rows.length} lançamentos`, margin+125, yInfo);
-  const yLinha = Math.max(75, yInfo + 15);
+  const nfTexto = textoNotasFiscais(rows);
+  let yNf = yInfo;
+  if(nfTexto){
+    const lnNf = doc.splitTextToSize(nfTexto, larguraTitulo).slice(0,2);
+    doc.setFontSize(9); doc.setTextColor(0,38,116); doc.setFont('helvetica','bold');
+    doc.text(lnNf, margin+125, yInfo + 12);
+    yNf = yInfo + 12 + (lnNf.length-1)*11;
+  }
+  const yLinha = Math.max(75, yNf + 15);
   doc.setDrawColor(0,38,116); doc.setLineWidth(1.4);
   doc.line(margin, yLinha, pageWidth-margin, yLinha);
 
@@ -9336,6 +9356,15 @@ document.addEventListener('keydown', ev=>{
   prox.focus();
   if(prox.select && ['text','number','search','tel',''].includes((prox.type||'').toLowerCase())){ try{ prox.select(); }catch(e){} }
 });
+
+
+/* Cabeçalho e menu ficam travados no topo ao rolar a página */
+(function(){
+  function medir(){ const hd = document.querySelector('header.app-header'); if(hd) document.documentElement.style.setProperty('--hh', hd.offsetHeight + 'px'); }
+  window.addEventListener('load', medir); window.addEventListener('resize', medir);
+  document.addEventListener('DOMContentLoaded', ()=>{ medir(); const hd = document.querySelector('header.app-header'); if(hd && window.ResizeObserver) new ResizeObserver(medir).observe(hd); });
+  medir();
+})();
 
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
