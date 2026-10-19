@@ -1265,7 +1265,7 @@ body.preview-motorista #view-lancamentos::before{
         <div class="field">
           <label>Empresa</label>
           <div class="multiselect" id="f-empresa" data-ms="empresa">
-            <button type="button" class="ms-toggle">Todas</button>
+            <button type="button" class="ms-toggle">Todos</button>
             <div class="ms-panel">
               <input type="text" class="ms-search" placeholder="Buscar empresa...">
               <div class="ms-actions">
@@ -1278,7 +1278,17 @@ body.preview-motorista #view-lancamentos::before{
         </div>
         <div class="field">
           <label>Nota Fiscal</label>
-          <input type="text" id="f-nf" placeholder="Buscar NF...">
+          <div class="multiselect" id="f-nf" data-ms="nf">
+            <button type="button" class="ms-toggle">Todos</button>
+            <div class="ms-panel">
+              <input type="text" class="ms-search" placeholder="Buscar NF...">
+              <div class="ms-actions">
+                <button type="button" data-act="all">Selecionar todas</button>
+                <button type="button" data-act="none">Limpar</button>
+              </div>
+              <div class="ms-options"></div>
+            </div>
+          </div>
         </div>
         <div class="field">
           <button class="btn ghost" id="btn-clear-filters" type="button">Limpar filtros</button>
@@ -1589,7 +1599,7 @@ body.preview-motorista #view-lancamentos::before{
         <div class="field">
           <label>Empresa</label>
           <div class="multiselect" id="bl-empresa" data-ms="empresa">
-            <button type="button" class="ms-toggle">Todas</button>
+            <button type="button" class="ms-toggle">Todos</button>
             <div class="ms-panel">
               <input type="text" class="ms-search" placeholder="Buscar empresa...">
               <div class="ms-actions">
@@ -1602,7 +1612,17 @@ body.preview-motorista #view-lancamentos::before{
         </div>
         <div class="field">
           <label>Nota Fiscal</label>
-          <input type="text" id="bl-nf" placeholder="Buscar NF...">
+          <div class="multiselect" id="bl-nf" data-ms="nf">
+            <button type="button" class="ms-toggle">Todos</button>
+            <div class="ms-panel">
+              <input type="text" class="ms-search" placeholder="Buscar NF...">
+              <div class="ms-actions">
+                <button type="button" data-act="all">Selecionar todas</button>
+                <button type="button" data-act="none">Limpar</button>
+              </div>
+              <div class="ms-options"></div>
+            </div>
+          </div>
         </div>
         <div class="field">
           <button class="btn ghost" id="btn-clear-filters-bl" type="button">Limpar filtros</button>
@@ -1709,7 +1729,7 @@ body.preview-motorista #view-lancamentos::before{
         <div class="field">
           <label>Empresa</label>
           <div class="multiselect" id="r-empresa" data-ms="empresa">
-            <button type="button" class="ms-toggle">Todas</button>
+            <button type="button" class="ms-toggle">Todos</button>
             <div class="ms-panel">
               <input type="text" class="ms-search" placeholder="Buscar empresa...">
               <div class="ms-actions">
@@ -1722,7 +1742,17 @@ body.preview-motorista #view-lancamentos::before{
         </div>
         <div class="field">
           <label>Nota Fiscal</label>
-          <input type="text" id="r-nf" placeholder="Buscar NF...">
+          <div class="multiselect" id="r-nf" data-ms="nf">
+            <button type="button" class="ms-toggle">Todos</button>
+            <div class="ms-panel">
+              <input type="text" class="ms-search" placeholder="Buscar NF...">
+              <div class="ms-actions">
+                <button type="button" data-act="all">Selecionar todas</button>
+                <button type="button" data-act="none">Limpar</button>
+              </div>
+              <div class="ms-options"></div>
+            </div>
+          </div>
         </div>
         <div class="field">
           <label>Título</label>
@@ -2379,7 +2409,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.19-86';
+const APP_VERSION = 'v2026.10.19-88';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -6650,7 +6680,7 @@ function baseParaCascata(prefix, excluir){
   const produtoSet = MS_STATE[prefix+'-produto'] || new Set();
   const postoSet = MS_STATE[prefix+'-posto'] || new Set();
   const empresaSet = MS_STATE[prefix+'-empresa'] || new Set();
-  const nf = (document.getElementById(prefix+'-nf')?.value || '').trim().toLowerCase();
+  const nfSet = MS_STATE[prefix+'-nf'] || new Set();
 
   return DB.filter(r=>{
     if(excluir!=='data'){
@@ -6662,7 +6692,7 @@ function baseParaCascata(prefix, excluir){
     if(excluir!=='produto' && produtoSet.size>0 && !produtoSet.has(r.produto)) return false;
     if(excluir!=='posto' && postoSet.size>0 && !postoSet.has(r.posto)) return false;
     if(excluir!=='empresa' && empresaSet.size>0 && !empresaSet.has(r.empresa)) return false;
-    if(excluir!=='nf' && nf && !String(r.nf||'').toLowerCase().includes(nf)) return false;
+    if(excluir!=='nf' && nfSet.size>0 && !nfSet.has(String(r.nf ?? '').trim())) return false;
     return true;
   });
 }
@@ -6685,7 +6715,8 @@ function refreshFilterOptions(prefix){
   FILTER_OPTIONS[prefix+'-produto'] = produtoList;
   FILTER_OPTIONS[prefix+'-posto'] = postoList;
   FILTER_OPTIONS[prefix+'-empresa'] = empresaList;
-  ['equip','motorista','produto','posto','empresa'].forEach(campo=>refreshOpenMultiSelect(prefix+'-'+campo));
+  FILTER_OPTIONS[prefix+'-nf'] = [...new Set(baseParaCascata(prefix,'nf').map(r=>String(r.nf ?? '').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR',{numeric:true}));
+  ['equip','motorista','produto','posto','empresa','nf'].forEach(campo=>refreshOpenMultiSelect(prefix+'-'+campo));
 }
 
 function populateFilterSelects(){
@@ -6919,7 +6950,7 @@ function applyFilters(prefix){
   const produtoSet = MS_STATE[prefix+'-produto'] || new Set();
   const postoSet = MS_STATE[prefix+'-posto'] || new Set();
   const empresaSet = MS_STATE[prefix+'-empresa'] || new Set();
-  const nf = (document.getElementById(prefix+'-nf')?.value || '').trim().toLowerCase();
+  const nfSet = MS_STATE[prefix+'-nf'] || new Set();
 
   return DB.filter(r=>{
     if(dataIni && (!r.data || r.data < dataIni)) return false;
@@ -6929,7 +6960,7 @@ function applyFilters(prefix){
     if(produtoSet.size > 0 && !produtoSet.has(r.produto)) return false;
     if(postoSet.size > 0 && !postoSet.has(r.posto)) return false;
     if(empresaSet.size > 0 && !empresaSet.has(r.empresa)) return false;
-    if(nf && !String(r.nf||'').toLowerCase().includes(nf)) return false;
+    if(nfSet.size > 0 && !nfSet.has(String(r.nf ?? '').trim())) return false;
     return true;
   });
 }
@@ -6944,12 +6975,11 @@ function initDashboardControls(){
   ['f-data-ini','f-data-fim'].forEach(id=>{
     document.getElementById(id).addEventListener('change', ()=>{ refreshFilterOptions('f'); renderDashboard(); });
   });
-  document.getElementById('f-nf').addEventListener('input', ()=>{ refreshFilterOptions('f'); renderDashboard(); });
   document.getElementById('btn-clear-filters').addEventListener('click', ()=>{
-    ['f-data-ini','f-data-fim','f-nf'].forEach(id=>{
+    ['f-data-ini','f-data-fim'].forEach(id=>{
       document.getElementById(id).value = '';
     });
-    ['f-equip','f-motorista','f-produto','f-posto','f-empresa'].forEach(id=>{
+    ['f-equip','f-motorista','f-produto','f-posto','f-empresa','f-nf'].forEach(id=>{
       if(MS_STATE[id]) MS_STATE[id].clear();
     });
     updateMultiSelectToggleLabels();
@@ -7086,7 +7116,7 @@ function renderKPIs(rows){
     {label:'Preço médio / litro', value: precoMedioLitro?fmtMoney(precoMedioLitro):'—', sub:'gasto em combustível ÷ litros'},
     {label:'Distância percorrida', value: fmtNum(distanciaTotal,0)+' km', sub:'somando todos equipamentos'},
     {label:'Média geral', value: mediaGeral? fmtNum(mediaGeral,2)+' km/L':'—', sub:'média dos registros com leitura'},
-    {label:'Custo por km rodado', value: (distanciaTotal>0)? fmtMoney(totalGasto/distanciaTotal)+'/km' : '—', sub:'gasto total ÷ km rodados'},
+    {label:'Custo por km rodado', value: (distanciaTotal>0)? fmtMoney(Object.values(distancias).reduce((s,v)=>s+v.custoRef,0)/distanciaTotal)+'/km' : '—', sub:'gasto ÷ km rodados (sem o 1º abastecimento de cada equip., que não tem referência)'},
   ];
   document.getElementById('kpi-grid').innerHTML = kpis.map(k=>`
     <div class="kpi">
@@ -7096,18 +7126,27 @@ function renderKPIs(rows){
     </div>`).join('');
 }
 
+/* Distância por equipamento = maior leitura − menor leitura do filtro.
+   O 1º abastecimento de cada equipamento NÃO tem referência anterior: o
+   combustível dele serviu pra um trecho que o sistema não conhece. Por isso
+   o gasto desse 1º abastecimento fica FORA do custo por km (custoRef) —
+   só entra o gasto dos abastecimentos que cobrem os km medidos. */
 function calcDistanciasPorEquipamento(rows){
-  const byEquip = {};
+  const byEquip = {}, gastoAll = {};
   rows.forEach(r=>{
-    if(!r.equipamento || r.kmHor===null || r.kmHor===undefined || isNaN(r.kmHor)) return;
+    if(!r.equipamento) return;
+    gastoAll[r.equipamento] = (gastoAll[r.equipamento]||0) + (r.precoTotal||0);
+    if(r.kmHor===null || r.kmHor===undefined || isNaN(r.kmHor)) return;
     if(!byEquip[r.equipamento]) byEquip[r.equipamento] = [];
-    byEquip[r.equipamento].push(r.kmHor);
+    byEquip[r.equipamento].push(r);
   });
   const out = {};
   Object.entries(byEquip).forEach(([eq, arr])=>{
-    arr.sort((a,b)=>a-b);
-    const distancia = arr.length>1 ? (arr[arr.length-1]-arr[0]) : 0;
-    out[eq] = {distancia: Math.max(distancia,0)};
+    arr.sort((a,b)=>a.kmHor-b.kmHor || (a.data||'').localeCompare(b.data||''));
+    const distancia = arr.length>1 ? (arr[arr.length-1].kmHor-arr[0].kmHor) : 0;
+    const d = Math.max(distancia,0);
+    // sem 2 leituras não há km medido nem referência: nenhum gasto entra no custo/km
+    out[eq] = {distancia: d, custoRef: d>0 ? Math.max((gastoAll[eq]||0) - (arr[0].precoTotal||0), 0) : 0};
   });
   return out;
 }
@@ -8059,15 +8098,13 @@ function initLancFilters(){
     const el = document.getElementById(id);
     if(el) el.addEventListener('change', ()=>{ refreshFilterOptions('bl'); renderLancTable(); });
   });
-  const nfEl = document.getElementById('bl-nf');
-  if(nfEl) nfEl.addEventListener('input', ()=>{ refreshFilterOptions('bl'); renderLancTable(); });
   const btnClear = document.getElementById('btn-clear-filters-bl');
   if(btnClear) btnClear.addEventListener('click', ()=>{
-    ['bl-data-ini','bl-data-fim','bl-nf'].forEach(id=>{
+    ['bl-data-ini','bl-data-fim'].forEach(id=>{
       const el = document.getElementById(id);
       if(el) el.value = '';
     });
-    ['bl-equip','bl-motorista','bl-produto','bl-posto','bl-empresa'].forEach(id=>{
+    ['bl-equip','bl-motorista','bl-produto','bl-posto','bl-empresa','bl-nf'].forEach(id=>{
       if(MS_STATE[id]) MS_STATE[id].clear();
     });
     updateMultiSelectToggleLabels();
@@ -8216,7 +8253,7 @@ function renderPainelNfFechada(){
   const pf = pode('fechar_nf');
   if(!pf && !NFS_FECHADAS.length){ box.style.display='none'; return; }
   box.style.display = 'block';
-  const nfBl = (document.getElementById('bl-nf')?.value || '').trim();
+  const nfBl = (MS_STATE['bl-nf'] && MS_STATE['bl-nf'].size) ? [...MS_STATE['bl-nf']][0] : '';
   box.innerHTML = `<div style="font-weight:600;margin-bottom:6px;">🔒 Fechamento de Nota Fiscal</div>
     ${pf ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
       <input type="text" id="nf-fechar-inp" placeholder="Nº da NF pra fechar" value="${escapeHtml(nfBl.split(/[\s,;]+/)[0]||'')}" style="max-width:200px;">
@@ -8765,15 +8802,13 @@ function initReportTab(){
     document.getElementById(id).addEventListener('change', ()=>{ refreshFilterOptions('r'); renderReportPreview(); });
   });
   document.getElementById('r-titulo').addEventListener('change', renderReportPreview);
-  document.getElementById('r-nf').addEventListener('input', ()=>{ refreshFilterOptions('r'); renderReportPreview(); });
 }
 
 /* Resumo dos filtros aplicados no relatório (vai no título pra dar pra ver que foi filtrado) */
 function resumoFiltrosRelatorio(){
   const partes = [];
   const lista = (id, rot)=>{ const st = MS_STATE[id]; if(st && st.size > 0){ const v = [...st]; partes.push(rot + ': ' + (v.length > 4 ? v.slice(0,4).join(', ') + ' +' + (v.length-4) : v.join(', '))); } };
-  lista('r-equip','Equip.'); lista('r-motorista','Motorista'); lista('r-produto','Produto'); lista('r-posto','Posto'); lista('r-empresa','Empresa');
-  const nf = (document.getElementById('r-nf')?.value || '').trim(); if(nf) partes.push('NF: ' + nf);
+  lista('r-equip','Equip.'); lista('r-motorista','Motorista'); lista('r-produto','Produto'); lista('r-posto','Posto'); lista('r-empresa','Empresa'); lista('r-nf','NF');
   return partes.join(' · ');
 }
 /* Números de NF que entram no relatório (do que sobrou depois dos filtros) */
@@ -8831,7 +8866,7 @@ function renderReportPreview(){
       aluguel: aluguelEquip,
       custoTotal: gastoEquip + aluguelEquip,
       km: kmEquip,
-      custoPorKm: kmEquip>0 ? gastoEquip/kmEquip : null,
+      custoPorKm: kmEquip>0 ? distancias[k].custoRef/kmEquip : null,
       media: (()=>{ const m=v.filter(r=>typeof r.mediaKmL==='number'&&r.mediaKmL>0); return m.length? m.reduce((s,r)=>s+r.mediaKmL,0)/m.length : null; })(),
       n: v.length
     };
@@ -9070,7 +9105,7 @@ function gerarPdf(){
       fmtMoney(gastoEquip),
       aluguelEquip>0 ? fmtMoney(aluguelEquip) : '—',
       fmtMoney(gastoEquip+aluguelEquip),
-      kmEquip>0 ? fmtMoney(gastoEquip/kmEquip) : '—',
+      kmEquip>0 ? fmtMoney(distancias[k].custoRef/kmEquip) : '—',
       (()=>{ const m=v.filter(r=>typeof r.mediaKmL==='number'&&r.mediaKmL>0); return m.length? fmtNum(m.reduce((s,r)=>s+r.mediaKmL,0)/m.length,2) : '—'; })(),
       v.length
     ];
