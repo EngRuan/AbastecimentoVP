@@ -1818,6 +1818,15 @@ body.preview-motorista #view-lancamentos::before{
     </div>
     <div class="card">
       <h2>Usuários cadastrados</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px;">
+        <input type="text" class="flt-user" id="flt-user-busca" placeholder="🔎 Buscar nome, e-mail, apelido, empresa..." style="padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px;max-width:100%;" >
+        <select class="flt-user" id="flt-user-papel" style="padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px;max-width:100%;"><option value="">Todos os níveis</option><option value="dono">Dono</option><option value="master">Master</option><option value="gestor">Gerente de Contrato</option><option value="coordenador">Coordenador</option><option value="admin">Administrador</option><option value="auxiliar">Auxiliar</option><option value="motorista">Motorista</option></select>
+        <select class="flt-user" id="flt-user-empresa" style="padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px;max-width:100%;"></select>
+        <select class="flt-user" id="flt-user-setor" style="padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px;max-width:100%;"></select>
+        <select class="flt-user" id="flt-user-login" style="padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px;max-width:100%;"><option value="">Com ou sem login</option><option value="com">Já tem login</option><option value="sem">Sem login ainda</option></select>
+        <button type="button" class="btn ghost" onclick="limparFiltros('flt-user')">Limpar</button>
+        <span id="flt-user-count" style="font-size:12px;color:var(--gray);"></span>
+      </div>
       <div id="lista-usuarios" style="margin-top:14px;"></div>
     </div>
 
@@ -2010,6 +2019,17 @@ body.preview-motorista #view-lancamentos::before{
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
         <h2 style="margin:0;">🚗 Frota — próprios, alugados e terceirizados</h2>
         <span style="display:flex;gap:8px;flex-wrap:wrap;"><button type="button" class="btn secondary" onclick="abrirImportacao('veic')">📥 Importar do Excel</button><button type="button" class="btn secondary" id="btn-pdf-frota">📄 Exportar PDF da Frota</button></span>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px;">
+        <input type="text" class="flt-frota" id="flt-frota-busca" placeholder="🔎 Buscar equipamento, placa, modelo, condutor..." style="padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px;max-width:100%;" >
+        <select class="flt-frota" id="flt-frota-tipo" style="padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px;max-width:100%;"><option value="">Todos os tipos</option><option value="proprio">Próprio</option><option value="alugado">Alugado</option><option value="terceirizado">Terceirizado</option></select>
+        <select class="flt-frota" id="flt-frota-sit" style="padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px;max-width:100%;"><option value="">Ativos e desmobilizados</option><option value="ativos">Só ativos</option><option value="desmob">Só desmobilizados</option></select>
+        <select class="flt-frota" id="flt-frota-setor" style="padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px;max-width:100%;"></select>
+        <select class="flt-frota" id="flt-frota-comb" style="padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px;max-width:100%;"></select>
+        <select class="flt-frota" id="flt-frota-empresa" style="padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px;max-width:100%;"></select>
+        <select class="flt-frota" id="flt-frota-cond" style="padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px;max-width:100%;"><option value="">Com ou sem condutor</option><option value="com">Com condutor</option><option value="sem">Sem condutor</option></select>
+        <button type="button" class="btn ghost" onclick="limparFiltros('flt-frota')">Limpar</button>
+        <span id="flt-frota-count" style="font-size:12px;color:var(--gray);"></span>
       </div>
       <div id="lista-veiculos" style="margin-top:14px;"></div>
     </div>
@@ -2248,7 +2268,7 @@ body.preview-motorista #view-lancamentos::before{
       <div class="btn-row" style="margin-top:14px;">
         <button type="button" class="btn" id="btn-emitir-requisicao">+ Emitir requisição</button>
       </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-top:22px;"><h2 style="margin:0;">Requisições emitidas</h2><button type="button" class="btn secondary" onclick="abrirImportacao('req')">📥 Marcar como usadas em lote (Excel)</button></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-top:22px;"><h2 style="margin:0;">Requisições emitidas</h2><button type="button" class="btn secondary" onclick="abrirImportacao('req')">📥 Importar planilha de requisições (Excel)</button></div>
       <div class="filters" style="margin:12px 0;">
         <div class="field">
           <label>Mostrar</label>
@@ -2359,7 +2379,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.18-84';
+const APP_VERSION = 'v2026.10.19-86';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -3857,6 +3877,18 @@ function gerarPdfFrota(){
   doc.save('Frota_Tripoloni.pdf');
 }
 
+/* ---- filtros das listas de Frota e Usuários ---- */
+function fltNorm(s){ return String(s==null?'':s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
+function fltPreencherSelect(id, valores, rotuloTodos){
+  const sel = document.getElementById(id); if(!sel) return;
+  const atual = sel.value;
+  const unicos = [...new Set(valores.map(v=>String(v||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  sel.innerHTML = `<option value="">${rotuloTodos}</option>` + unicos.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+  sel.value = unicos.includes(atual) ? atual : '';
+}
+document.addEventListener('input', e=>{ const el = e.target; if(el.classList && el.classList.contains('flt-frota')) renderListaVeiculos(); else if(el.classList && el.classList.contains('flt-user')) renderListaUsuarios(); });
+document.addEventListener('change', e=>{ const el = e.target; if(el.classList && el.classList.contains('flt-frota')) renderListaVeiculos(); else if(el.classList && el.classList.contains('flt-user')) renderListaUsuarios(); });
+function limparFiltros(cls){ document.querySelectorAll('.'+cls).forEach(el=>{ el.value=''; }); (cls==='flt-frota'?renderListaVeiculos:renderListaUsuarios)(); }
 function renderListaVeiculos(){
   const box = document.getElementById('lista-veiculos');
   if(!box) return;
@@ -3865,7 +3897,25 @@ function renderListaVeiculos(){
     box.innerHTML = `<p class="helper">Nenhum veículo cadastrado ainda — sem cadastro, todo equipamento é tratado como próprio (sem custo de aluguel).</p>`;
     return;
   }
-  const ordenados = [...VEICULOS].sort((a,b)=> (a.equipamento||'').localeCompare(b.equipamento||'', 'pt-BR'));
+  fltPreencherSelect('flt-frota-setor', VEICULOS.map(v=>v.setor), 'Todos os setores');
+  fltPreencherSelect('flt-frota-comb', VEICULOS.map(v=>v.combustivelAutorizado), 'Todos os combustíveis');
+  fltPreencherSelect('flt-frota-empresa', VEICULOS.map(v=>v.empresaVinculada), 'Todas as empresas');
+  const fv = id => (document.getElementById(id)?.value || '');
+  const fBusca = fltNorm(fv('flt-frota-busca')), fTipo = fv('flt-frota-tipo'), fSit = fv('flt-frota-sit'), fSetor = fv('flt-frota-setor'), fComb = fv('flt-frota-comb'), fEmp = fv('flt-frota-empresa'), fCond = fv('flt-frota-cond');
+  const ordenados = [...VEICULOS].sort((a,b)=> (a.equipamento||'').localeCompare(b.equipamento||'', 'pt-BR')).filter(v=>{
+    if(fTipo && v.tipo !== fTipo) return false;
+    if(fSit==='ativos' && v.desmobilizado==='sim') return false;
+    if(fSit==='desmob' && v.desmobilizado!=='sim') return false;
+    if(fSetor && (v.setor||'') !== fSetor) return false;
+    if(fComb && (v.combustivelAutorizado||'') !== fComb) return false;
+    if(fEmp && (v.empresaVinculada||'') !== fEmp) return false;
+    if(fCond==='sem' && nomeCondutor(v)) return false;
+    if(fCond==='com' && !nomeCondutor(v)) return false;
+    if(fBusca && !fltNorm([v.equipamento,v.marca,v.modelo,v.placa,v.serie,v.setor,v.fornecedor,v.empresaVinculada,nomeCondutor(v),v.observacoes].join(' ')).includes(fBusca)) return false;
+    return true;
+  });
+  const cF = document.getElementById('flt-frota-count'); if(cF) cF.textContent = `${ordenados.length} de ${VEICULOS.length}`;
+  if(!ordenados.length){ box.innerHTML = '<p class="helper">Nenhum veículo bate com os filtros.</p>'; return; }
   const NOMES_TIPO_VEICULO = { proprio:'Próprio', alugado:'Alugado', terceirizado:'Terceirizado' };
   box.innerHTML = ordenados.map(v=>{
     const ficha = [v.marca, v.modelo, v.ano ? 'ano '+v.ano : null, v.placa].filter(Boolean).join(' · ');
@@ -4385,6 +4435,7 @@ async function confirmarRequisicaoUsadaUIInterno(id){
     if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao marcar.'); return; }
     REQUISICOES_EMITIDAS = json.requisicoesEmitidas || REQUISICOES_EMITIDAS;
     PENDENTES = json.pendentes || PENDENTES;
+    delete REQ_RASC[id]; REQ_SEL.delete(id);
     renderListaRequisicoesAdmin();
     renderListaPendentes();
     toast('Lançado! Já está na segunda aba de aprovação, esperando a Nota Fiscal.');
@@ -4471,6 +4522,8 @@ function gerarPdfRequisicao(r){
   doc.save(`Requisicao_${limpa(r.numero)}_${limpa(r.terceiro ? r.placa : r.equipamento)}_${limpa(r.motoristaNome || r.motoristaEmail)}.pdf`);
 }
 
+let REQ_RASC = {};            // dados já preenchidos (digitados ou vindos da planilha) por requisição
+let REQ_SEL = new Set();     // requisições marcadas pra "usada em lote"
 function renderListaRequisicoesAdmin(){
   const box = document.getElementById('lista-requisicoes-admin');
   if(!box) return;
@@ -4490,7 +4543,13 @@ function renderListaRequisicoesAdmin(){
   }
   if(lista.length===0){ box.innerHTML = `<p class="helper">Nenhuma requisição encontrada.</p>`; return; }
   const NOMES_STATUS = { aberta:'Aberta', usada:'Usada', cancelada:'Cancelada' };
-  box.innerHTML = lista.map(r=>{
+  const abertasVis = lista.filter(r=>r.status==='aberta');
+  const barraLote = abertasVis.length ? `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:0 0 10px;padding:8px 12px;background:#f3f6fb;border:1px solid #c9d6ea;border-radius:8px;font-size:13px;">
+      <label style="display:flex;gap:6px;align-items:center;"><input type="checkbox" id="req-sel-todas" ${abertasVis.every(r=>REQ_SEL.has(r.id))?'checked':''}> Selecionar todas as abertas da lista</label>
+      <button type="button" class="btn" id="btn-usadas-lote" ${REQ_SEL.size?'':'disabled'}>✅ Marcar ${REQ_SEL.size} selecionada(s) como usadas em lote</button>
+      <span style="color:var(--gray);">Usa os litros/valor/Km/NF preenchidos em cada requisição (digitados ou importados do Excel) e abre uma prévia antes de gravar.</span></div>` : '';
+  box.innerHTML = barraLote + lista.map(r=>{
+    const rc = REQ_RASC[r.id] || {};
     const ehTerceiro = r.terceiro === 'sim';
     const identificador = ehTerceiro ? `${escapeHtml(r.placa)} · ${escapeHtml(r.empresa)} 🏗️terceiro` : escapeHtml(r.equipamento);
     const dataEmitida = r.criadoEm ? new Date(r.criadoEm).toLocaleDateString('pt-BR') : '—';
@@ -4498,7 +4557,7 @@ function renderListaRequisicoesAdmin(){
     <div class="aprov-item" data-id="${escapeHtml(r.id)}" style="flex-direction:column;align-items:stretch;">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
         <div class="info">
-          <b>Nº ${escapeHtml(String(r.numero))}</b> — ${escapeHtml(r.motoristaNome||r.motoristaEmail)} · ${identificador}${r.posto?' · '+escapeHtml(r.posto):''}
+          ${r.status==='aberta' ? `<input type="checkbox" data-req-sel="${escapeHtml(r.id)}" ${REQ_SEL.has(r.id)?'checked':''} title="Selecionar pra marcar como usada em lote" style="margin-right:6px;">` : ''}<b>Nº ${escapeHtml(String(r.numero))}</b>${rc.quantidade?' <span class="tag" title="Dados preenchidos (planilha/lote)">📥 preenchida</span>':''} — ${escapeHtml(r.motoristaNome||r.motoristaEmail)} · ${identificador}${r.posto?' · '+escapeHtml(r.posto):''}
           <br><span style="color:var(--gray);">📅 ${dataEmitida} · ${escapeHtml(r.produto||'ETANOL')}${r.kmEsperado?' · km '+escapeHtml(String(r.kmEsperado)):''} · ${NOMES_STATUS[r.status]||r.status}${r.usadaEm?' em '+new Date(r.usadaEm).toLocaleString('pt-BR'):''}</span>
           ${textoItensReq(r) ? `<br><span style="color:var(--gray);">➕ ${escapeHtml(textoItensReq(r))}</span>` : ''}
         </div>
@@ -4511,26 +4570,26 @@ function renderListaRequisicoesAdmin(){
         </div>
       </div>
       ${r.status==='aberta' ? `
-      <div class="form-grid" id="form-usada-${escapeHtml(r.id)}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--line);">
+      <div class="form-grid" id="form-usada-${escapeHtml(r.id)}" style="display:${rc.quantidade?'grid':'none'};margin-top:10px;padding-top:10px;border-top:1px solid var(--line);">
         <div class="field">
           <label>Litros*</label>
-          <input type="text" inputmode="decimal" id="usada-litros-${escapeHtml(r.id)}" placeholder="Ex: 47,2">
+          <input type="text" inputmode="decimal" id="usada-litros-${escapeHtml(r.id)}" placeholder="Ex: 47,2" value="${escapeHtml(rc.quantidade||'')}">
         </div>
         <div class="field">
           <label>Valor total (R$)*</label>
-          <input type="text" inputmode="decimal" id="usada-valor-${escapeHtml(r.id)}" placeholder="Ex: 183,69">
+          <input type="text" inputmode="decimal" id="usada-valor-${escapeHtml(r.id)}" placeholder="Ex: 183,69" value="${escapeHtml(rc.precoTotal||'')}">
         </div>
         <div class="field">
           <label>Km/Hor <span style="font-weight:400;color:var(--gray);">${r.kmEsperado ? '(sugerido pela requisição: '+escapeHtml(String(r.kmEsperado))+' — pode alterar)' : '(opcional)'}</span></label>
-          <input type="text" inputmode="decimal" id="usada-km-${escapeHtml(r.id)}" placeholder="Se souber" value="${r.kmEsperado ? escapeHtml(String(r.kmEsperado)) : ''}">
+          <input type="text" inputmode="decimal" id="usada-km-${escapeHtml(r.id)}" placeholder="Se souber" value="${rc.kmHor!==undefined ? escapeHtml(rc.kmHor) : (r.kmEsperado ? escapeHtml(String(r.kmEsperado)) : '')}">
         </div>
         <div class="field">
           <label>NF mãe / fechamento <span style="font-weight:400;color:var(--gray);">${postoCadastradoPorNome(r.posto) ? '(se já tiver, coloca aqui — senão vai ser pedida na 2ª aprovação)' : '(opcional)'}</span></label>
-          <input type="text" id="usada-nf-${escapeHtml(r.id)}" placeholder="Nº da NF mãe">
+          <input type="text" id="usada-nf-${escapeHtml(r.id)}" placeholder="Nº da NF mãe" value="${escapeHtml(rc.nf||'')}">
         </div>
         <div class="field">
           <label>Data do abastecimento</label>
-          <input type="date" id="usada-data-${escapeHtml(r.id)}" value="${r.criadoEm && !isNaN(new Date(r.criadoEm)) ? dataLocalIso(new Date(r.criadoEm)) : todayStr()}">
+          <input type="date" id="usada-data-${escapeHtml(r.id)}" value="${rc.data ? escapeHtml(rc.data) : r.criadoEm && !isNaN(new Date(r.criadoEm)) ? dataLocalIso(new Date(r.criadoEm)) : todayStr()}">
         </div>
         <div class="field" style="align-self:flex-end;">
           <button type="button" class="btn" data-confirmar-usada="${escapeHtml(r.id)}">Confirmar — vai pra aprovação</button>
@@ -4538,6 +4597,24 @@ function renderListaRequisicoesAdmin(){
       </div>` : ''}
     </div>`;
   }).join('');
+  box.querySelectorAll('[id^="usada-"]').forEach(inp=>{
+    inp.addEventListener('input', ()=>{
+      const m = inp.id.match(/^usada-(litros|valor|km|nf|data)-(.+)$/); if(!m) return;
+      const id = m[2], campo = {litros:'quantidade',valor:'precoTotal',km:'kmHor',nf:'nf',data:'data'}[m[1]];
+      (REQ_RASC[id] = REQ_RASC[id] || {})[campo] = inp.value;
+    });
+  });
+  box.querySelectorAll('[data-req-sel]').forEach(cb=>cb.addEventListener('change', ()=>{
+    if(cb.checked) REQ_SEL.add(cb.dataset.reqSel); else REQ_SEL.delete(cb.dataset.reqSel);
+    renderListaRequisicoesAdmin();
+  }));
+  const selTodas = document.getElementById('req-sel-todas');
+  if(selTodas) selTodas.addEventListener('change', ()=>{
+    abertasVis.forEach(r=>{ if(selTodas.checked) REQ_SEL.add(r.id); else REQ_SEL.delete(r.id); });
+    renderListaRequisicoesAdmin();
+  });
+  const btnLote = document.getElementById('btn-usadas-lote');
+  if(btnLote) btnLote.addEventListener('click', impDeSelecao);
   box.querySelectorAll('[data-editar-req]').forEach(btn=>{
     btn.addEventListener('click', ()=>abrirEdicaoRequisicao(btn.dataset.editarReq));
   });
@@ -5267,7 +5344,22 @@ function renderListaUsuarios(){
     if(nivelDif !== 0) return nivelDif;
     return (a.nome||'').localeCompare(b.nome||'', 'pt-BR');
   });
-  box.innerHTML = listaOrdenada.map(u=>{
+  fltPreencherSelect('flt-user-empresa', USUARIOS.map(u=>u.empresa), 'Todas as empresas');
+  fltPreencherSelect('flt-user-setor', USUARIOS.map(u=>u.setor), 'Todos os setores');
+  const uv = id => (document.getElementById(id)?.value || '');
+  const uBusca = fltNorm(uv('flt-user-busca')), uPapel = uv('flt-user-papel'), uEmp = uv('flt-user-empresa'), uSetor = uv('flt-user-setor'), uLogin = uv('flt-user-login');
+  const listaFiltrada = listaOrdenada.filter(u=>{
+    if(uPapel && u.papel !== uPapel) return false;
+    if(uEmp && (u.empresa||'') !== uEmp) return false;
+    if(uSetor && (u.setor||'') !== uSetor) return false;
+    if(uLogin==='sem' && !ehSemLogin(u.email)) return false;
+    if(uLogin==='com' && ehSemLogin(u.email)) return false;
+    if(uBusca && !fltNorm([u.nome,u.email,u.apelido,u.empresa,u.cargo,u.setor,u.equipamento].join(' ')).includes(uBusca)) return false;
+    return true;
+  });
+  const cU = document.getElementById('flt-user-count'); if(cU) cU.textContent = `${listaFiltrada.length} de ${USUARIOS.length}`;
+  if(!listaFiltrada.length){ box.innerHTML = '<p class="helper">Ninguém bate com os filtros.</p>'; return; }
+  box.innerHTML = listaFiltrada.map(u=>{
     const gerenciavel = podeGerenciarConta(u);
     const nivel = NIVEL_PAPEL[u.papel] || 0;
     return `
@@ -9444,7 +9536,7 @@ document.addEventListener('keydown', ev=>{
 const IMP_CFG = {
   req: {
     titulo: 'Marcar requisições como USADAS em lote', perm: 'aprovacoes_emitir',
-    explica: 'A planilha precisa ter o <b>número da requisição</b> + <b>litros</b> + <b>valor total</b> (ou preço unitário). Km, NF mãe e data são opcionais. Cada requisição aberta encontrada vai pra 2ª aprovação, igual ao botão de uma por uma.',
+    explica: 'A planilha precisa ter o <b>número da requisição</b> + <b>litros</b> + <b>valor total</b> (ou preço unitário). Km, NF mãe e data são opcionais. Na prévia você escolhe: <b>📝 só preencher os cards</b> (joga litros/valor/Km/NF em cada requisição, sem marcar) ou <b>✅ marcar como usadas</b> direto (vão pra 2ª aprovação). Depois também dá pra marcar várias de uma vez na lista, com as caixinhas.',
     campos: [
       {k:'numero', rot:'Requisição', alias:['requisicao','numero','nrequisicao','nreq','req','numerodarequisicao','numreq'], obrig:true, larg:90},
       {k:'data', rot:'Data', alias:['data','dataabastecimento','dataabast'], tipo:'data', larg:130},
@@ -9527,6 +9619,33 @@ function impCriarModal(){
   document.body.appendChild(d);
 }
 
+/* monta a prévia a partir das requisições MARCADAS na lista (litros/valor/Km/NF já preenchidos nos cards) */
+function impDeSelecao(){
+  if(!pode(IMP_CFG.req.perm)){ toast('Seu nível não tem permissão para isso.'); return; }
+  const linhas = [];
+  [...REQ_SEL].forEach((id,i)=>{
+    const rq = REQUISICOES_EMITIDAS.find(x=>x.id===id); if(!rq) return;
+    const g = sfx => { const el = document.getElementById(`usada-${sfx}-${id}`); return el ? el.value.trim() : ''; };
+    linhas.push({ inc:true, st:'ok', msg:'', linhaPlanilha:i+1, v:{ numero:String(rq.numero), data:g('data'), quantidade:g('litros'), precoUnit:'', precoTotal:g('valor'), kmHor:g('km'), nf:g('nf') } });
+  });
+  if(!linhas.length){ toast('Marca pelo menos uma requisição.'); return; }
+  impCriarModal();
+  IMP = { tipo:'req', linhas, arquivo:'requisições marcadas na lista', origem:'selecao' };
+  impValidarTodas(); impRenderPrevia();
+  document.getElementById('modal-import').classList.add('show');
+}
+function impPreencher(){
+  const alvo = IMP.linhas.filter(l=>l.inc && (l.st==='ok'||l.st==='aviso') && l.info);
+  if(!alvo.length) return;
+  alvo.forEach(l=>{
+    const v = l.v; const q = numBR(v.quantidade); const un = numBR(v.precoUnit);
+    let total = numBR(v.precoTotal); if((!total || total<=0) && un>0) total = Math.round(q*un*100)/100;
+    REQ_RASC[l.info.id] = { quantidade:v.quantidade, precoTotal: numParaInput(total), kmHor:v.kmHor||'', nf:v.nf||'', data:v.data||'' };
+  });
+  fecharImportacao();
+  renderListaRequisicoesAdmin();
+  toast(`📥 ${alvo.length} requisição(ões) preenchida(s) — confere nos cards, marca as que quiser e use "Marcar como usadas em lote".`);
+}
 function abrirImportacao(tipo){
   const cfg = IMP_CFG[tipo];
   if(!cfg) return;
@@ -9690,6 +9809,7 @@ function impRenderPrevia(){
     </table></div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">
       <button class="btn" id="imp-gravar">✅ Gravar as linhas marcadas</button>
+      ${ehReq && IMP.origem!=='selecao' ? '<button class="btn secondary" id="imp-preencher" title="Só joga os dados nos cards das requisições, sem marcar como usada ainda">📝 Só preencher os cards (não marca ainda)</button>' : ''}
       <button class="btn secondary" id="imp-outro">📂 Trocar planilha</button>
       <button class="btn ghost" id="imp-cancelar">Cancelar</button>
     </div>`;
@@ -9697,6 +9817,7 @@ function impRenderPrevia(){
   document.getElementById('imp-cancelar').onclick = fecharImportacao;
   document.getElementById('imp-outro').onclick = impRenderInicio;
   document.getElementById('imp-gravar').onclick = impGravar;
+  const bp = document.getElementById('imp-preencher'); if(bp) bp.onclick = impPreencher;
   const tb = document.querySelector('#imp-box tbody');
   tb.addEventListener('input', ev=>{
     const el = ev.target; if(!el.dataset || el.dataset.i === undefined || !el.dataset.k) return;
@@ -9730,7 +9851,8 @@ function impAtualizarStatus(){
     if(l.st==='ok') ok++; else if(l.st==='aviso'){ aviso++; ok++; } else if(l.st==='erro') erro++; else pula++;
   });
   document.getElementById('imp-sum').innerHTML = `<span>✅ Vão ser gravadas: <b>${ok}</b></span><span>⚠️ Com aviso: <b>${aviso}</b></span><span>❌ Com erro (não gravam): <b>${erro}</b></span><span>⏭️ Puladas: <b>${pula}</b></span><span>☐ Desmarcadas: <b>${off}</b></span>`;
-  const bt = document.getElementById('imp-gravar'); if(bt){ bt.disabled = ok===0; bt.textContent = `✅ Gravar ${ok} linha(s)`; }
+  const bt = document.getElementById('imp-gravar'); if(bt){ bt.disabled = ok===0; bt.textContent = IMP.tipo==='req' ? `✅ Marcar ${ok} como usadas (vão pra 2ª aprovação)` : `✅ Gravar ${ok} linha(s)`; }
+  const bp2 = document.getElementById('imp-preencher'); if(bp2) bp2.disabled = ok===0;
 }
 
 /* ---- gravação ---- */
@@ -9776,7 +9898,7 @@ async function impEnviarLinha(tipo, l){
     const r = await impPost({ action:'marcarRequisicaoUsada', id: l.info.id, dados: {
       quantidade:q, precoTotal:total, precoUnit: un>0 ? un : null,
       kmHor: v.kmHor ? numBR(v.kmHor) : null, nf: v.nf ? String(v.nf).trim() : null, data: v.data || todayStr() } });
-    if(r.ok){ REQUISICOES_EMITIDAS = r.json.requisicoesEmitidas || REQUISICOES_EMITIDAS; PENDENTES = r.json.pendentes || PENDENTES; }
+    if(r.ok){ REQUISICOES_EMITIDAS = r.json.requisicoesEmitidas || REQUISICOES_EMITIDAS; PENDENTES = r.json.pendentes || PENDENTES; delete REQ_RASC[l.info.id]; REQ_SEL.delete(l.info.id); }
     return r;
   }
   if(tipo === 'veic'){
