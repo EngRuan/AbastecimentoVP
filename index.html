@@ -1520,6 +1520,7 @@ body.preview-motorista #view-lancamentos::before{
         <button type="button" class="btn ghost" id="btn-ver-sem-equipamento" style="margin-left:8px;">Ver esses</button>
       </div>
       <div id="alerta-lancamentos" style="display:none;margin-bottom:12px;padding:10px 14px;background:#fdeaea;border:1px solid #e9a8a2;border-radius:8px;font-size:13px;color:#7a1c14;"></div>
+      <div id="painel-nf-fechada" style="display:none;margin-bottom:12px;padding:10px 14px;background:#f3f6fb;border:1px solid #c9d6ea;border-radius:8px;font-size:13px;"></div>
       <div class="filters" style="margin-bottom:12px;">
         <div class="field">
           <label>De</label>
@@ -2008,7 +2009,7 @@ body.preview-motorista #view-lancamentos::before{
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
         <h2 style="margin:0;">🚗 Frota — próprios, alugados e terceirizados</h2>
-        <button type="button" class="btn secondary" id="btn-pdf-frota">📄 Exportar PDF da Frota</button>
+        <span style="display:flex;gap:8px;flex-wrap:wrap;"><button type="button" class="btn secondary" onclick="abrirImportacao('veic')">📥 Importar do Excel</button><button type="button" class="btn secondary" id="btn-pdf-frota">📄 Exportar PDF da Frota</button></span>
       </div>
       <div id="lista-veiculos" style="margin-top:14px;"></div>
     </div>
@@ -2056,7 +2057,7 @@ body.preview-motorista #view-lancamentos::before{
       </form>
     </div>
     <div class="card">
-      <h2>⛽ Postos cadastrados</h2>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;"><h2 style="margin:0;">⛽ Postos cadastrados</h2><button type="button" class="btn secondary" onclick="abrirImportacao('posto')">📥 Importar do Excel</button></div>
       <div id="lista-postos" style="margin-top:14px;"></div>
     </div>
     <div class="card" id="card-cruzamento-postos" style="display:none;">
@@ -2111,7 +2112,7 @@ body.preview-motorista #view-lancamentos::before{
       </form>
     </div>
     <div class="card">
-      <h2>🏢 Empresas cadastradas</h2>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;"><h2 style="margin:0;">🏢 Empresas cadastradas</h2><button type="button" class="btn secondary" onclick="abrirImportacao('emp')">📥 Importar do Excel</button></div>
       <div id="lista-empresas" style="margin-top:14px;"></div>
     </div>
     <div class="card" id="card-cruzamento-empresas" style="display:none;">
@@ -2247,7 +2248,7 @@ body.preview-motorista #view-lancamentos::before{
       <div class="btn-row" style="margin-top:14px;">
         <button type="button" class="btn" id="btn-emitir-requisicao">+ Emitir requisição</button>
       </div>
-      <h2 style="margin-top:22px;">Requisições emitidas</h2>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-top:22px;"><h2 style="margin:0;">Requisições emitidas</h2><button type="button" class="btn secondary" onclick="abrirImportacao('req')">📥 Marcar como usadas em lote (Excel)</button></div>
       <div class="filters" style="margin:12px 0;">
         <div class="field">
           <label>Mostrar</label>
@@ -2358,7 +2359,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.17-81';
+const APP_VERSION = 'v2026.10.18-84';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -2434,11 +2435,13 @@ let USUARIO_ATUAL = null;    // { email, nome, papel, equipamento } — devolvid
 let USUARIOS = [];           // lista de usuários cadastrados (só admin recebe isso)
 let SOLICITACOES = [];       // pedidos de liberação do limite diário
 let PENDENTES = [];          // lançamentos simplificados de motorista, esperando admin conferir/confirmar
+let NFS_FECHADAS = [];   // NFs travadas (fechadas): ninguém lança/edita/exclui/confirma nada nelas
+function nfFechadaCli(nf){ const n = String(nf==null?'':nf).trim().toUpperCase(); return !!n && NFS_FECHADAS.indexOf(n) !== -1; }
 let DIAS_BLOQUEADOS = [0];   // dias da semana (0=domingo...6=sábado) que motorista não pode lançar
 let CONFIG_SISMA = { empresa:'1', especie:'1', ponto:'300', bomba:'1', mapaProduto:{} }; // usado na exportação CSV pro SISMA
 // Permissões por nível (nível mínimo de cada capacidade). Vem do servidor
 // a cada pull; o padrão abaixo só vale até chegar a primeira resposta.
-const PERMISSOES_PADRAO = { ver_dashboard:1, ver_relatorio:1, lancamento_manual:2, lancamento_direto:4, editar_base:6, excluir_base:6, aprovacoes_emitir:2, requisicao_editar:6, aprovacoes_revisar:3, cadastro_empresas:3, cadastro_frota_postos:3, editar_cadastros:6, cadastro_usuarios:4, manutencao_base:6, config_sistema:4, sincronizacao:7 };
+const PERMISSOES_PADRAO = { ver_dashboard:1, ver_relatorio:1, lancamento_manual:2, lancamento_direto:4, editar_base:6, excluir_base:6, aprovacoes_emitir:2, requisicao_editar:6, aprovacoes_revisar:3, cadastro_empresas:3, cadastro_frota_postos:3, editar_cadastros:6, cadastro_usuarios:4, manutencao_base:6, config_sistema:4, sincronizacao:7, fechar_nf:5 };
 let PERMISSOES = { ...PERMISSOES_PADRAO };
 let CATALOGO_PERMISSOES = [];   // só o nível 5 recebe (é o que monta a tela de Permissões)
 let PERMISSOES_EDICAO = null;   // cópia de trabalho enquanto edita a matriz
@@ -2980,6 +2983,7 @@ async function autenticarComToken(idToken, silencioso){
     USUARIOS = json.usuarios || [];
     PENDENTES = json.pendentes || [];
     DIAS_BLOQUEADOS = json.diasBloqueados || DIAS_BLOQUEADOS;
+    NFS_FECHADAS = json.nfsFechadas || NFS_FECHADAS;
     CONFIG_SISMA = json.configSisma || CONFIG_SISMA;
     PERMISSOES = json.permissoes || PERMISSOES;
     capturarObras(json);
@@ -3467,6 +3471,7 @@ async function enviarLancamentoMotorista(){
     REQUISICAO_SELECIONADA = null;
     sairDoModoRequisicaoSeNivelAlto();
     resetForm(true);
+    irParaInicioForm();
     prepararCamposParaMotorista();
     mostrarStatusSalvamento(`✅ Enviado! Requisição Nº <b>${escapeHtml(String(json.requisicao))}</b>. Só falta o admin confirmar a Nota Fiscal.`, 'ok');
     // atualiza os pendentes/dados/requisições locais — importante
@@ -3541,6 +3546,7 @@ async function enviarLancamentoManualInterno(){
       document.getElementById('ocr-raw-wrap-'+t).style.display = 'none';
     });
     resetForm(true);
+    irParaInicioForm();
     mostrarStatusSalvamento(`✅ ${escapeHtml(equip)} enviado pra <b>Aprovações</b> — confere lá e confirma com a NF.`, 'ok');
     await pullFromSheetsSilencioso();
     try{ renderListaPendentes(); }catch(e){}
@@ -3556,6 +3562,7 @@ async function enviarLancamentoManualInterno(){
    for do PRÓPRIO nome. Sem login (uso 100% local, sem Google), ninguém
    tem essa restrição. */
 function podeEditarRegistro(r){
+  if(r && nfFechadaCli(r.nf)) return false;
   if(!USUARIO_ATUAL) return true;
   // nível 3+ edita qualquer lançamento; nível 1 e 2 (motorista/auxiliar)
   // ficam restritos ao próprio nome — não fazem mais lançamento manual
@@ -3564,6 +3571,7 @@ function podeEditarRegistro(r){
   return normalizarNomeCliente(r.motorista) === normalizarNomeCliente(USUARIO_ATUAL.nome);
 }
 function podeExcluirRegistro(r){
+  if(r && nfFechadaCli(r.nf)) return false;
   if(!USUARIO_ATUAL) return true;
   if(USUARIO_ATUAL.papel !== 'motorista') return pode('excluir_base');
   return normalizarNomeCliente(r.motorista) === normalizarNomeCliente(USUARIO_ATUAL.nome);
@@ -6053,6 +6061,7 @@ function postoPendenteCadastrado(id, edicoes){
 }
 
 async function confirmarPendenteUI(id, nf, edicoes){
+  if(nfFechadaCli(nf)){ toast('🔒 A NF '+nf+' está FECHADA — não dá pra confirmar lançamento nela. Reabra a NF primeiro.'); return; }
   // NF mãe: obrigatória quando o posto é cadastrado; opcional pra posto externo
   if(!nf && postoPendenteCadastrado(id, edicoes)){
     const inp = document.querySelector(`#lista-pendentes [data-nf-de="${CSS.escape(id)}"]`);
@@ -6178,6 +6187,7 @@ async function pullFromSheetsSilencioso(){
     USUARIOS = json.usuarios || [];
     PENDENTES = json.pendentes || [];
     DIAS_BLOQUEADOS = json.diasBloqueados || DIAS_BLOQUEADOS;
+    NFS_FECHADAS = json.nfsFechadas || NFS_FECHADAS;
     CONFIG_SISMA = json.configSisma || CONFIG_SISMA;
     PERMISSOES = json.permissoes || PERMISSOES;
     capturarObras(json);
@@ -7654,6 +7664,12 @@ function initFormLancamento(){
 
   form.addEventListener('submit', async e=>{
     e.preventDefault();
+    {
+      const nfDigitada = document.getElementById('l-nf').value.trim();
+      const antigo = editingId ? DB.find(r=>r.id===editingId) : null;
+      const nfBloq = nfFechadaCli(nfDigitada) ? nfDigitada : (antigo && nfFechadaCli(antigo.nf) ? antigo.nf : null);
+      if(nfBloq){ toast('🔒 A NF '+nfBloq+' está FECHADA — não dá pra lançar/editar nela. Peça pra reabrirem a NF.'); return; }
+    }
 
     // motorista de verdade OU admin testando na "Visão do Motorista" —
     // os dois passam pelo mesmo fluxo restrito, pra o teste ser fiel
@@ -7782,6 +7798,7 @@ function initFormLancamento(){
       document.getElementById('ocr-raw-wrap-'+t).style.display = 'none';
     });
     resetForm(true); // mantém posto/empresa/preço/NF/motorista pro próximo lançamento
+    irParaInicioForm();
     populateFilterSelects();
     renderLancTable();
 
@@ -7818,6 +7835,16 @@ function initFormLancamento(){
 /* manterRepetidos=true preserva Posto, Empresa, Preço Unit., Nota Fiscal
    e Motorista depois de salvar — é comum lançar vários abastecimentos
    seguidos do mesmo posto/nota/motorista, só trocando o equipamento. */
+/* depois de salvar: leva o cursor de volta pro campo Data (início do formulário) */
+function irParaInicioForm(){
+  try{
+    const d = document.getElementById('l-data');
+    const f = document.getElementById('form-lanc');
+    if(!d || !f || !f.offsetParent) return;
+    (f.closest('.card') || f).scrollIntoView({behavior:'smooth', block:'start'});
+    setTimeout(()=>{ try{ d.focus({preventScroll:true}); }catch(e){} }, 250);
+  }catch(e){}
+}
 function resetForm(manterRepetidos){
   const manter = manterRepetidos ? {
     posto: document.getElementById('l-posto').value,
@@ -7866,6 +7893,7 @@ function numParaInput(v){ return (v === null || v === undefined || v === '' || i
 function editRecord(id){
   const r = DB.find(x=>x.id===id);
   if(!r) return;
+  if(nfFechadaCli(r.nf)){ toast('🔒 A NF '+r.nf+' está fechada — não dá pra editar. Reabra a NF primeiro.'); return; }
   if(!podeEditarRegistro(r)){ toast('Seu nível não tem permissão para editar lançamentos.'); return; }
   editingId = id;
   document.getElementById('form-title').textContent = 'Editando lançamento';
@@ -7896,6 +7924,7 @@ function editRecord(id){
 async function deleteRecord(id){
   const r = DB.find(x=>x.id===id);
   if(!r) return;
+  if(nfFechadaCli(r.nf)){ toast('🔒 A NF '+r.nf+' está fechada — não dá pra excluir. Reabra a NF primeiro.'); return; }
   if(!podeExcluirRegistro(r)){ toast('Seu nível não tem permissão para excluir lançamentos.'); return; }
   const ok = await confirmModal('Excluir lançamento', 'Essa ação não pode ser desfeita. Deseja excluir este registro?');
   if(!ok) return;
@@ -8089,6 +8118,39 @@ function renderTotaisLanc(rows){
 }
 
 let LANC_VISIVEIS = [];
+function renderPainelNfFechada(){
+  const box = document.getElementById('painel-nf-fechada');
+  if(!box) return;
+  const pf = pode('fechar_nf');
+  if(!pf && !NFS_FECHADAS.length){ box.style.display='none'; return; }
+  box.style.display = 'block';
+  const nfBl = (document.getElementById('bl-nf')?.value || '').trim();
+  box.innerHTML = `<div style="font-weight:600;margin-bottom:6px;">🔒 Fechamento de Nota Fiscal</div>
+    ${pf ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+      <input type="text" id="nf-fechar-inp" placeholder="Nº da NF pra fechar" value="${escapeHtml(nfBl.split(/[\s,;]+/)[0]||'')}" style="max-width:200px;">
+      <button type="button" class="btn" id="btn-fechar-nf">🔒 Fechar NF</button>
+      <span style="font-size:12px;color:var(--gray);">Depois de fechada, ninguém lança, edita, exclui nem confirma nada nessa NF.</span>
+    </div>` : ''}
+    <div style="font-size:13px;">${NFS_FECHADAS.length ? 'NFs fechadas: ' + NFS_FECHADAS.map(n=>`<span class="tag">🔒 ${escapeHtml(n)}${pf ? ` <a href="#" data-reabrir-nf="${escapeHtml(n)}" style="margin-left:4px;" title="Reabrir">reabrir</a>`:''}</span>`).join(' ') : '<span style="color:var(--gray);">Nenhuma NF fechada.</span>'}</div>`;
+  const bf = document.getElementById('btn-fechar-nf');
+  if(bf) bf.addEventListener('click', ()=>acaoNf('fecharNF', document.getElementById('nf-fechar-inp').value.trim()));
+  box.querySelectorAll('[data-reabrir-nf]').forEach(a=>a.addEventListener('click', ev=>{ ev.preventDefault(); acaoNf('reabrirNF', a.dataset.reabrirNf); }));
+}
+async function acaoNf(acao, nf){
+  if(!nf){ toast('Digite o número da NF.'); return; }
+  const n = String(nf).trim().toUpperCase();
+  const ok = await confirmModal(acao==='fecharNF' ? 'Fechar NF '+n : 'Reabrir NF '+n,
+    acao==='fecharNF' ? 'Depois de fechada, ninguém mais lança, edita, exclui nem confirma nada nessa NF (até alguém reabrir). Confirma?' : 'Reabrir libera de novo os lançamentos dessa NF. Confirma?');
+  if(!ok) return;
+  try{
+    const resp = await fetch(SYNC_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ action:acao, nf:n, idToken: ID_TOKEN }) });
+    const json = await parseJsonResponse(resp);
+    if(json.status !== 'ok'){ toast(json.mensagem || 'Falha.'); return; }
+    NFS_FECHADAS = json.nfsFechadas || NFS_FECHADAS;
+    toast(json.mensagem || 'Feito.');
+    renderLancTable();
+  }catch(err){ console.error(err); toast('Erro de conexão. Tenta de novo.'); }
+}
 function renderLancTable(){
   const search = (document.getElementById('lanc-search').value || '').toUpperCase();
   const tbody = document.querySelector('#lanc-table tbody');
@@ -8156,6 +8218,7 @@ function renderLancTable(){
     }
   }
 
+  renderPainelNfFechada();
   tbody.innerHTML = rows.slice(0,400).map(r=>{
     const al = alertas.get(r.id);
     return `
@@ -8163,7 +8226,7 @@ function renderLancTable(){
       <td class="num" style="color:var(--gray);font-weight:600;">${SEQ.get(r.id) || '—'}</td>
       <td>${fmtDate(r.data)}</td>
       <td>${r.dataLancamento?fmtDate(r.dataLancamento):'—'}</td>
-      <td>${r.nf ?? '—'}</td>
+      <td>${nfFechadaCli(r.nf) ? '🔒 ' : ''}${r.nf ?? '—'}</td>
       <td>${escapeHtml(r.requisicao||'—')}</td>
       <td>${escapeHtml(r.posto||'—')}</td>
       <td><span class="tag">${escapeHtml(r.produto||'—')}</span></td>
@@ -8176,6 +8239,7 @@ function renderLancTable(){
       <td class="num">${r.mediaKmL!=null?fmtNum(r.mediaKmL,2):'—'}</td>
       <td class="row-actions">
         ${al ? `<button class="btn-alerta" onclick="abrirAlertaLancamento('${r.id}')" title="${escapeHtml(al.map(a=>a.texto).join(' | '))}">⚠️</button>` : ''}
+        ${nfFechadaCli(r.nf) ? `<span title="NF fechada — travado" style="padding:0 6px;">🔒</span>` : ''}
         ${podeEditarRegistro(r) ? `<button onclick="editRecord('${r.id}')" title="Editar">✏️</button>` : ''}
         ${podeExcluirRegistro(r) ? `<button class="del" onclick="deleteRecord('${r.id}')" title="Excluir">🗑️</button>` : ''}
       </td>
@@ -9170,6 +9234,7 @@ async function pullFromSheets(){
     USUARIOS = json.usuarios || [];
     PENDENTES = json.pendentes || [];
     DIAS_BLOQUEADOS = json.diasBloqueados || DIAS_BLOQUEADOS;
+    NFS_FECHADAS = json.nfsFechadas || NFS_FECHADAS;
     CONFIG_SISMA = json.configSisma || CONFIG_SISMA;
     PERMISSOES = json.permissoes || PERMISSOES;
     capturarObras(json);
@@ -9365,6 +9430,369 @@ document.addEventListener('keydown', ev=>{
   document.addEventListener('DOMContentLoaded', ()=>{ medir(); const hd = document.querySelector('header.app-header'); if(hd && window.ResizeObserver) new ResizeObserver(medir).observe(hd); });
   medir();
 })();
+
+
+/* =====================================================================
+   IMPORTAÇÃO EM LOTE DE PLANILHA EXCEL (com PÁGINA PRÉVIA pra corrigir)
+   - 'req'    : marca requisições abertas como USADAS em lote (litros, valor,
+                Km, NF mãe e data vêm da planilha) — cada uma cai na 2ª aprovação
+   - 'veic' / 'posto' / 'emp' : cadastros em lote
+   Nada é gravado antes de o usuário conferir a prévia (dá pra editar cada
+   célula e desmarcar linhas). Usa as MESMAS ações do servidor das telas
+   normais — não precisa atualizar o Apps Script.
+   ===================================================================== */
+const IMP_CFG = {
+  req: {
+    titulo: 'Marcar requisições como USADAS em lote', perm: 'aprovacoes_emitir',
+    explica: 'A planilha precisa ter o <b>número da requisição</b> + <b>litros</b> + <b>valor total</b> (ou preço unitário). Km, NF mãe e data são opcionais. Cada requisição aberta encontrada vai pra 2ª aprovação, igual ao botão de uma por uma.',
+    campos: [
+      {k:'numero', rot:'Requisição', alias:['requisicao','numero','nrequisicao','nreq','req','numerodarequisicao','numreq'], obrig:true, larg:90},
+      {k:'data', rot:'Data', alias:['data','dataabastecimento','dataabast'], tipo:'data', larg:130},
+      {k:'quantidade', rot:'Litros', alias:['litros','quantidade','qtd','qtde','quant','lt'], tipo:'num', obrig:true, larg:80},
+      {k:'precoUnit', rot:'Preço unit.', alias:['precounit','precounitario','valorunit','valorunitario','precolitro','preco'], tipo:'num', larg:85},
+      {k:'precoTotal', rot:'Valor total', alias:['valortotal','precototal','total','valor'], tipo:'num', larg:95},
+      {k:'kmHor', rot:'Km/Hor.', alias:['km','kmhor','kmhorimetro','horimetro','hodometro','kmatual'], tipo:'num', larg:90},
+      {k:'nf', rot:'NF mãe', alias:['nf','nfmae','notafiscal','nfmaefechamento','nnf'], larg:90},
+    ],
+    modelo: [{'Requisição':'3480','Data':'18/10/2026','Litros':'40,5','Preço unit.':'6,89','Valor total':'','Km/Hor.':'108531','NF mãe':'13714'}],
+  },
+  veic: {
+    titulo: 'Cadastrar veículos/equipamentos em lote', perm: 'cadastro_frota_postos',
+    explica: 'Só o <b>Equipamento</b> é obrigatório. Equipamento que já existe na Frota é <b>pulado</b> (não duplica nem sobrescreve).',
+    campos: [
+      {k:'equipamento', rot:'Equipamento', alias:['equipamento','eqp','prefixo','codigo','veiculo'], obrig:true, larg:110, up:true},
+      {k:'tipo', rot:'Tipo', alias:['tipo','propriedade'], larg:110},
+      {k:'marca', rot:'Marca', alias:['marca','fabricante'], larg:100},
+      {k:'modelo', rot:'Modelo', alias:['modelo'], larg:110},
+      {k:'placa', rot:'Placa', alias:['placa'], larg:90, up:true},
+      {k:'serie', rot:'Série', alias:['serie','nserie','chassi'], larg:110},
+      {k:'ano', rot:'Ano', alias:['ano'], larg:60},
+      {k:'setor', rot:'Setor', alias:['setor'], larg:90},
+      {k:'combustivelAutorizado', rot:'Combustível', alias:['combustivel','combustivelautorizado'], larg:110, up:true},
+      {k:'fornecedor', rot:'Fornecedor', alias:['fornecedor','locadora'], larg:110},
+      {k:'valorAluguel', rot:'Valor aluguel', alias:['valoraluguel','aluguel'], larg:90},
+      {k:'observacoes', rot:'Obs.', alias:['observacoes','obs','observacao'], larg:130},
+    ],
+    modelo: [{'Equipamento':'VP0555','Tipo':'próprio','Marca':'FIAT','Modelo':'STRADA','Placa':'ABC1D23','Série':'','Ano':'2022','Setor':'Obra','Combustível':'ETANOL','Fornecedor':'','Valor aluguel':'','Obs.':''}],
+  },
+  posto: {
+    titulo: 'Cadastrar postos em lote', perm: 'cadastro_frota_postos',
+    explica: 'Só o <b>Nome</b> é obrigatório. Posto que já existe é <b>pulado</b>.',
+    campos: [
+      {k:'nome', rot:'Nome', alias:['nome','posto','razaosocial'], obrig:true, larg:170, up:true},
+      {k:'cnpj', rot:'CNPJ', alias:['cnpj'], larg:130},
+      {k:'telefone', rot:'Telefone', alias:['telefone','fone','tel'], larg:110},
+      {k:'endereco', rot:'Endereço', alias:['endereco','cidade'], larg:180},
+      {k:'observacoes', rot:'Obs.', alias:['observacoes','obs','observacao'], larg:140},
+    ],
+    modelo: [{'Nome':'POSTO PREMIUM','CNPJ':'00.000.000/0001-00','Telefone':'(18) 99999-9999','Endereço':'Assis - SP','Obs.':''}],
+  },
+  emp: {
+    titulo: 'Cadastrar empresas em lote', perm: 'cadastro_empresas',
+    explica: 'Só o <b>Nome</b> é obrigatório. Tipo: própria, locadora ou terceirizada (se vazio = terceirizada). Empresa que já existe é <b>pulada</b>.',
+    campos: [
+      {k:'nome', rot:'Nome', alias:['nome','empresa','razaosocial'], obrig:true, larg:170, up:true},
+      {k:'tipo', rot:'Tipo', alias:['tipo'], larg:110},
+      {k:'cnpj', rot:'CNPJ', alias:['cnpj'], larg:130},
+      {k:'telefone', rot:'Telefone', alias:['telefone','fone','tel'], larg:110},
+      {k:'endereco', rot:'Endereço', alias:['endereco','cidade'], larg:170},
+      {k:'observacoes', rot:'Obs.', alias:['observacoes','obs','observacao'], larg:140},
+    ],
+    modelo: [{'Nome':'TRANSPORTES EXEMPLO LTDA','Tipo':'terceirizada','CNPJ':'','Telefone':'','Endereço':'','Obs.':''}],
+  },
+};
+let IMP = null; // { tipo, linhas:[{v:{}, inc:true, st:'ok'|'erro'|'pula'|'aviso', msg:''}], arquivo }
+
+function impNorm(s){ return String(s==null?'':s).normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+
+function impCriarModal(){
+  if(document.getElementById('modal-import')) return;
+  const st = document.createElement('style');
+  st.textContent = `#modal-import{position:fixed;inset:0;background:rgba(10,20,40,.55);z-index:9999;display:none;align-items:flex-start;justify-content:center;overflow:auto;padding:16px;}
+  #modal-import.show{display:flex;}
+  #modal-import .imp-box{background:#fff;border-radius:12px;max-width:1200px;width:100%;padding:18px;box-shadow:0 10px 40px rgba(0,0,0,.3);}
+  #modal-import .imp-tab{overflow:auto;max-height:55vh;border:1px solid #d8dee8;border-radius:8px;}
+  #modal-import table{border-collapse:collapse;font-size:12px;width:100%;}
+  #modal-import th{position:sticky;top:0;background:#eef2f8;text-align:left;padding:6px;white-space:nowrap;z-index:1;}
+  #modal-import td{padding:3px 4px;border-top:1px solid #edf0f5;vertical-align:middle;}
+  #modal-import td input[type=text]{width:100%;box-sizing:border-box;padding:4px 5px;font-size:12px;border:1px solid #cfd6e2;border-radius:5px;}
+  #modal-import tr.imp-erro{background:#fdeaea;} #modal-import tr.imp-pula{background:#f3f3f3;color:#777;} #modal-import tr.imp-aviso{background:#fff8e1;}
+  #modal-import tr.imp-off td{opacity:.45;}
+  #modal-import .imp-sum{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0;font-size:13px;}
+  #modal-import .imp-sum span{padding:4px 10px;border-radius:14px;background:#eef2f8;}`;
+  document.head.appendChild(st);
+  const d = document.createElement('div');
+  d.id = 'modal-import';
+  d.innerHTML = '<div class="imp-box" id="imp-box"></div>';
+  document.body.appendChild(d);
+}
+
+function abrirImportacao(tipo){
+  const cfg = IMP_CFG[tipo];
+  if(!cfg) return;
+  if(!pode(cfg.perm)){ toast('Seu nível não tem permissão para isso.'); return; }
+  impCriarModal();
+  IMP = { tipo, linhas: [], arquivo: '' };
+  impRenderInicio();
+  document.getElementById('modal-import').classList.add('show');
+}
+function fecharImportacao(){ const m = document.getElementById('modal-import'); if(m) m.classList.remove('show'); IMP = null; }
+
+function impRenderInicio(){
+  const cfg = IMP_CFG[IMP.tipo];
+  document.getElementById('imp-box').innerHTML = `
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
+      <h2 style="margin:0 0 6px;">📥 ${cfg.titulo}</h2>
+      <button class="btn ghost" id="imp-x">✖ Fechar</button>
+    </div>
+    <p style="font-size:13px;margin:6px 0 10px;">${cfg.explica}</p>
+    <p style="font-size:13px;margin:6px 0 12px;">Colunas aceitas (o nome do cabeçalho pode variar um pouco): <b>${cfg.campos.map(c=>c.rot).join(' · ')}</b>.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button class="btn" id="imp-escolher">📂 Escolher planilha Excel…</button>
+      <button class="btn secondary" id="imp-modelo">⬇️ Baixar modelo de planilha</button>
+    </div>
+    <input type="file" id="imp-file" accept=".xlsx,.xls,.csv" style="display:none;">
+    <p style="font-size:12px;color:var(--gray);margin-top:12px;">Depois de escolher o arquivo, abre uma <b>prévia</b> mostrando pra onde cada linha vai — você corrige o que precisar antes de gravar. Nada é gravado antes de você confirmar.</p>`;
+  document.getElementById('imp-x').onclick = fecharImportacao;
+  document.getElementById('imp-escolher').onclick = ()=>document.getElementById('imp-file').click();
+  document.getElementById('imp-file').onchange = impLerArquivo;
+  document.getElementById('imp-modelo').onclick = ()=>{
+    const ws = XLSX.utils.json_to_sheet(cfg.modelo);
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Modelo');
+    XLSX.writeFile(wb, `modelo_importacao_${IMP.tipo}.xlsx`);
+  };
+}
+
+function impLerArquivo(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const cfg = IMP_CFG[IMP.tipo];
+  const reader = new FileReader();
+  reader.onload = evt=>{
+    try{
+      const wb = XLSX.read(new Uint8Array(evt.target.result), {type:'array'});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const mat = XLSX.utils.sheet_to_json(ws, {header:1, defval:null, raw:true});
+      // acha a linha de cabeçalho: a primeira que casa com pelo menos 2 colunas conhecidas (ou 1 se só tiver 1 campo obrigatório)
+      let hIdx = -1, mapa = null;
+      for(let i=0;i<Math.min(mat.length,15);i++){
+        const m = {}; let hits = 0;
+        (mat[i]||[]).forEach((cel,j)=>{
+          const n = impNorm(cel); if(!n) return;
+          const campo = cfg.campos.find(c=>!(c.k in m) && c.alias.includes(n));
+          if(campo){ m[campo.k] = j; hits++; }
+        });
+        if(hits >= Math.min(2, cfg.campos.length) && cfg.campos.filter(c=>c.obrig).every(c=>c.k in m)){ hIdx = i; mapa = m; break; }
+      }
+      if(hIdx < 0){ toast('Não achei o cabeçalho da planilha. Baixa o modelo e usa os mesmos nomes de coluna.'); e.target.value=''; return; }
+      const linhas = [];
+      for(let i=hIdx+1;i<mat.length;i++){
+        const r = mat[i] || [];
+        if(!r.some(x=>x!==null && String(x).trim()!=='')) continue;
+        const v = {};
+        cfg.campos.forEach(c=>{
+          let raw = (c.k in mapa) ? r[mapa[c.k]] : null;
+          if(raw === undefined || raw === null) raw = '';
+          if(c.tipo === 'data'){ const iso = raw!=='' ? excelDateToIso(raw) : null; v[c.k] = iso || (raw!=='' ? String(raw) : ''); }
+          else if(c.tipo === 'num'){ const n = raw!=='' ? numBRouNumero(raw) : null; v[c.k] = (n==null || isNaN(n)) ? (raw!=='' ? String(raw) : '') : numParaInput(n); }
+          else { v[c.k] = String(raw).trim(); if(c.up) v[c.k] = v[c.k].toUpperCase(); }
+        });
+        linhas.push({ v, inc:true, st:'ok', msg:'', linhaPlanilha: i+1 });
+      }
+      if(!linhas.length){ toast('A planilha não tem linhas com dados.'); e.target.value=''; return; }
+      IMP.linhas = linhas; IMP.arquivo = file.name;
+      impValidarTodas();
+      impRenderPrevia();
+    }catch(err){ console.error(err); toast('Erro ao ler o arquivo. Confere se é um Excel válido.'); }
+    e.target.value = '';
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+/* ---- validação (por linha) ---- */
+function impReqAberta(numero){
+  const n = String(numero||'').trim();
+  return REQUISICOES_EMITIDAS.find(r=>String(r.numero).trim() === n);
+}
+function impValidarTodas(){ IMP.linhas.forEach((l,i)=>impValidarLinha(i)); }
+function impValidarLinha(i){
+  const l = IMP.linhas[i], v = l.v, tipo = IMP.tipo, cfg = IMP_CFG[tipo];
+  l.st = 'ok'; l.msg = ''; l.info = null;
+  for(const c of cfg.campos){ if(c.obrig && !String(v[c.k]||'').trim()){ l.st='erro'; l.msg = `Falta ${c.rot}.`; return; } }
+  const chave = tipo==='req' ? 'numero' : (tipo==='veic' ? 'equipamento' : 'nome');
+  const val = String(v[chave]).trim().toUpperCase();
+  // duplicado dentro da própria planilha (só a 1ª ocorrência vale)
+  const antes = IMP.linhas.slice(0,i).some(o=>o.inc && String(o.v[chave]).trim().toUpperCase() === val && o.st!=='erro');
+  if(antes){ l.st='erro'; l.msg='Repetida na planilha (já tem linha anterior com o mesmo ' + cfg.campos.find(c=>c.k===chave).rot + ').'; return; }
+  if(tipo === 'req'){
+    const rq = impReqAberta(v.numero);
+    if(!rq){ l.st='erro'; l.msg='Requisição não encontrada (confere o número e a obra).'; return; }
+    l.info = rq;
+    if(rq.status !== 'aberta'){ l.st='erro'; l.msg = `Requisição já está "${rq.status}" — só dá pra marcar as abertas.`; return; }
+    const q = numBR(v.quantidade);
+    if(!q || q<=0){ l.st='erro'; l.msg='Litros inválidos.'; return; }
+    let total = numBR(v.precoTotal); const un = numBR(v.precoUnit);
+    if((!total || total<=0) && un>0) total = Math.round(q*un*100)/100;
+    if(!total || total<=0){ l.st='erro'; l.msg='Falta o valor total (ou o preço unitário).'; return; }
+    if(v.data && !/^\d{4}-\d{2}-\d{2}$/.test(v.data)){ l.st='erro'; l.msg='Data inválida (use dd/mm/aaaa).'; return; }
+    if(v.nf && nfFechadaCli(v.nf)){ l.st='erro'; l.msg=`🔒 A NF ${v.nf} está fechada.`; return; }
+    const avisos = [];
+    if(v.kmHor){
+      const km = numBR(v.kmHor);
+      if(isNaN(km)) { l.st='erro'; l.msg='Km inválido.'; return; }
+      const eq = String(rq.equipamento||'').toUpperCase();
+      const maior = DB.filter(r=>String(r.equipamento||'').toUpperCase()===eq && r.kmHor!=null).reduce((m,r)=>Math.max(m,Number(r.kmHor)),0);
+      if(eq && maior && km <= maior) avisos.push(`Km ${fmtNum(km,0)} é menor/igual à última leitura (${fmtNum(maior,0)}) — vai ser sinalizado.`);
+    }
+    const pu = un>0 ? un : q? total/q : 0;
+    if(pu > 15 || (pu>0 && pu<2)) avisos.push(`Preço por litro estranho (R$ ${pu.toFixed(2).replace('.',',')}).`);
+    if(avisos.length){ l.st='aviso'; l.msg = avisos.join(' '); }
+    return;
+  }
+  if(tipo === 'veic'){
+    if(VEICULOS.some(x=>String(x.equipamento||'').trim().toUpperCase() === val)){ l.st='pula'; l.msg='Já cadastrado na Frota — será pulado.'; return; }
+    const pl = String(v.placa||'').trim().toUpperCase();
+    if(pl && VEICULOS.some(x=>String(x.placa||'').trim().toUpperCase() === pl)){ l.st='aviso'; l.msg='Essa placa já existe em outro equipamento — o servidor pode recusar.'; }
+    const t = impNorm(v.tipo);
+    if(t && !['proprio','propria','alugado','terceirizado','terceirizada'].includes(t)){ l.st='aviso'; l.msg = (l.msg?l.msg+' ':'') + 'Tipo não reconhecido — vai como "próprio".'; }
+    return;
+  }
+  if(tipo === 'posto'){
+    if(POSTOS.some(x=>String(x.nome||'').trim().toUpperCase() === val)){ l.st='pula'; l.msg='Já cadastrado — será pulado.'; }
+    return;
+  }
+  if(tipo === 'emp'){
+    if(EMPRESAS.some(x=>String(x.nome||'').trim().toUpperCase() === val)){ l.st='pula'; l.msg='Já cadastrada — será pulada.'; return; }
+    const t = impNorm(v.tipo);
+    if(t && !['propria','locadora','terceirizada','terceirizado','proprio'].includes(t)){ l.st='aviso'; l.msg='Tipo não reconhecido — vai como "terceirizada".'; }
+  }
+}
+
+/* ---- prévia ---- */
+function impDestinoReq(l){
+  const rq = l.info; if(!rq) return '—';
+  const eq = rq.terceiro==='sim' ? (rq.placa||rq.equipamento) : rq.equipamento;
+  return `${escapeHtml(eq||'—')} · ${escapeHtml(rq.motoristaNome||'—')} · ${escapeHtml(rq.posto||'—')} · ${escapeHtml(rq.produto||'—')}`;
+}
+function impRenderPrevia(){
+  const cfg = IMP_CFG[IMP.tipo];
+  const ehReq = IMP.tipo === 'req';
+  document.getElementById('imp-box').innerHTML = `
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
+      <h2 style="margin:0 0 4px;">🔎 Prévia — ${cfg.titulo}</h2>
+      <button class="btn ghost" id="imp-x">✖ Fechar</button>
+    </div>
+    <div style="font-size:12px;color:var(--gray);">Arquivo: <b>${escapeHtml(IMP.arquivo)}</b>. Confere pra onde cada linha vai, corrige o que precisar direto na tabela e desmarque o que não quer gravar. <b>Nada foi gravado ainda.</b></div>
+    <div class="imp-sum" id="imp-sum"></div>
+    <div class="imp-tab"><table>
+      <thead><tr><th>✔</th><th>Linha</th><th>Situação</th>${ehReq?'<th>Vai pra (equip · motorista · posto · produto)</th>':''}${cfg.campos.map(c=>`<th>${c.rot}${c.obrig?' *':''}</th>`).join('')}</tr></thead>
+      <tbody>${IMP.linhas.map((l,i)=>impLinhaHtml(l,i)).join('')}</tbody>
+    </table></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">
+      <button class="btn" id="imp-gravar">✅ Gravar as linhas marcadas</button>
+      <button class="btn secondary" id="imp-outro">📂 Trocar planilha</button>
+      <button class="btn ghost" id="imp-cancelar">Cancelar</button>
+    </div>`;
+  document.getElementById('imp-x').onclick = fecharImportacao;
+  document.getElementById('imp-cancelar').onclick = fecharImportacao;
+  document.getElementById('imp-outro').onclick = impRenderInicio;
+  document.getElementById('imp-gravar').onclick = impGravar;
+  const tb = document.querySelector('#imp-box tbody');
+  tb.addEventListener('input', ev=>{
+    const el = ev.target; if(!el.dataset || el.dataset.i === undefined || !el.dataset.k) return;
+    const i = Number(el.dataset.i), k = el.dataset.k;
+    IMP.linhas[i].v[k] = el.value;
+    IMP.linhas.forEach((_,j)=>{ if(j>=i) impValidarLinha(j); });
+    impAtualizarStatus();
+  });
+  tb.addEventListener('change', ev=>{
+    const el = ev.target; if(el.dataset && el.dataset.inc !== undefined){
+      const i = Number(el.dataset.inc); IMP.linhas[i].inc = el.checked;
+      IMP.linhas.forEach((_,j)=>impValidarLinha(j)); impAtualizarStatus();
+    }
+  });
+  impAtualizarStatus();
+}
+function impLinhaHtml(l,i){
+  const cfg = IMP_CFG[IMP.tipo];
+  return `<tr data-row="${i}"><td><input type="checkbox" data-inc="${i}" ${l.inc?'checked':''}></td><td>${l.linhaPlanilha}</td><td class="imp-st"></td>${IMP.tipo==='req'?'<td class="imp-dest"></td>':''}${cfg.campos.map(c=>`<td style="min-width:${c.larg||90}px"><input type="text" data-i="${i}" data-k="${c.k}" value="${escapeHtml(l.v[c.k])}"></td>`).join('')}</tr>`;
+}
+function impAtualizarStatus(){
+  const trs = document.querySelectorAll('#imp-box tbody tr');
+  let ok=0, erro=0, pula=0, aviso=0, off=0;
+  IMP.linhas.forEach((l,i)=>{
+    const tr = trs[i]; if(!tr) return;
+    tr.className = (l.inc ? '' : 'imp-off ') + 'imp-' + (l.st==='ok'?'ok':l.st);
+    const ic = {ok:'✅ OK', erro:'❌ '+l.msg, pula:'⏭️ '+l.msg, aviso:'⚠️ '+l.msg}[l.st];
+    tr.querySelector('.imp-st').innerHTML = `<span style="font-size:12px;">${escapeHtml(ic)}</span>`;
+    const dest = tr.querySelector('.imp-dest'); if(dest) dest.innerHTML = impDestinoReq(l);
+    if(!l.inc){ off++; return; }
+    if(l.st==='ok') ok++; else if(l.st==='aviso'){ aviso++; ok++; } else if(l.st==='erro') erro++; else pula++;
+  });
+  document.getElementById('imp-sum').innerHTML = `<span>✅ Vão ser gravadas: <b>${ok}</b></span><span>⚠️ Com aviso: <b>${aviso}</b></span><span>❌ Com erro (não gravam): <b>${erro}</b></span><span>⏭️ Puladas: <b>${pula}</b></span><span>☐ Desmarcadas: <b>${off}</b></span>`;
+  const bt = document.getElementById('imp-gravar'); if(bt){ bt.disabled = ok===0; bt.textContent = `✅ Gravar ${ok} linha(s)`; }
+}
+
+/* ---- gravação ---- */
+async function impGravar(){
+  const alvo = IMP.linhas.map((l,i)=>({l,i})).filter(x=>x.l.inc && (x.l.st==='ok' || x.l.st==='aviso'));
+  if(!alvo.length) return;
+  const ok = await confirmModal('Gravar importação', `Vai gravar ${alvo.length} linha(s). Confirma?`);
+  if(!ok) return;
+  const tipo = IMP.tipo;
+  const box = document.getElementById('imp-box');
+  box.innerHTML = `<h2 style="margin:0 0 8px;">⏳ Gravando…</h2><div id="imp-prog" style="font-size:14px;"></div><div style="font-size:12px;color:var(--gray);margin-top:8px;">Não fecha essa tela até terminar.</div>`;
+  const resultados = [];
+  let feitos = 0;
+  for(const {l} of alvo){
+    document.getElementById('imp-prog').textContent = `${feitos+1} de ${alvo.length}…`;
+    const r = await impEnviarLinha(tipo, l);
+    resultados.push({ l, ...r });
+    feitos++;
+  }
+  try{ await pullFromSheetsSilencioso(); }catch(e){}
+  const oks = resultados.filter(r=>r.ok), bad = resultados.filter(r=>!r.ok);
+  const chave = tipo==='req' ? 'numero' : (tipo==='veic' ? 'equipamento' : 'nome');
+  box.innerHTML = `
+    <div style="display:flex;justify-content:space-between;"><h2 style="margin:0 0 8px;">${bad.length?'⚠️':'✅'} Importação concluída</h2><button class="btn ghost" id="imp-x">✖ Fechar</button></div>
+    <p style="font-size:14px;"><b>${oks.length}</b> gravada(s)${bad.length?` · <b style="color:var(--bad);">${bad.length}</b> com problema`:''}.${tipo==='req'?' As requisições marcadas já estão na <b>2ª aprovação</b>, esperando a Nota Fiscal.':''}</p>
+    ${bad.length?`<div class="imp-tab" style="max-height:40vh;"><table><thead><tr><th>Linha</th><th>${IMP_CFG[tipo].campos.find(c=>c.k===chave).rot}</th><th>Problema</th></tr></thead><tbody>${bad.map(r=>`<tr class="imp-erro"><td>${r.l.linhaPlanilha}</td><td>${escapeHtml(r.l.v[chave])}</td><td>${escapeHtml(r.msg)}</td></tr>`).join('')}</tbody></table></div><p style="font-size:12px;color:var(--gray);">Corrige essas linhas na planilha e importa de novo só com elas.</p>`:''}
+    <div style="margin-top:12px;"><button class="btn" id="imp-fim">Fechar</button></div>`;
+  document.getElementById('imp-x').onclick = fecharImportacao;
+  document.getElementById('imp-fim').onclick = fecharImportacao;
+}
+async function impPost(body){
+  try{
+    const resp = await fetch(SYNC_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify(Object.assign({idToken: ID_TOKEN}, body)) });
+    const json = await parseJsonResponse(resp);
+    return json.status === 'ok' ? { ok:true, json } : { ok:false, msg: json.mensagem || 'Falha no servidor.' };
+  }catch(err){ return { ok:false, msg: 'Erro de conexão: ' + (err.message||err) }; }
+}
+async function impEnviarLinha(tipo, l){
+  const v = l.v;
+  if(tipo === 'req'){
+    const q = numBR(v.quantidade); const un = numBR(v.precoUnit);
+    let total = numBR(v.precoTotal); if((!total || total<=0) && un>0) total = Math.round(q*un*100)/100;
+    const r = await impPost({ action:'marcarRequisicaoUsada', id: l.info.id, dados: {
+      quantidade:q, precoTotal:total, precoUnit: un>0 ? un : null,
+      kmHor: v.kmHor ? numBR(v.kmHor) : null, nf: v.nf ? String(v.nf).trim() : null, data: v.data || todayStr() } });
+    if(r.ok){ REQUISICOES_EMITIDAS = r.json.requisicoesEmitidas || REQUISICOES_EMITIDAS; PENDENTES = r.json.pendentes || PENDENTES; }
+    return r;
+  }
+  if(tipo === 'veic'){
+    const t = impNorm(v.tipo);
+    const tipoV = t.startsWith('alug') ? 'alugado' : t.startsWith('terc') ? 'terceirizado' : 'proprio';
+    return impPost({ action:'salvarVeiculo', dados: { novo:true, equipamento:v.equipamento.trim().toUpperCase(), tipo:tipoV,
+      valorAluguel:v.valorAluguel||'', fornecedor:v.fornecedor||'', observacoes:v.observacoes||'', obra:'', marca:v.marca||'', modelo:v.modelo||'',
+      placa:(v.placa||'').toUpperCase(), serie:v.serie||'', ano:v.ano||'', setor:v.setor||'', combustivelAutorizado:(v.combustivelAutorizado||'').toUpperCase() } });
+  }
+  if(tipo === 'posto'){
+    return impPost({ action:'salvarPosto', dados: { novo:true, nome:v.nome.trim().toUpperCase(), cnpj:v.cnpj||'', telefone:v.telefone||'', endereco:v.endereco||'', observacoes:v.observacoes||'', obra:'' } });
+  }
+  const t = impNorm(v.tipo);
+  const tipoE = t.startsWith('prop') ? 'propria' : t.startsWith('loc') ? 'locadora' : 'terceirizada';
+  return impPost({ action:'salvarEmpresa', dados: { novo:true, nome:v.nome.trim().toUpperCase(), tipo:tipoE, cnpj:v.cnpj||'', telefone:v.telefone||'', endereco:v.endereco||'', observacoes:v.observacoes||'', obra:'' } });
+}
 
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
