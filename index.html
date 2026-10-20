@@ -1355,11 +1355,11 @@ body.preview-motorista #view-lancamentos::before{
         <canvas id="chartKm"></canvas>
       </div>
       <div class="card">
-        <h2>Média de consumo (km/L)</h2>
+        <h2>Média de consumo (km/L) — sem terceiros</h2>
         <canvas id="chartMedia"></canvas>
       </div>
       <div class="card">
-        <h2>Top 10 — Menor Eficiência de Consumo (km/L)</h2>
+        <h2>Top 10 — Menor Eficiência de Consumo (km/L) — sem terceiros</h2>
         <canvas id="chartBebedores"></canvas>
       </div>
     </div>
@@ -2185,7 +2185,7 @@ body.preview-motorista #view-lancamentos::before{
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
         <h2 style="margin:0;">🚗 Frota — próprios, alugados e terceirizados</h2>
-        <span style="display:flex;gap:8px;flex-wrap:wrap;"><button type="button" class="btn secondary" onclick="abrirImportacao('veic')">📥 Importar do Excel</button><button type="button" class="btn secondary" id="btn-pdf-frota">📄 Exportar PDF da Frota</button></span>
+        <span style="display:flex;gap:8px;flex-wrap:wrap;"><button type="button" class="btn secondary" onclick="abrirImportacao('veic')">📥 Importar do Excel</button><button type="button" class="btn secondary" id="btn-imp-sisma">📥 Importar consolidado SISMA</button><button type="button" class="btn secondary" id="btn-pdf-frota">📄 Exportar PDF da Frota</button></span>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px;">
         <input type="text" class="flt-frota" id="flt-frota-busca" placeholder="🔎 Buscar equipamento, placa, modelo, condutor..." style="padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px;max-width:100%;" >
@@ -2198,6 +2198,7 @@ body.preview-motorista #view-lancamentos::before{
         <button type="button" class="btn ghost" onclick="limparFiltros('flt-frota')">Limpar</button>
         <span id="flt-frota-count" style="font-size:12px;color:var(--gray);"></span>
       </div>
+      <div id="frota-lote" style="display:none;gap:10px;flex-wrap:wrap;align-items:center;background:#eef2f9;padding:8px 10px;border-radius:8px;margin-top:12px;font-size:13px;"></div>
       <div id="lista-veiculos" style="margin-top:14px;"></div>
     </div>
     <div class="card" id="card-cruzamento-frota" style="display:none;">
@@ -2546,7 +2547,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.20-92';
+const APP_VERSION = 'v2026.10.20-94';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -2628,7 +2629,7 @@ let DIAS_BLOQUEADOS = [0];   // dias da semana (0=domingo...6=sábado) que motor
 let CONFIG_SISMA = { empresa:'1', especie:'1', ponto:'300', bomba:'1', mapaProduto:{} }; // usado na exportação CSV pro SISMA
 // Permissões por nível (nível mínimo de cada capacidade). Vem do servidor
 // a cada pull; o padrão abaixo só vale até chegar a primeira resposta.
-const PERMISSOES_PADRAO = { ver_dashboard:1, ver_relatorio:1, lancamento_manual:2, lancamento_direto:4, editar_base:6, excluir_base:6, aprovacoes_emitir:2, requisicao_editar:6, aprovacoes_revisar:3, cadastro_empresas:3, cadastro_frota_postos:3, editar_cadastros:6, cadastro_usuarios:4, manutencao_base:6, config_sistema:4, sincronizacao:7, fechar_nf:5 };
+const PERMISSOES_PADRAO = { ver_dashboard:1, ver_relatorio:1, lancamento_manual:2, lancamento_direto:4, editar_base:6, excluir_base:6, aprovacoes_emitir:2, requisicao_editar:6, aprovacoes_revisar:3, cadastro_empresas:3, cadastro_frota_postos:3, editar_cadastros:6, cadastro_usuarios:4, manutencao_base:6, config_sistema:4, sincronizacao:7, fechar_nf:5, transferir_veiculo:5 };
 let PERMISSOES = { ...PERMISSOES_PADRAO };
 let CATALOGO_PERMISSOES = [];   // só o nível 5 recebe (é o que monta a tela de Permissões)
 let PERMISSOES_EDICAO = null;   // cópia de trabalho enquanto edita a matriz
@@ -2659,6 +2660,10 @@ async function parseJsonResponse(resp){
     throw new Error('Resposta inesperada do Apps Script: ' + texto.slice(0,200));
   }
 }
+let HIST_OBRA = [];            // histórico de obra por veículo (transferências)
+let HIST_EXTRA = [];           // últimas leituras em OUTRAS obras dos veículos desta obra (só pro Km/histórico)
+let VISITANTES = {};           // consulta global de veículo de outra obra (lançamento visitante)
+let FROTA_SEL = new Set(), FROTA_FILTRADOS = [];
 let DESCONTOS = [];            // abastecimentos de terceiros já descontados na medição
 let TERC_SEL = new Set();
 let MS_STATE = { 'f-equip': new Set(), 'r-equip': new Set() }; // estado do multiselect de equipamento (Dashboard e Relatório)
@@ -2748,6 +2753,7 @@ function toStrOrNull(v){
 function sanitizeRecord(r){
   return {
     id: r.id || uid(),
+    visitanteDe: toStrOrNull(r.visitanteDe),
     data: toDateStr(r.data),
     dataLancamento: toDateStr(r.dataLancamento),
     nf: toStrOrNull(r.nf),
@@ -3174,6 +3180,8 @@ async function autenticarComToken(idToken, silencioso){
     DIAS_BLOQUEADOS = json.diasBloqueados || DIAS_BLOQUEADOS;
     NFS_FECHADAS = json.nfsFechadas || NFS_FECHADAS;
     DESCONTOS = json.descontosTerceiros || [];
+    HIST_OBRA = json.historicoObraVeiculo || HIST_OBRA;
+    HIST_EXTRA = (json.historicoExterno || []).map(sanitizeRecord);
     CONFIG_SISMA = json.configSisma || CONFIG_SISMA;
     PERMISSOES = json.permissoes || PERMISSOES;
     capturarObras(json);
@@ -4130,12 +4138,13 @@ function renderListaVeiculos(){
     return `
     <div class="usuario-item" data-equip="${escapeHtml(v.equipamento)}" style="${desmobilizado?'opacity:0.65;':''}">
       <div>
-        <div class="nome">${escapeHtml(v.equipamento)} <span class="badge-papel ${v.tipo!=='proprio'?'admin':''}">${NOMES_TIPO_VEICULO[v.tipo]||v.tipo}</span>${desmobilizado?' <span class="badge-papel" style="background:#fff3f2;color:var(--bad);">🔴 Desmobilizado</span>':''}</div>
+        <div class="nome">${pode('transferir_veiculo') ? `<input type="checkbox" data-sel-veic="${escapeHtml(v.equipamento)}" style="width:auto;margin-right:6px;" ${FROTA_SEL.has(v.equipamento)?'checked':''}>` : ''}${escapeHtml(v.equipamento)} <span class="tag" title="Obra do cadastro">obra ${escapeHtml(v.obra || '422')}</span> <span class="badge-papel ${v.tipo!=='proprio'?'admin':''}">${NOMES_TIPO_VEICULO[v.tipo]||v.tipo}</span>${desmobilizado?' <span class="badge-papel" style="background:#fff3f2;color:var(--bad);">🔴 Desmobilizado</span>':''}</div>
         <div class="detalhe">
           ${ficha ? ficha : 'sem ficha técnica cadastrada'}${v.setor?' · setor '+escapeHtml(v.setor):''}${v.combustivelAutorizado?' · combustível: '+escapeHtml(v.combustivelAutorizado):''}${v.empresaVinculada?' · empresa: '+escapeHtml(v.empresaVinculada):''}
           <br>${condutor ? 'Condutor principal: '+escapeHtml(condutor) : 'sem condutor principal vinculado'}
           <br>${(v.valorAluguel && Number(v.valorAluguel)>0) ? `${fmtMoney(v.valorAluguel)} / ${v.periodoAluguel||'mensal'}${v.fornecedor?' · '+escapeHtml(v.fornecedor):''}` : 'sem custo de aluguel'}${v.observacoes?' · '+escapeHtml(v.observacoes):''}
           ${v.tipo==='terceirizado' ? resumoMedicaoHtml(v.equipamento) : ''}
+          ${(()=>{ const sg = sugestaoSisma(v); return (sg && ehCentralCli()) ? `<br>💡 SISMA indica a obra <b>${sg}</b> — <a href="#" data-transf-sisma="${escapeHtml(v.equipamento)}|${sg}">transferir para ${sg}</a>` : ''; })()}
           ${desmobilizado ? `<br><span style="color:var(--bad);">🔴 Desmobilizado em ${v.dataDesmobilizacao?fmtDate(v.dataDesmobilizacao):'—'}${v.motivoDesmobilizacao?' — '+escapeHtml(v.motivoDesmobilizacao):''}</span>` : ''}
           ${(()=>{
             const hist = HISTORICO_MOBILIZACAO.filter(h=>h.equipamento===v.equipamento).sort((a,b)=>(b.criadoEm||'').localeCompare(a.criadoEm||''));
@@ -4147,12 +4156,20 @@ function renderListaVeiculos(){
         </div>
       </div>
       <div class="btn-row">
+        <button class="btn ghost" data-hist-veiculo="${escapeHtml(v.equipamento)}">📜 Histórico</button>
+        ${pode('transferir_veiculo') ? `<button class="btn ghost" data-transf-veiculo="${escapeHtml(v.equipamento)}">🔀 Transferir</button>` : ''}
         <button class="btn secondary" data-editar-veiculo="${escapeHtml(v.equipamento)}">✏️ Editar</button>
         <button class="btn ghost" data-remover-veiculo="${escapeHtml(v.equipamento)}">🗑️ Remover</button>
       </div>
     </div>`;
   }).join('');
 
+  FROTA_FILTRADOS = ordenados.map(v=>v.equipamento);
+  box.querySelectorAll('[data-sel-veic]').forEach(cb=>cb.addEventListener('change', ()=>{ if(cb.checked) FROTA_SEL.add(cb.dataset.selVeic); else FROTA_SEL.delete(cb.dataset.selVeic); renderBarraLoteFrota(); }));
+  box.querySelectorAll('[data-hist-veiculo]').forEach(b=>b.addEventListener('click', ()=>abrirHistoricoVeiculo(b.dataset.histVeiculo)));
+  box.querySelectorAll('[data-transf-veiculo]').forEach(b=>b.addEventListener('click', ()=>abrirTransferencia([b.dataset.transfVeiculo])));
+  box.querySelectorAll('[data-transf-sisma]').forEach(a=>a.addEventListener('click', ev=>{ ev.preventDefault(); const [eq, ob] = a.dataset.transfSisma.split('|'); abrirTransferencia([eq], ob); }));
+  renderBarraLoteFrota();
   box.querySelectorAll('[data-editar-veiculo]').forEach(btn=>{
     btn.addEventListener('click', ()=>editarVeiculo(btn.dataset.editarVeiculo));
   });
@@ -5204,7 +5221,16 @@ function initVeiculosTab(){
         body: JSON.stringify({ action:'salvarVeiculo', dados, idToken: ID_TOKEN })
       });
       const json = await parseJsonResponse(resp);
-      if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao salvar.'); return; }
+      if(json.status !== 'ok'){
+        toast(json.mensagem || 'Falha ao salvar.');
+        // ALERTA DE TRANSFERÊNCIA: o carro já existe em outra obra
+        const cf = json.conflito;
+        if(cf && dados.novo && pode('transferir_veiculo') && ehCentralCli()){
+          const destino = (dados.obra || OBRA_ATIVA || '').trim().split(/[,;]/)[0].trim().toUpperCase() || 'CEQ';
+          if(String(cf.obra).toUpperCase() !== destino && await confirmModal('Veículo já cadastrado em outra obra', `${cf.equipamento} está na obra ${cf.obra}. Transferir para a obra ${destino}?`)) abrirTransferencia([cf.equipamento], destino);
+        }
+        return;
+      }
       if(json.veiculo){
         const idx = VEICULOS.findIndex(v=>v.equipamento===json.veiculo.equipamento);
         if(idx === -1) VEICULOS.push(json.veiculo); else VEICULOS[idx] = json.veiculo;
@@ -6501,6 +6527,8 @@ async function pullFromSheetsSilencioso(){
     DIAS_BLOQUEADOS = json.diasBloqueados || DIAS_BLOQUEADOS;
     NFS_FECHADAS = json.nfsFechadas || NFS_FECHADAS;
     DESCONTOS = json.descontosTerceiros || [];
+    HIST_OBRA = json.historicoObraVeiculo || HIST_OBRA;
+    HIST_EXTRA = (json.historicoExterno || []).map(sanitizeRecord);
     CONFIG_SISMA = json.configSisma || CONFIG_SISMA;
     PERMISSOES = json.permissoes || PERMISSOES;
     capturarObras(json);
@@ -6607,7 +6635,10 @@ function limitesKm(equipamento, dataIso, excludeId){
     else { if(upper === null || k < upper.km) upper = { km:k, data:d }; }
   };
   DB.forEach(r=>olhar(r,false));
+  (HIST_EXTRA||[]).forEach(r=>olhar(r,false));
   (PENDENTES||[]).forEach(r=>olhar(r,true));
+  const vis = VISITANTES[eq];
+  if(vis && vis.ultimoKm != null) olhar({ equipamento: eq, kmHor: vis.ultimoKm, data: vis.ultimaData }, false);
   return { lower, upper, maiorGeral };
 }
 
@@ -6666,7 +6697,7 @@ function calcMediaKmL(equipamento, dataIso, kmHorAtual, quantidade, produto, exc
    por completo (seed inicial, pull do Sheets, importação, restauração). */
 function recalcularTodasMedias(){
   const porEquip = {};
-  DB.forEach(r=>{
+  DB.concat(HIST_EXTRA || []).forEach(r=>{
     if(!r.equipamento) return;
     if(!porEquip[r.equipamento]) porEquip[r.equipamento] = [];
     porEquip[r.equipamento].push(r);
@@ -7616,7 +7647,7 @@ function renderChartTop(rows){
 
 function buildMediaConfig(rows, view){
   const field = view==='motorista' ? 'motorista' : 'equipamento';
-  const valid = rows.filter(r=> typeof r.mediaKmL === 'number' && r.mediaKmL>0);
+  const valid = rows.filter(r=> typeof r.mediaKmL === 'number' && r.mediaKmL>0 && !ehTerceiroReg(r)); // terceiros ficam fora do km/L
   const grouped = groupBy(valid, r=>r[field] || '(sem valor)');
   const ranked = [...grouped.entries()].map(([k,v])=>{
     const porProduto = {};
@@ -7680,7 +7711,7 @@ function calcCurvaAbc(equipRows){
 }
 
 function calcPioresMediasPorEquipamento(rows, limit=10){
-  const valid = rows.filter(r => typeof r.mediaKmL === 'number' && r.mediaKmL > 0 && r.equipamento);
+  const valid = rows.filter(r => typeof r.mediaKmL === 'number' && r.mediaKmL > 0 && r.equipamento && !ehTerceiroReg(r)); // terceiros ficam fora
   const grouped = groupBy(valid, r=>r.equipamento);
   return [...grouped.entries()]
     .map(([equip,v])=>{
@@ -7753,7 +7784,7 @@ function renderDashTable(rows){
       <td class="num">${fmtNum(r.quantidade,1)}</td>
       <td class="num">${fmtMoney(r.precoTotal)}</td>
       <td>${escapeHtml(r.motorista||'—')}</td>
-      <td>${escapeHtml(r.equipamento||'—')}</td>
+      <td>${escapeHtml(r.equipamento||'—')}${r.visitanteDe ? ` <span class="tag" title="Veículo cadastrado na obra ${escapeHtml(r.visitanteDe)}">visitante de ${escapeHtml(r.visitanteDe)}</span>` : ''}</td>
       <td class="num">${r.kmHor!=null?fmtNum(r.kmHor,0):'—'}</td>
       <td class="num">${r.mediaKmL!=null?fmtNum(r.mediaKmL,2):'—'}</td>
     </tr>`).join('') || `<tr><td colspan="9" class="empty-state">Nenhum registro para os filtros selecionados.</td></tr>`;
@@ -8039,6 +8070,7 @@ function initFormLancamento(){
       }
     }
 
+    consultarVisitante(nome);
     if(!nome){ box.style.display = 'none'; return; }
 
     const registros = DB.filter(r => (r.equipamento||'').toUpperCase() === nome && r.id !== editingId);
@@ -9253,7 +9285,7 @@ function renderReportPreview(){
       <tbody>${produtoRows.map(r=>`<tr><td>${escapeHtml(r.produto)}</td><td class="num">${fmtNum(r.litros,0)}</td><td class="num">${fmtMoney(r.gasto)}</td><td class="num">${r.precoMedio?fmtMoney(r.precoMedio):'—'}</td><td class="num">${r.n}</td></tr>`).join('')}</tbody>
     </table>
     ${htmlComparativosRelatorio(rows)}
-    <h4>Top 10 — Menor Eficiência de Consumo (km/L)</h4>
+    <h4>Top 10 — Menor Eficiência de Consumo (km/L, sem terceiros)</h4>
     <table>
       <thead><tr><th>Equipamento</th><th class="num">Média km/L</th><th class="num">Litros</th><th class="num">Nº abast.</th></tr></thead>
       <tbody>${bebedoresRows.map(r=>`<tr><td>${escapeHtml(r.equipamento)}</td><td class="num" style="color:var(--bad);font-weight:700;">${fmtNum(r.mediaKmL,2)} km/L</td><td class="num">${fmtNum(r.litros,0)}</td><td class="num">${r.n}</td></tr>`).join('') || '<tr><td colspan="4" class="empty-state">Sem dados suficientes.</td></tr>'}</tbody>
@@ -9359,7 +9391,7 @@ function gerarPdf(){
     { title:'Participação por produto', cfg: buildProdutoConfig(rows) },
     { title:'Top 10 — gasto por equipamento (R$)', cfg: buildTopConfig(rows, 'equipamento') },
     { title:'Top 10 — km rodados', cfg: buildKmConfig(rows) },
-    { title:'Top 10 — Menor Eficiência de Consumo (km/L)', cfg: buildBebedoresConfig(rows) },
+    { title:'Top 10 — Menor Eficiência de Consumo (km/L, sem terceiros)', cfg: buildBebedoresConfig(rows) },
     { title:'Média de consumo (km/L)', cfg: buildMediaConfig(rows, 'equipamento') },
   ];
   const gap = 14;
@@ -9518,7 +9550,7 @@ function gerarPdf(){
   let yBeb = (doc.lastAutoTable ? doc.lastAutoTable.finalY : gy) + 22;
   if(yBeb > doc.internal.pageSize.getHeight() - 80){ doc.addPage(); yBeb = 40; }
   doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(0,38,116);
-  doc.text('Top 10 — Menor Eficiência de Consumo (km/L)', margin, yBeb);
+  doc.text('Top 10 — Menor Eficiência de Consumo (km/L, sem terceiros)', margin, yBeb);
   doc.autoTable({
     startY: yBeb + 8,
     head:[['Equipamento','Média km/L','Litros','Nº abast.']],
@@ -9673,6 +9705,8 @@ async function pullFromSheets(){
     DIAS_BLOQUEADOS = json.diasBloqueados || DIAS_BLOQUEADOS;
     NFS_FECHADAS = json.nfsFechadas || NFS_FECHADAS;
     DESCONTOS = json.descontosTerceiros || [];
+    HIST_OBRA = json.historicoObraVeiculo || HIST_OBRA;
+    HIST_EXTRA = (json.historicoExterno || []).map(sanitizeRecord);
     CONFIG_SISMA = json.configSisma || CONFIG_SISMA;
     PERMISSOES = json.permissoes || PERMISSOES;
     capturarObras(json);
@@ -9771,6 +9805,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     initSyncTab();
     initTerceirosTab();
     initOutbox();
+    initTransferencias();
 
     document.getElementById('btn-pedir-liberacao-extra').addEventListener('click', async ()=>{
       const ok = await confirmModal('Pedir liberação extra', 'Isso avisa o admin que você vai precisar de mais um abastecimento hoje, além do limite normal. Continuar?');
@@ -10570,6 +10605,215 @@ function initOutbox(){
   window.addEventListener('online', ()=>outboxTentar());
   setInterval(()=>{ outboxTentar(); }, 60000);
   window.addEventListener('beforeunload', e=>{ if(outboxLer().length){ e.preventDefault(); e.returnValue = ''; } });
+}
+
+
+/* ---------------------------------------------------------------------
+   OBRA DO VEÍCULO: transferência, histórico, visitante e importação SISMA
+--------------------------------------------------------------------- */
+function sugestaoSisma(v){
+  const m = String(v.observacoes || '').match(/SISMA:.*?OBRA\s*(\d{3})/i);
+  if(!m) return null;
+  const atual = listaDeObras(v.obra || '422').map(o=>o.toUpperCase());
+  return atual.includes(m[1]) ? null : m[1];
+}
+function fmtObraLista(){ return [...new Set([...OBRAS_DISPONIVEIS, 'CEQ'])]; }
+function abrirModalSimples(titulo, html){
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:30px 12px;';
+  ov.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:760px;width:100%;padding:18px 20px;box-shadow:0 10px 40px rgba(0,0,0,.3);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><h2 style="margin:0;font-size:18px;color:#0b2a6f;">${titulo}</h2><button type="button" class="btn ghost" data-fechar>✕ Fechar</button></div>
+    <div data-corpo>${html}</div></div>`;
+  ov.addEventListener('click', e=>{ if(e.target === ov || e.target.closest('[data-fechar]')) ov.remove(); });
+  document.body.appendChild(ov);
+  return ov;
+}
+
+/* ---- barra de seleção em lote (Frota) ---- */
+function renderBarraLoteFrota(){
+  const box = document.getElementById('frota-lote'); if(!box) return;
+  if(!pode('transferir_veiculo')){ box.style.display = 'none'; return; }
+  const sug = ehCentralCli() ? VEICULOS.filter(v=>sugestaoSisma(v)) : [];
+  box.style.display = 'flex';
+  box.innerHTML = `<span>${FROTA_SEL.size} selecionado(s)</span>
+    <button type="button" class="btn ghost" id="fl-todos">Selecionar todos os filtrados (${FROTA_FILTRADOS.length})</button>
+    <button type="button" class="btn ghost" id="fl-limpar">Limpar seleção</button>
+    <button type="button" class="btn" id="fl-transf" ${FROTA_SEL.size?'':'disabled'}>🔀 Transferir selecionados…</button>
+    ${sug.length ? `<button type="button" class="btn secondary" id="fl-sisma">💡 Aplicar obra indicada pelo SISMA (${sug.length})</button>` : ''}`;
+  box.querySelector('#fl-todos').onclick = ()=>{ FROTA_FILTRADOS.forEach(e=>FROTA_SEL.add(e)); renderListaVeiculos(); };
+  box.querySelector('#fl-limpar').onclick = ()=>{ FROTA_SEL.clear(); renderListaVeiculos(); };
+  box.querySelector('#fl-transf').onclick = ()=>abrirTransferencia([...FROTA_SEL]);
+  const b = box.querySelector('#fl-sisma'); if(b) b.onclick = ()=>transferirPorSisma(sug);
+}
+
+async function postarAcao(corpo){
+  const resp = await fetch(SYNC_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify(Object.assign({ idToken: ID_TOKEN }, corpo)) });
+  return parseJsonResponse(resp);
+}
+function aplicarRetornoFrota(json){
+  if(json.veiculos) VEICULOS = json.veiculos;
+  if(json.historicoObraVeiculo) HIST_OBRA = json.historicoObraVeiculo;
+  FROTA_SEL.clear();
+  renderListaVeiculos();
+}
+function abrirTransferencia(equips, destinoPadrao){
+  if(!equips.length){ toast('Selecione pelo menos um veículo.'); return; }
+  const ov = abrirModalSimples('🔀 Transferir de obra', `
+    <p class="helper"><b>${equips.length}</b> veículo(s): ${escapeHtml(equips.slice(0,12).join(', '))}${equips.length>12?'…':''}</p>
+    <div class="field"><label>Obra de destino</label><select id="tr-destino">${fmtObraLista().map(o=>`<option value="${escapeHtml(o)}" ${o===destinoPadrao?'selected':''}>${o==='CEQ'?'CEQ (Central)':'Obra '+escapeHtml(o)}</option>`).join('')}</select></div>
+    <div class="field"><label>Data da transferência</label><input type="date" id="tr-data" value="${todayStr()}"></div>
+    <div class="field"><label>Motivo (opcional)</label><input type="text" id="tr-motivo" placeholder="Ex: mobilização para a obra, retorno à central"></div>
+    <p class="helper">O veículo passa a pertencer à obra de destino. O histórico de abastecimentos e de Km continua e fica registrado na linha do tempo do veículo.</p>
+    <div class="btn-row"><button type="button" class="btn" id="tr-ok">Transferir</button></div>`);
+  ov.querySelector('#tr-ok').onclick = async ()=>{
+    const obraDestino = ov.querySelector('#tr-destino').value;
+    try{
+      const json = await postarAcao({ action:'transferirVeiculo', equipamentos: equips, obraDestino, data: ov.querySelector('#tr-data').value, motivo: ov.querySelector('#tr-motivo').value.trim() });
+      if(json.status !== 'ok'){ toast(json.mensagem || 'Falha.'); return; }
+      aplicarRetornoFrota(json); toast(json.mensagem || 'Transferido.'); ov.remove();
+    }catch(err){ console.error(err); toast('Erro de conexão. Tenta de novo.'); }
+  };
+}
+async function transferirPorSisma(lista){
+  const grupos = {}; lista.forEach(v=>{ const d = sugestaoSisma(v); (grupos[d] = grupos[d] || []).push(v.equipamento); });
+  const resumo = Object.entries(grupos).map(([d, l])=>`obra ${d}: ${l.length}`).join(' · ');
+  if(!await confirmModal('Aplicar obra indicada pelo SISMA', `Vai transferir ${lista.length} veículo(s) conforme a filial do consolidado SISMA (${resumo}). Confirma?`)) return;
+  let ok = 0;
+  for(const [d, l] of Object.entries(grupos)){
+    try{
+      const json = await postarAcao({ action:'transferirVeiculo', equipamentos: l, obraDestino: d, motivo: 'Conforme consolidado SISMA' });
+      if(json.status === 'ok'){ ok += (json.mensagem||'').match(/^(\d+)/) ? Number(RegExp.$1) : 0; aplicarRetornoFrota(json); }
+      else toast(`Obra ${d}: ${json.mensagem || 'falha'}`);
+    }catch(err){ console.error(err); toast('Erro de conexão em uma das obras.'); }
+  }
+  toast(`${ok} veículo(s) transferido(s).`);
+}
+
+/* ---- histórico do veículo ---- */
+function abrirHistoricoVeiculo(equip){
+  const v = veiculoDoEquip(equip) || { equipamento: equip };
+  const regs = DB.concat(HIST_EXTRA || []).filter(r=>String(r.equipamento||'').toUpperCase() === String(equip).toUpperCase());
+  const porObra = {}; regs.forEach(r=>{ const o = r.obra || '422'; (porObra[o] = porObra[o] || []).push(r); });
+  const linhasObra = Object.entries(porObra).map(([o, rs])=>{
+    const comb = rs.filter(r=>PRODUTOS_COMBUSTIVEL.has(r.produto) && r.unidade==='LT');
+    const litros = comb.reduce((s,r)=>s+(r.quantidade||0),0);
+    const d = calcDistanciasPorEquipamento(rs); const km = Object.values(d).reduce((s,x)=>s+x.distancia,0);
+    const meds = rs.filter(r=>typeof r.mediaKmL==='number' && r.mediaKmL>0);
+    const datas = rs.map(r=>r.data).filter(Boolean).sort();
+    return `<tr><td><b>Obra ${escapeHtml(o)}</b>${listaDeObras(v.obra||'').includes(o)?'':' <span class="tag">visitante / anterior</span>'}</td><td class="num">${rs.length}</td><td class="num">${fmtNum(litros,0)}</td><td class="num">${fmtMoney(rs.reduce((s,r)=>s+(r.precoTotal||0),0))}</td><td class="num">${km>0?fmtNum(km,0):'—'}</td><td class="num">${meds.length?fmtNum(meds.reduce((s,r)=>s+r.mediaKmL,0)/meds.length,2):'—'}</td><td>${datas.length?fmtDate(datas[0])+' → '+fmtDate(datas[datas.length-1]):'—'}</td></tr>`;
+  }).join('');
+  const eventos = [];
+  (HIST_OBRA||[]).filter(h=>String(h.equipamento||'').toUpperCase() === String(equip).toUpperCase()).forEach(h=>eventos.push({ d: h.data || (h.criadoEm||'').slice(0,10), t: `🔀 Transferido: obra <b>${escapeHtml(h.obraOrigem||'?')}</b> → <b>${escapeHtml(h.obraDestino||'?')}</b>${h.motivo?' — '+escapeHtml(h.motivo):''}`, por: h.criadoPorEmail }));
+  (HISTORICO_MOBILIZACAO||[]).filter(h=>h.equipamento === equip).forEach(h=>eventos.push({ d: h.data || (h.criadoEm||'').slice(0,10), t: `${h.evento==='desmobilizado'?'🔴 Desmobilizado':'🟢 Remobilizado'}${h.motivo?' — '+escapeHtml(h.motivo):''}`, por: h.criadoPorEmail }));
+  eventos.sort((a,b)=>String(b.d||'').localeCompare(String(a.d||'')));
+  const ultimos = regs.slice().sort((a,b)=>(b.data||'').localeCompare(a.data||'')).slice(0,8);
+  abrirModalSimples(`📜 Histórico — ${escapeHtml(equip)}`, `
+    <p class="helper">${escapeHtml([v.marca, v.modelo, v.placa].filter(Boolean).join(' · ') || 'sem ficha')} · obra atual: <b>${escapeHtml(v.obra || '—')}</b></p>
+    <h3 style="font-size:14px;margin:10px 0 4px;">Linha do tempo</h3>
+    ${eventos.length ? eventos.map(e=>`<div style="padding:3px 0;border-top:1px solid #eef1f6;font-size:13px;">${e.d?fmtDate(e.d):'—'} · ${e.t}</div>`).join('') : '<p class="helper">Sem transferências nem mobilizações registradas.</p>'}
+    <h3 style="font-size:14px;margin:14px 0 4px;">Por obra (abastecimentos)</h3>
+    ${linhasObra ? `<div class="table-scroll"><table><thead><tr><th>Obra</th><th class="num">Abast.</th><th class="num">Litros</th><th class="num">Gasto</th><th class="num">Km rod.</th><th class="num">Km/L</th><th>Período</th></tr></thead><tbody>${linhasObra}</tbody></table></div>` : '<p class="helper">Nenhum abastecimento visível para você.</p>'}
+    <h3 style="font-size:14px;margin:14px 0 4px;">Últimos abastecimentos</h3>
+    ${ultimos.length ? `<div class="table-scroll"><table><thead><tr><th>Data</th><th>Obra</th><th>NF</th><th class="num">Litros</th><th class="num">Valor</th><th class="num">Km/Hor</th></tr></thead><tbody>${ultimos.map(r=>`<tr><td>${fmtDate(r.data)}</td><td>${escapeHtml(r.obra||'422')}</td><td>${escapeHtml(r.nf??'—')}</td><td class="num">${fmtNum(r.quantidade,1)}</td><td class="num">${fmtMoney(r.precoTotal)}</td><td class="num">${r.kmHor!=null?fmtNum(r.kmHor,0):'—'}</td></tr>`).join('')}</tbody></table></div>` : ''}`);
+}
+
+/* ---- veículo visitante (de outra obra) no lançamento ---- */
+let VIS_TIMER = null;
+function garantirBoxVisitante(){
+  let el = document.getElementById('equip-visitante');
+  if(!el){ el = document.createElement('div'); el.id = 'equip-visitante'; el.style.cssText = 'display:none;background:#eaf2ff;border:1px solid #9bbcf0;color:#0b2a6f;padding:8px 10px;border-radius:8px;font-size:13px;margin-top:6px;'; const info = document.getElementById('equip-info'); if(info) info.insertAdjacentElement('afterend', el); }
+  return el;
+}
+function renderVisitante(el, a){
+  if(!a || a.minhaObra){ el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.innerHTML = `🚚 <b>${escapeHtml(a.equipamento)}</b> é da <b>obra ${escapeHtml(a.obra)}</b>${a.ultimoKm != null ? ` · última leitura: <b>${fmtNum(a.ultimoKm,0)}</b>${a.ultimaData?' em '+fmtDate(a.ultimaData):''}${a.ultimaObra?' (obra '+escapeHtml(a.ultimaObra)+')':''}` : ''}.<br>Será lançado como <b>visitante</b>: o abastecimento e o gasto ficam na obra em que você está lançando, e o Km é conferido com a última leitura acima.`;
+}
+function consultarVisitante(nome){
+  const el = garantirBoxVisitante();
+  if(!nome || nome.length < 4 || veiculoDoEquip(nome) || !USUARIO_ATUAL || !ID_TOKEN || !SYNC_URL || USUARIO_ATUAL.papel === 'motorista'){ el.style.display = 'none'; return; }
+  if(nome in VISITANTES){ renderVisitante(el, VISITANTES[nome]); return; }
+  clearTimeout(VIS_TIMER);
+  VIS_TIMER = setTimeout(async ()=>{
+    try{
+      const json = await postarAcao({ action:'buscarVeiculoGlobal', q: nome });
+      const a = (json.status === 'ok' && json.achados && json.achados[0]) || null;
+      VISITANTES[nome] = a;
+      if(a) VISITANTES[String(a.equipamento).toUpperCase()] = a;
+      if(document.getElementById('l-equipamento').value.trim().toUpperCase() === nome) renderVisitante(el, a);
+    }catch(e){}
+  }, 500);
+}
+
+/* ---- importação do consolidado SISMA ---- */
+function sismaLerPlanilha(buf){
+  const wb = XLSX.read(buf, { type:'array' });
+  const nomes = wb.SheetNames.slice().sort((a,b)=> (/CONSOLIDADO/i.test(b)?1:0) - (/CONSOLIDADO/i.test(a)?1:0));
+  for(const nome of nomes){
+    const aoa = XLSX.utils.sheet_to_json(wb.Sheets[nome], { header:1, defval:null });
+    let hi = -1;
+    for(let i=0;i<Math.min(aoa.length,8);i++){ const l = (aoa[i]||[]).map(c=>String(c==null?'':c).trim().toLowerCase()); if(l.includes('equip.') || l.includes('prefixo-bem')){ hi = i; break; } }
+    if(hi < 0) continue;
+    const head = aoa[hi].map(c=>String(c==null?'':c).trim().toLowerCase());
+    const col = (...ns)=>{ for(const n of ns){ const i = head.indexOf(n); if(i>=0) return i; } return -1; };
+    const iE = col('equip.','prefixo-bem'), iF = col('filial','local-obra'), iFab = col('fabricante','marca'), iMod = col('modelo'), iEq = col('equipamento'),
+          iCh = col('equip.chassis','serie'), iAno = col('ano fabricação','ano'), iCl = col('classe mecânica','subgrupo');
+    const g = (r,i)=> i>=0 && r[i]!=null ? String(r[i]).trim() : '';
+    const itens = [];
+    for(let i=hi+1;i<aoa.length;i++){
+      const r = aoa[i]; if(!r || !r[iE]) continue;
+      const eq = String(r[iE]).replace(/\s+/g,'').toUpperCase(); if(!eq) continue;
+      itens.push({ equipamento: eq, prefixo: (eq.match(/^[A-Z]+/)||[''])[0], marca: g(r,iFab), modelo: g(r,iMod) || g(r,iEq), serie: g(r,iCh), ano: g(r,iAno), setor: g(r,iCl), filial: g(r,iF) });
+    }
+    if(itens.length) return { aba: nome, itens };
+  }
+  return null;
+}
+function abrirImportacaoSisma(){
+  if(!pode('cadastro_frota_postos')){ toast('Seu nível não permite cadastrar frota.'); return; }
+  const central = ehCentralCli();
+  const ov = abrirModalSimples('📥 Importar consolidado SISMA', `
+    <p class="helper">Escolha o arquivo “CONSOLIDADO SISMA”. Você decide quais prefixos entram (ex.: só VP e CFP). Quem já existe (mesmo código, chassi ou placa) é <b>pulado</b> e o app avisa em que obra ele está, para pedir a transferência.</p>
+    <input type="file" id="sm-arq" accept=".xlsx,.xls">
+    <div id="sm-passo2" style="display:none;margin-top:12px;">
+      <div class="field"><label>Prefixos a importar</label><div id="sm-prefixos" style="display:flex;flex-wrap:wrap;gap:6px 14px;max-height:170px;overflow:auto;border:1px solid #dde3ee;border-radius:8px;padding:8px;"></div></div>
+      <div class="field"><label>Cadastrar na obra</label><select id="sm-obra">${(central ? fmtObraLista() : [OBRA_ATIVA || OBRAS_DISPONIVEIS[0] || '422']).map(o=>`<option value="${escapeHtml(o)}">${o==='CEQ'?'CEQ (Central) — transferir depois':'Obra '+escapeHtml(o)}</option>`).join('')}</select></div>
+      <p class="helper" id="sm-resumo"></p>
+      <div class="btn-row"><button type="button" class="btn" id="sm-ok">Importar</button></div>
+    </div><div id="sm-res" style="margin-top:10px;font-size:13px;"></div>`);
+  let dados = null;
+  const resumo = ()=>{ const marc = [...ov.querySelectorAll('#sm-prefixos input:checked')].map(i=>i.value); const n = dados.itens.filter(i=>marc.includes(i.prefixo)).length; ov.querySelector('#sm-resumo').textContent = `${n} veículo(s) dos prefixos marcados serão enviados (os já cadastrados são pulados).`; };
+  ov.querySelector('#sm-arq').onchange = async e=>{
+    const f = e.target.files[0]; if(!f) return;
+    try{ dados = sismaLerPlanilha(await f.arrayBuffer()); }catch(err){ console.error(err); dados = null; }
+    if(!dados){ ov.querySelector('#sm-res').textContent = '❌ Não achei as colunas “Equip.” / “Prefixo-Bem” nesse arquivo.'; return; }
+    const cont = {}; dados.itens.forEach(i=>{ cont[i.prefixo] = (cont[i.prefixo]||0)+1; });
+    ov.querySelector('#sm-prefixos').innerHTML = Object.entries(cont).sort((a,b)=>b[1]-a[1]).map(([p,n])=>`<label style="font-size:13px;white-space:nowrap;"><input type="checkbox" value="${escapeHtml(p)}" style="width:auto" ${(p==='VP'||p==='CFP')?'checked':''}> ${escapeHtml(p)} <span class="helper" style="margin:0">(${n})</span></label>`).join('');
+    ov.querySelector('#sm-prefixos').onchange = resumo;
+    ov.querySelector('#sm-passo2').style.display = ''; ov.querySelector('#sm-res').textContent = `Planilha “${dados.aba}” lida: ${dados.itens.length} equipamentos.`; resumo();
+  };
+  ov.querySelector('#sm-ok').onclick = async ()=>{
+    const marc = [...ov.querySelectorAll('#sm-prefixos input:checked')].map(i=>i.value);
+    const itens = dados.itens.filter(i=>marc.includes(i.prefixo)).map(i=>({ equipamento:i.equipamento, marca:i.marca, modelo:i.modelo, serie:i.serie, ano:i.ano, setor:i.setor, observacoes: 'SISMA: ' + (i.filial || '') }));
+    if(!itens.length){ toast('Marque pelo menos um prefixo.'); return; }
+    const btn = ov.querySelector('#sm-ok'); btn.disabled = true; btn.textContent = 'Importando…';
+    const obra = ov.querySelector('#sm-obra').value; let criados = 0; const pulados = []; let falha = '';
+    for(let i=0;i<itens.length;i+=250){
+      try{
+        const json = await postarAcao({ action:'importarVeiculos', obra, veiculos: itens.slice(i, i+250) });
+        if(json.status !== 'ok'){ falha = json.mensagem || 'falha'; break; }
+        criados += json.criados || 0; (json.pulados||[]).forEach(p=>pulados.push(p)); if(json.veiculos) VEICULOS = json.veiculos;
+      }catch(err){ falha = err.message; break; }
+    }
+    renderListaVeiculos();
+    const outras = pulados.filter(p=>!p.minha);
+    ov.querySelector('#sm-res').innerHTML = `${falha ? '❌ '+escapeHtml(falha)+'<br>' : ''}✅ <b>${criados}</b> cadastrado(s) · <b>${pulados.length}</b> já existiam.` +
+      (outras.length ? `<br>⚠️ <b>${outras.length}</b> já estão em OUTRA obra (peça a transferência): ${escapeHtml(outras.slice(0,25).map(p=>p.equipamento+' (obra '+p.obra+')').join(', '))}${outras.length>25?'…':''}` : '');
+    btn.textContent = 'Concluído';
+  };
+}
+function initTransferencias(){
+  const b = document.getElementById('btn-imp-sisma'); if(b) b.addEventListener('click', abrirImportacaoSisma);
 }
 
 if('serviceWorker' in navigator){
