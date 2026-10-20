@@ -2546,7 +2546,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.20-91';
+const APP_VERSION = 'v2026.10.20-92';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -3215,6 +3215,8 @@ async function autenticarComToken(idToken, silencioso){
     renderCruzamentoEmpresas();
     populateReqSelects();
     renderListaRequisicoesAdmin();
+    outboxRender();
+    setTimeout(()=>outboxTentar(), 1500);
   }catch(err){
     console.error(err);
     localStorage.removeItem(ID_TOKEN_KEY);
@@ -3653,12 +3655,18 @@ async function enviarLancamentoMotorista(){
 
   mostrarStatusSalvamento('⏳ Enviando lançamento pro admin conferir...', 'info');
   try{
-    const resp = await fetch(SYNC_URL, {
-      method:'POST',
-      headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({ action:'enviarPendente', dados, idToken: ID_TOKEN })
-    });
-    const json = await parseJsonResponse(resp);
+    const item = outboxAdd('motorista', dados, dados.equipamento);
+    const rs = await outboxEnviar(item);
+    if(!rs.ok && rs.motivo !== 'rejeitado'){
+      fotoUrlCupomAtual = null; fotoUrlRequisicaoAtual = null; cupomLidoNestaSessao = false;
+      REQUISICAO_SELECIONADA = null;
+      sairDoModoRequisicaoSeNivelAlto();
+      resetForm(true); irParaInicioForm(); prepararCamposParaMotorista();
+      mostrarStatusSalvamento(`💾 Lançamento <b>salvo neste aparelho</b>, mas AINDA NÃO enviado (${escapeHtml(outboxMotivoTexto(rs.motivo))}). ${rs.motivo === 'login' ? 'Entre de novo com o Google — o envio é automático.' : 'Vai tentar de novo sozinho quando a conexão voltar.'}`, 'erro');
+      return;
+    }
+    if(!rs.ok) outboxRemove(item.oid, false);
+    const json = rs.json;
     if(json.status !== 'ok'){
       if(json.semRequisicao){
         mostrarStatusSalvamento('⚠️ ' + (json.mensagem || 'Essa requisição não é mais válida.'), 'erro');
@@ -3747,9 +3755,17 @@ async function enviarLancamentoManualInterno(){
   };
   mostrarStatusSalvamento('⏳ Enviando pra aprovação...', 'info');
   try{
-    const resp = await fetch(SYNC_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ action:'enviarPendente', dados, idToken: ID_TOKEN }) });
-    const json = await parseJsonResponse(resp);
-    if(json.status !== 'ok'){ mostrarStatusSalvamento('❌ ' + (json.mensagem || 'Falha ao enviar.'), 'erro'); return; }
+    // 1º salva no computador (outbox); só sai de lá quando o servidor confirmar
+    const item = outboxAdd('manual', dados, equip);
+    const rs = await outboxEnviar(item);
+    if(!rs.ok){
+      if(rs.motivo === 'rejeitado'){ outboxRemove(item.oid, false); mostrarStatusSalvamento('❌ ' + (rs.msg || 'Falha ao enviar.'), 'erro'); return; }
+      cupomLidoNestaSessao = false; fotoUrlCupomAtual = null; fotoUrlRequisicaoAtual = null;
+      resetForm(true); irParaInicioForm();
+      mostrarStatusSalvamento(`💾 ${escapeHtml(equip)} <b>salvo neste computador</b>, mas AINDA NÃO enviado (${escapeHtml(outboxMotivoTexto(rs.motivo))}). ${rs.motivo === 'login' ? 'Entre de novo com o Google — o envio é automático.' : 'Vai tentar de novo sozinho quando a conexão voltar.'}`, 'erro');
+      return;
+    }
+    const json = rs.json;
     cupomLidoNestaSessao = false; fotoUrlCupomAtual = null; fotoUrlRequisicaoAtual = null;
     ['cupom','requisicao'].forEach(t=>{
       document.getElementById('ocr-status-'+t).style.display = 'none';
@@ -8195,6 +8211,7 @@ function initFormLancamento(){
     }
     recalcularTodasMedias();
     saveDB();
+    const itemDireto = USUARIO_ATUAL ? outboxAdd('direto', rec, rec.equipamento) : null;
     cupomLidoNestaSessao = false;
     fotoUrlCupomAtual = null;
     fotoUrlRequisicaoAtual = null;
@@ -8225,6 +8242,7 @@ function initFormLancamento(){
         mostrarStatusSalvamento(`⚠️ ${resumo} — salvo neste aparelho, mas o limite diário foi atingido. Ainda não sincronizou com o Sheets.`, 'erro');
         await tratarLimiteAtingido();
       } else if(resultado && resultado.status === 'ok'){
+        if(itemDireto) outboxRemove(itemDireto.oid, true);
         mostrarStatusSalvamento(`✅ ${resumo} — ${eraEdicao ? 'atualizado' : 'salvo'} e sincronizado com o Sheets.`, 'ok');
       } else {
         mostrarStatusSalvamento(`⚠️ ${resumo} — salvo neste aparelho, mas NÃO sincronizou com o Sheets (${escapeHtml(resultado && resultado.mensagem || 'sem conexão')}). Vai tentar de novo no próximo lançamento.`, 'erro');
@@ -9752,6 +9770,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     initRequisicoesTab();
     initSyncTab();
     initTerceirosTab();
+    initOutbox();
 
     document.getElementById('btn-pedir-liberacao-extra').addEventListener('click', async ()=>{
       const ok = await confirmModal('Pedir liberação extra', 'Isso avisa o admin que você vai precisar de mais um abastecimento hoje, além do limite normal. Continuar?');
@@ -10420,6 +10439,137 @@ function initTerceirosTab(){
   document.getElementById('t-btn-pronto').addEventListener('click', ()=>{ const { rows, mapa } = linhasTerceiros(); rows.forEach(r=>{ if(statusTerceiro(r,mapa)==='fechada') TERC_SEL.add(String(r.id)); }); renderTerceiros(); });
   document.getElementById('t-btn-excel').addEventListener('click', exportarTerceiros);
   document.getElementById('t-btn-limpar').addEventListener('click', ()=>{ view.querySelectorAll('.flt-terc').forEach(el=>{ el.value=''; }); renderTerceiros(); });
+}
+
+
+/* ---------------------------------------------------------------------
+   OUTBOX — cópia de segurança no computador. Todo lançamento (manual,
+   do motorista ou direto) é gravado AQUI antes de ir pro servidor e só
+   sai quando o servidor confirma. Se o login do Google cair ou a internet
+   falhar, nada se perde: o app reenvia sozinho e dá pra baixar um backup.
+--------------------------------------------------------------------- */
+const OUTBOX_KEY = 'abast_outbox_v1';
+const OUTBOX_LOG_KEY = 'abast_outbox_enviados_v1';
+function outboxLer(chave){ try{ return JSON.parse(localStorage.getItem(chave || OUTBOX_KEY) || '[]') || []; }catch(e){ return []; } }
+function outboxGravar(lista, chave){ try{ localStorage.setItem(chave || OUTBOX_KEY, JSON.stringify(lista)); }catch(e){ console.error('outbox', e); } }
+function outboxAdd(tipo, dados, rotulo){
+  const item = { oid: 'o'+Date.now().toString(36)+Math.random().toString(36).slice(2,7), tipo, dados, rotulo: rotulo || '', email: (USUARIO_ATUAL && USUARIO_ATUAL.email) || '', criadoEm: new Date().toISOString(), tentou: false, erro: '', motivo: '' };
+  const l = outboxLer(); l.push(item); outboxGravar(l);
+  outboxRender();
+  return item;
+}
+function outboxRemove(oid, guardarLog){
+  const l = outboxLer(); const it = l.find(x=>x.oid === oid);
+  outboxGravar(l.filter(x=>x.oid !== oid));
+  if(it && guardarLog !== false){
+    const log = outboxLer(OUTBOX_LOG_KEY); log.push(Object.assign({}, it, { enviadoEm: new Date().toISOString() }));
+    outboxGravar(log.slice(-300), OUTBOX_LOG_KEY);
+  }
+  outboxRender();
+}
+function outboxMarcar(oid, erro, motivo){
+  const l = outboxLer(); const it = l.find(x=>x.oid === oid);
+  if(it){ it.erro = erro || ''; it.motivo = motivo || ''; it.tentou = true; outboxGravar(l); }
+}
+function outboxMotivoTexto(m){ return m === 'login' ? 'sem login do Google / sessão expirada' : (m === 'rede' ? 'sem conexão com o servidor' : 'recusado pelo servidor'); }
+const OUTBOX_RE_LOGIN = /login|token|sess[ãa]o|expir|autentic|credencial|n[ãa]o autoriz|entrar com/i;
+async function outboxEnviar(item){
+  if(!SYNC_URL || !ID_TOKEN){ outboxMarcar(item.oid, 'Sem login do Google', 'login'); return { ok:false, motivo:'login', msg:'Sem login do Google' }; }
+  try{
+    outboxMarcar(item.oid, '', ''); // marca que tentou (a resposta pode se perder)
+    const resp = await fetch(SYNC_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ action:'enviarPendente', dados:item.dados, idToken: ID_TOKEN }) });
+    const json = await parseJsonResponse(resp);
+    if(json.status === 'ok'){ outboxRemove(item.oid, true); return { ok:true, json }; }
+    const msg = json.mensagem || 'Falha ao enviar.';
+    const motivo = OUTBOX_RE_LOGIN.test(msg) ? 'login' : 'rejeitado';
+    outboxMarcar(item.oid, msg, motivo);
+    return { ok:false, json, msg, motivo };
+  }catch(err){
+    outboxMarcar(item.oid, err.message, 'rede');
+    return { ok:false, motivo:'rede', msg: err.message };
+  }
+}
+let OUTBOX_RODANDO = false;
+async function outboxTentar(forcar){
+  if(OUTBOX_RODANDO || !ID_TOKEN || !SYNC_URL || !USUARIO_ATUAL) return;
+  const itens = outboxLer().filter(i=>i.email === USUARIO_ATUAL.email && (forcar || i.motivo !== 'rejeitado'));
+  if(!itens.length) return;
+  OUTBOX_RODANDO = true; let ok = 0, falha = 0;
+  try{
+    if(itens.some(i=>i.tipo !== 'direto' && i.tentou)) await pullFromSheetsSilencioso(); // pra checar se já tinha chegado
+    for(const it of itens){
+      if(it.tipo === 'direto'){
+        if(!DB.some(r=>r.id === it.dados.id)){ DB.push(it.dados); recalcularTodasMedias(); saveDB(); }
+        const res = await pushToSheets(false);
+        if(res && res.status === 'ok'){ outboxRemove(it.oid, true); ok++; } else { outboxMarcar(it.oid, (res && res.mensagem) || 'sem conexão', 'rede'); falha++; }
+        continue;
+      }
+      const d = it.dados;
+      const jaTem = it.tentou && (PENDENTES || []).some(pn=>String(pn.equipamento||'') === String(d.equipamento||'') && String(pn.data||'') === String(d.data||'') && Number(pn.quantidade) === Number(d.quantidade) && Number(pn.kmHor||0) === Number(d.kmHor||0));
+      if(jaTem){ outboxRemove(it.oid, true); ok++; continue; }
+      const rs = await outboxEnviar(it);
+      if(rs.ok) ok++; else falha++;
+    }
+  } finally { OUTBOX_RODANDO = false; }
+  if(ok){
+    toast(`✅ ${ok} lançamento(s) que estavam salvos no computador foram enviados.`);
+    try{ await pullFromSheetsSilencioso(); renderListaPendentes(); renderLancTable(); }catch(e){}
+  }
+  outboxRender();
+}
+function outboxRender(){
+  let bar = document.getElementById('outbox-banner');
+  const lista = outboxLer();
+  if(!lista.length){ if(bar) bar.remove(); return; }
+  if(!bar){
+    bar = document.createElement('div'); bar.id = 'outbox-banner';
+    bar.style.cssText = 'position:sticky;top:100px;z-index:60;box-shadow:0 2px 8px rgba(0,0,0,.15);background:#fff4d6;border:1px solid #e0b24a;color:#5a3d00;padding:10px 14px;margin:8px 12px;border-radius:10px;font-size:14px;';
+    const main = document.querySelector('main'); if(main) main.parentNode.insertBefore(bar, main); else document.body.prepend(bar);
+  }
+  const semLogin = !ID_TOKEN;
+  const aberto = bar.querySelector('details') ? bar.querySelector('details').open : false;
+  bar.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;">
+    <div>💾 <b>${lista.length} lançamento(s) salvo(s) neste computador, ainda não enviados.</b> ${semLogin ? 'Entre com o Google para enviar.' : 'O envio é automático; se não sair, use “Reenviar agora”.'}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button type="button" class="btn" id="ob-reenviar">🔄 Reenviar agora</button>
+      <button type="button" class="btn ghost" id="ob-backup">⬇️ Baixar backup (Excel)</button>
+      <button type="button" class="btn ghost" id="ob-json">⬇️ JSON</button>
+    </div></div>
+    <details style="margin-top:6px;"${aberto?' open':''}><summary style="cursor:pointer;font-size:13px;">Ver itens</summary>
+    <div style="margin-top:6px;font-size:13px;">${lista.map(i=>`<div style="padding:4px 0;border-top:1px solid #ecd9a6;display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap;">
+      <span>${escapeHtml(i.dados && i.dados.data ? fmtDate(i.dados.data) : '—')} · <b>${escapeHtml(i.rotulo || (i.dados && i.dados.equipamento) || '—')}</b> · ${i.dados && i.dados.quantidade != null ? fmtNum(i.dados.quantidade,1)+' L' : ''} · ${i.tipo === 'direto' ? 'direto' : 'p/ aprovação'}${i.erro ? ' · <span style="color:#a32">'+escapeHtml(outboxMotivoTexto(i.motivo))+': '+escapeHtml(String(i.erro).slice(0,120))+'</span>' : ''}</span>
+      <a href="#" data-ob-descartar="${escapeHtml(i.oid)}" style="color:#a32">descartar</a></div>`).join('')}</div></details>`;
+  bar.querySelector('#ob-reenviar').onclick = ()=>{ if(!ID_TOKEN){ toast('Entre com o Google primeiro (recarregue a página e faça login).'); return; } outboxTentar(true); };
+  bar.querySelector('#ob-backup').onclick = outboxBaixarExcel;
+  bar.querySelector('#ob-json').onclick = outboxBaixarJson;
+  bar.querySelectorAll('[data-ob-descartar]').forEach(a=>a.addEventListener('click', async ev=>{
+    ev.preventDefault();
+    if(await confirmModal('Descartar lançamento', 'Esse lançamento NÃO foi enviado ainda. Descartar apaga a cópia deste computador. Baixe o backup antes se tiver dúvida. Descartar mesmo?')) outboxRemove(a.dataset.obDescartar, false);
+  }));
+}
+function outboxLinhas(lista){
+  return lista.map(i=>{ const d = i.dados || {}; return {
+    'Criado em': i.criadoEm ? new Date(i.criadoEm).toLocaleString('pt-BR') : '', 'Enviado em': i.enviadoEm ? new Date(i.enviadoEm).toLocaleString('pt-BR') : '',
+    'Usuário': i.email || '', 'Tipo': i.tipo, 'Data': d.data || '', 'Equipamento': d.equipamento || '', 'Produto': d.produto || '', 'Posto': d.posto || '',
+    'Litros': d.quantidade ?? '', 'Preço unit.': d.precoUnit ?? '', 'Valor total': d.precoTotal ?? '', 'Km/Hor': d.kmHor ?? '', 'NF': d.nfSugerido || d.nf || '',
+    'Requisição': d.requisicao || '', 'Motorista': d.motorista || '', 'Empresa': d.empresa || '', 'Obra': d.obra || '', 'Erro': i.erro || '' }; });
+}
+function outboxBaixarExcel(){
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(outboxLinhas(outboxLer())), 'Aguardando envio');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(outboxLinhas(outboxLer(OUTBOX_LOG_KEY))), 'Já enviados (últimos 300)');
+  XLSX.writeFile(wb, `backup_lancamentos_${todayStr()}.xlsx`);
+}
+function outboxBaixarJson(){
+  const blob = new Blob([JSON.stringify({ pendentes: outboxLer(), enviados: outboxLer(OUTBOX_LOG_KEY) }, null, 1)], {type:'application/json'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `backup_lancamentos_${todayStr()}.json`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+}
+function initOutbox(){
+  outboxRender();
+  window.addEventListener('online', ()=>outboxTentar());
+  setInterval(()=>{ outboxTentar(); }, 60000);
+  window.addEventListener('beforeunload', e=>{ if(outboxLer().length){ e.preventDefault(); e.returnValue = ''; } });
 }
 
 if('serviceWorker' in navigator){
