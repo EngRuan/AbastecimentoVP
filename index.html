@@ -1165,6 +1165,7 @@ body.preview-motorista #view-lancamentos::before{
     <button type="button" class="nav-group-toggle">📄 Relatórios</button>
     <div class="nav-dropdown">
       <button data-tab="relatorio">📄 Relatório PDF</button>
+      <button data-tab="terceiros">🏗️ Terceiros / medição</button>
     </div>
   </div>
   <button data-tab="aprovacoes">✅ Aprovações</button>
@@ -1741,6 +1742,37 @@ body.preview-motorista #view-lancamentos::before{
   </section>
 
   <!-- ======================= RELATÓRIO ======================= -->
+  <section class="view" id="view-terceiros">
+    <div class="card">
+      <h2>Terceiros — desconto na medição</h2>
+      <p class="helper">Abastecimentos de veículos de terceiros (Frota → tipo “Terceirizado”). Fluxo: <b>1)</b> feche a NF (Base de lançamentos) · <b>2)</b> marque aqui os lançamentos como <b>descontados na medição</b>. Assim você vê, por empresa e por veículo, o que já foi descontado e o que falta.</p>
+      <div class="filters" style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;">
+        <div class="field"><label>De</label><input type="date" id="t-data-ini" class="flt-terc"></div>
+        <div class="field"><label>Até</label><input type="date" id="t-data-fim" class="flt-terc"></div>
+        <div class="field"><label>Empresa</label><select id="t-empresa" class="flt-terc"><option value="">Todas as empresas</option></select></div>
+        <div class="field"><label>Veículo</label><select id="t-equip" class="flt-terc"><option value="">Todos os veículos</option></select></div>
+        <div class="field"><label>Situação</label><select id="t-status" class="flt-terc"><option value="">Todas</option><option value="aberta">⏳ NF aberta</option><option value="fechada">🔒 Pronto p/ descontar</option><option value="descontado">✅ Descontado</option></select></div>
+        <div class="field"><label>NF</label><input type="text" id="t-nf" class="flt-terc" placeholder="Nº da NF"></div>
+        <button type="button" class="btn ghost" id="t-btn-limpar">Limpar filtros</button>
+        <button type="button" class="btn ghost" id="t-btn-excel">📥 Exportar Excel</button>
+      </div>
+    </div>
+    <div class="kpi-grid" id="t-resumo"></div>
+    <div class="card"><h2>Por empresa terceira</h2><div class="table-scroll" id="t-por-empresa"></div></div>
+    <div class="card">
+      <h2>Lançamentos</h2>
+      <div id="t-barra-acao" style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;background:#eef2f9;padding:10px;border-radius:8px;margin-bottom:10px;">
+        <div class="field" style="flex:0 0 240px"><label>Medição</label><input type="text" id="t-medicao" placeholder="Ex: Medição 10/2026"></div>
+        <div class="field" style="flex:0 0 170px"><label>Data do desconto</label><input type="date" id="t-data-desc"></div>
+        <button type="button" class="btn ghost" id="t-btn-pronto">Selecionar os prontos (NF fechada)</button>
+        <button type="button" class="btn" id="t-btn-descontar">💰 Marcar como descontado</button>
+        <button type="button" class="btn ghost" id="t-btn-desfazer">Desfazer desconto</button>
+        <span class="helper" id="t-sel-info" style="margin:0">Nenhum selecionado</span>
+      </div>
+      <div id="t-tabela"></div>
+    </div>
+  </section>
+
   <section class="view" id="view-relatorio">
     <div class="card no-print">
       <h2>Configurar relatório</h2>
@@ -2087,6 +2119,14 @@ body.preview-motorista #view-lancamentos::before{
               <option value="proprio">Próprio (Tripoloni)</option>
               <option value="alugado">Alugado (Tripoloni paga aluguel)</option>
               <option value="terceirizado">Terceirizado (é de outra empresa)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Medidor (para o SISMA)</label>
+            <select id="v-medidor">
+              <option value="">Automático (placa = Km, sem placa = Horas)</option>
+              <option value="km">Km (hodômetro)</option>
+              <option value="hora">Horas (horímetro)</option>
             </select>
           </div>
           <div class="field">
@@ -2506,7 +2546,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.19-89';
+const APP_VERSION = 'v2026.10.20-91';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -2619,6 +2659,8 @@ async function parseJsonResponse(resp){
     throw new Error('Resposta inesperada do Apps Script: ' + texto.slice(0,200));
   }
 }
+let DESCONTOS = [];            // abastecimentos de terceiros já descontados na medição
+let TERC_SEL = new Set();
 let MS_STATE = { 'f-equip': new Set(), 'r-equip': new Set() }; // estado do multiselect de equipamento (Dashboard e Relatório)
 
 /* ---------------------------------------------------------------------
@@ -3131,6 +3173,7 @@ async function autenticarComToken(idToken, silencioso){
     PENDENTES = json.pendentes || [];
     DIAS_BLOQUEADOS = json.diasBloqueados || DIAS_BLOQUEADOS;
     NFS_FECHADAS = json.nfsFechadas || NFS_FECHADAS;
+    DESCONTOS = json.descontosTerceiros || [];
     CONFIG_SISMA = json.configSisma || CONFIG_SISMA;
     PERMISSOES = json.permissoes || PERMISSOES;
     capturarObras(json);
@@ -3243,10 +3286,12 @@ function aplicarPermissoesNaUI(){
   const nivel = NIVEL_PAPEL[USUARIO_ATUAL.papel] || 0;
   // botões de editar/excluir somem conforme as permissões (CSS no <head>)
   document.body.classList.toggle('sem-editar-cad', !pode('editar_cadastros'));
+  travarCampoObra();
   document.body.classList.toggle('sem-req-editar', !pode('requisicao_editar'));
   const visivelPorAba = {
     dashboard: pode('ver_dashboard'),
     relatorio: pode('ver_relatorio'),
+    terceiros: pode('fechar_nf'),
     aprovacoes: pode('aprovacoes_emitir') || pode('aprovacoes_revisar'),
     'lancamentos-preview': false,
     lancamentos: USUARIO_ATUAL.papel === 'motorista',
@@ -3315,13 +3360,31 @@ function obraParaNovo(equipamento){
   }
   return OBRA_ATIVA || '';
 }
+/* Central = dono ou quem tem a obra "CEQ" no cadastro: vê e edita todas as
+   obras. Os demais ficam travados nas obras do próprio cadastro. */
+function ehCentralCli(){
+  if(!USUARIO_ATUAL) return false;
+  if(USUARIO_ATUAL.papel === 'dono') return true;
+  return listaDeObras(USUARIO_ATUAL.obra).some(o=>o.toUpperCase() === 'CEQ');
+}
+/* Campo "Obra" dos cadastros: só a central troca livremente. Quem tem uma
+   única obra não consegue mudar; quem tem várias só escolhe entre as suas. */
+function travarCampoObra(){
+  const livre = ehCentralCli();
+  const unica = listaDeObras(USUARIO_ATUAL && USUARIO_ATUAL.obra).length <= 1;
+  ['u-obra','v-obra','p-obra','e-obra'].forEach(id=>{
+    const el = document.getElementById(id); if(!el) return;
+    el.readOnly = !livre && unica;
+    el.style.background = el.readOnly ? '#eef0f4' : '';
+  });
+}
 function renderSeletorObra(){
   const wrap = document.getElementById('obra-select-wrap');
   const sel = document.getElementById('obra-select');
   const dl = document.getElementById('lista-obras');
   if(dl) dl.innerHTML = OBRAS_DISPONIVEIS.map(o=>`<option value="${escapeHtml(o)}"></option>`).join('');
   if(!wrap || !sel) return;
-  const ehDono = USUARIO_ATUAL && USUARIO_ATUAL.papel === 'dono';
+  const ehDono = ehCentralCli();
   if(OBRAS_DISPONIVEIS.length <= 1 && !ehDono){ wrap.style.display = 'none'; return; }
   wrap.style.display = 'inline-flex';
   sel.innerHTML = `<option value="">Todas as obras</option>` + OBRAS_DISPONIVEIS.map(o=>`<option value="${escapeHtml(o)}">Obra ${escapeHtml(o)}</option>`).join('');
@@ -4056,6 +4119,7 @@ function renderListaVeiculos(){
           ${ficha ? ficha : 'sem ficha técnica cadastrada'}${v.setor?' · setor '+escapeHtml(v.setor):''}${v.combustivelAutorizado?' · combustível: '+escapeHtml(v.combustivelAutorizado):''}${v.empresaVinculada?' · empresa: '+escapeHtml(v.empresaVinculada):''}
           <br>${condutor ? 'Condutor principal: '+escapeHtml(condutor) : 'sem condutor principal vinculado'}
           <br>${(v.valorAluguel && Number(v.valorAluguel)>0) ? `${fmtMoney(v.valorAluguel)} / ${v.periodoAluguel||'mensal'}${v.fornecedor?' · '+escapeHtml(v.fornecedor):''}` : 'sem custo de aluguel'}${v.observacoes?' · '+escapeHtml(v.observacoes):''}
+          ${v.tipo==='terceirizado' ? resumoMedicaoHtml(v.equipamento) : ''}
           ${desmobilizado ? `<br><span style="color:var(--bad);">🔴 Desmobilizado em ${v.dataDesmobilizacao?fmtDate(v.dataDesmobilizacao):'—'}${v.motivoDesmobilizacao?' — '+escapeHtml(v.motivoDesmobilizacao):''}</span>` : ''}
           ${(()=>{
             const hist = HISTORICO_MOBILIZACAO.filter(h=>h.equipamento===v.equipamento).sort((a,b)=>(b.criadoEm||'').localeCompare(a.criadoEm||''));
@@ -4110,6 +4174,7 @@ function editarVeiculo(equipamento){
   document.getElementById('v-fornecedor').value = v.fornecedor || '';
   document.getElementById('v-observacoes').value = v.observacoes || '';
   document.getElementById('v-obra').value = v.obra || '';
+  document.getElementById('v-medidor').value = v.medidor || '';
   document.getElementById('veiculo-form-title').textContent = 'Editando veículo';
   document.getElementById('btn-salvar-veiculo').textContent = 'Salvar alterações';
   document.getElementById('btn-cancelar-veiculo').style.display = 'inline-block';
@@ -5096,6 +5161,7 @@ function initVeiculosTab(){
       fornecedor: document.getElementById('v-fornecedor').value.trim(),
       observacoes: document.getElementById('v-observacoes').value.trim(),
       obra: document.getElementById('v-obra').value.trim(),
+      medidor: document.getElementById('v-medidor').value,
       marca: document.getElementById('v-marca').value.trim(),
       modelo: document.getElementById('v-modelo').value.trim(),
       placa: document.getElementById('v-placa').value.trim().toUpperCase(),
@@ -5274,10 +5340,21 @@ function formatarEquipeSisma(equip){
 /* Exporta os lançamentos no formato que o sistema SISMA importa — CSV
    separado por ponto-e-vírgula (é assim que o SISMA gera/espera, apesar
    do nome "CSV" sugerir vírgula), com os campos de código configurados
-   em Auditoria → Integração SISMA. KM (odômetro) fica sempre em branco
-   — a gente não distingue isso de Horímetro, só tem um campo "Km/Hor"
-   unificado, que vai todo pro campo "Hora" (a segunda coluna com esse
-   nome, que é a que aparece preenchida em todo exemplo que vi). */
+   em Auditoria → Integração SISMA. O campo "Km/Hor" do lançamento vai
+   pra coluna KM (hodômetro) se o equipamento mede em km, ou pra coluna
+   Hora (horímetro) se mede em horas — ver medidorDoEquip(). */
+function veiculoDoEquip(eq){
+  const k = String(eq || '').trim().toUpperCase();
+  return k ? (VEICULOS || []).find(x=>String(x.equipamento || '').trim().toUpperCase() === k) : null;
+}
+/* 'km' ou 'hora'. Vale o que está no cadastro da Frota (campo Medidor);
+   em "Automático": veículo com placa = km, máquina sem placa = horímetro. */
+function medidorDoEquip(eq){
+  const v = veiculoDoEquip(eq);
+  if(v && (v.medidor === 'km' || v.medidor === 'hora')) return v.medidor;
+  if(v) return v.placa ? 'km' : 'hora';
+  return 'km';
+}
 function exportarSisma(){
   renderLancTable();
   if(!LANC_VISIVEIS.length){ toast('Nenhum lançamento nos filtros atuais — nada pra exportar.'); return; }
@@ -5294,7 +5371,7 @@ function exportarSisma(){
     const codigoProduto = CONFIG_SISMA.mapaProduto?.[(r.produto||'').toUpperCase()] || '';
     linhas.push([
       dataFmt, horaFmt, CONFIG_SISMA.empresa||'', CONFIG_SISMA.especie||'',
-      formatarEquipeSisma(r.equipamento), '', r.kmHor ?? '',
+      formatarEquipeSisma(r.equipamento), (medidorDoEquip(r.equipamento)==='km' ? (r.kmHor ?? '') : ''), (medidorDoEquip(r.equipamento)==='hora' ? (r.kmHor ?? '') : ''),
       CONFIG_SISMA.ponto||'', CONFIG_SISMA.bomba||'', codigoProduto, r.quantidade ?? ''
     ].join(';'));
   });
@@ -6407,6 +6484,7 @@ async function pullFromSheetsSilencioso(){
     PENDENTES = json.pendentes || [];
     DIAS_BLOQUEADOS = json.diasBloqueados || DIAS_BLOQUEADOS;
     NFS_FECHADAS = json.nfsFechadas || NFS_FECHADAS;
+    DESCONTOS = json.descontosTerceiros || [];
     CONFIG_SISMA = json.configSisma || CONFIG_SISMA;
     PERMISSOES = json.permissoes || PERMISSOES;
     capturarObras(json);
@@ -6727,6 +6805,7 @@ function ativarTab(nomeTab){
 
   if(nomeReal === 'dashboard') renderDashboard();
   if(nomeReal === 'relatorio') renderReportPreview();
+  if(nomeReal === 'terceiros') renderTerceiros();
 }
 
 /* Desfaz o que prepararCamposParaMotorista() mudou — volta o Posto pro
@@ -8472,7 +8551,7 @@ async function acaoNf(acao, nf){
     if(json.status !== 'ok'){ toast(json.mensagem || 'Falha.'); return; }
     NFS_FECHADAS = json.nfsFechadas || NFS_FECHADAS;
     toast(json.mensagem || 'Feito.');
-    renderLancTable();
+    renderLancTable(); renderTerceiros();
   }catch(err){ console.error(err); toast('Erro de conexão. Tenta de novo.'); }
 }
 function renderLancTable(){
@@ -8550,7 +8629,7 @@ function renderLancTable(){
       <td class="num" style="color:var(--gray);font-weight:600;">${SEQ.get(r.id) || '—'}</td>
       <td>${fmtDate(r.data)}</td>
       <td>${r.dataLancamento?fmtDate(r.dataLancamento):'—'}</td>
-      <td>${nfFechadaCli(r.nf) ? '🔒 ' : ''}${r.nf ?? '—'}</td>
+      <td>${nfFechadaCli(r.nf) ? '🔒 ' : ''}${mapaDescontos().has(String(r.id)) ? '<span title="Descontado na medição">💰</span> ' : ''}${r.nf ?? '—'}</td>
       <td>${escapeHtml(r.requisicao||'—')}</td>
       <td>${escapeHtml(r.posto||'—')}</td>
       <td><span class="tag">${escapeHtml(r.produto||'—')}</span></td>
@@ -9575,6 +9654,7 @@ async function pullFromSheets(){
     PENDENTES = json.pendentes || [];
     DIAS_BLOQUEADOS = json.diasBloqueados || DIAS_BLOQUEADOS;
     NFS_FECHADAS = json.nfsFechadas || NFS_FECHADAS;
+    DESCONTOS = json.descontosTerceiros || [];
     CONFIG_SISMA = json.configSisma || CONFIG_SISMA;
     PERMISSOES = json.permissoes || PERMISSOES;
     capturarObras(json);
@@ -9671,6 +9751,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     initEmpresasTab();
     initRequisicoesTab();
     initSyncTab();
+    initTerceirosTab();
 
     document.getElementById('btn-pedir-liberacao-extra').addEventListener('click', async ()=>{
       const ok = await confirmModal('Pedir liberação extra', 'Isso avisa o admin que você vai precisar de mais um abastecimento hoje, além do limite normal. Continuar?');
@@ -10162,6 +10243,183 @@ async function impEnviarLinha(tipo, l){
   const t = impNorm(v.tipo);
   const tipoE = t.startsWith('prop') ? 'propria' : t.startsWith('loc') ? 'locadora' : 'terceirizada';
   return impPost({ action:'salvarEmpresa', dados: { novo:true, nome:v.nome.trim().toUpperCase(), tipo:tipoE, cnpj:v.cnpj||'', telefone:v.telefone||'', endereco:v.endereco||'', observacoes:v.observacoes||'', obra:'' } });
+}
+
+
+/* ---------------------------------------------------------------------
+   TERCEIROS / MEDIÇÃO — abastecimentos de veículos de terceiros, com o
+   controle de "já foi descontado na medição?". Fluxo: lançamento → NF
+   fechada (conferida) → marcar como descontado na medição X.
+--------------------------------------------------------------------- */
+function mapaDescontos(){ const m = new Map(); (DESCONTOS || []).forEach(d=>m.set(String(d.lancId), d)); return m; }
+function ehTerceiroReg(r){
+  const v = veiculoDoEquip(r.equipamento);
+  if(v) return v.tipo === 'terceirizado';
+  const e = String(r.empresa || '').trim().toUpperCase();
+  return !!e && e !== 'TRIPOLONI';
+}
+function empresaTerceiroDe(r){
+  const v = veiculoDoEquip(r.equipamento);
+  if(v && v.empresaVinculada) return v.empresaVinculada;
+  const e = String(r.empresa || '').trim();
+  return (e && e.toUpperCase() !== 'TRIPOLONI') ? e : '(sem empresa)';
+}
+function statusTerceiro(r, mapa){
+  if(mapa.has(String(r.id))) return 'descontado';
+  return nfFechadaCli(r.nf) ? 'fechada' : 'aberta';
+}
+const ROTULO_STATUS_TERC = { aberta:'⏳ NF aberta', fechada:'🔒 Pronto p/ descontar', descontado:'✅ Descontado' };
+
+/* Linha-resumo no cartão do veículo terceirizado na Frota */
+function resumoMedicaoHtml(equip){
+  const mapa = mapaDescontos();
+  const regs = DB.filter(r=>r.equipamento === equip);
+  if(!regs.length) return '';
+  let tot=0, desc=0, pron=0, aber=0;
+  regs.forEach(r=>{ const v = r.precoTotal||0; tot+=v; const st = statusTerceiro(r, mapa); if(st==='descontado') desc+=v; else if(st==='fechada') pron+=v; else aber+=v; });
+  return `<br>💰 <b>Medição:</b> abastecido ${fmtMoney(tot)} · <span style="color:var(--ok,#1c7c4c)">descontado ${fmtMoney(desc)}</span> · <span style="color:#b3760a">a descontar ${fmtMoney(pron)}</span> · NF aberta ${fmtMoney(aber)} <a href="#" data-ver-terc="${escapeHtml(equip)}">ver</a>`;
+}
+document.addEventListener('click', e=>{
+  const a = e.target.closest && e.target.closest('[data-ver-terc]');
+  if(!a) return;
+  e.preventDefault();
+  ativarTab('terceiros');
+  const sel = document.getElementById('t-equip');
+  if(sel){ sel.value = a.dataset.verTerc; renderTerceiros(); }
+});
+
+function linhasTerceiros(){
+  const mapa = mapaDescontos();
+  const ini = document.getElementById('t-data-ini')?.value || '';
+  const fim = document.getElementById('t-data-fim')?.value || '';
+  const emp = document.getElementById('t-empresa')?.value || '';
+  const eq = document.getElementById('t-equip')?.value || '';
+  const st = document.getElementById('t-status')?.value || '';
+  const nf = (document.getElementById('t-nf')?.value || '').trim().toUpperCase();
+  const base = DB.filter(ehTerceiroReg);
+  const rows = base.filter(r=>{
+    if(ini && (!r.data || r.data < ini)) return false;
+    if(fim && (!r.data || r.data > fim)) return false;
+    if(emp && empresaTerceiroDe(r) !== emp) return false;
+    if(eq && r.equipamento !== eq) return false;
+    if(st && statusTerceiro(r, mapa) !== st) return false;
+    if(nf && !String(r.nf ?? '').toUpperCase().includes(nf)) return false;
+    return true;
+  }).sort((a,b)=>(b.data||'').localeCompare(a.data||''));
+  return { base, rows, mapa };
+}
+
+function renderTerceiros(){
+  const box = document.getElementById('t-tabela'); if(!box) return;
+  const { base, rows, mapa } = linhasTerceiros();
+  const pf = pode('fechar_nf');
+  // opções dos selects (mantém o valor escolhido)
+  const preencher = (id, valores, rot)=>{
+    const el = document.getElementById(id); if(!el) return;
+    const atual = el.value;
+    el.innerHTML = `<option value="">${rot}</option>` + valores.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+    el.value = valores.includes(atual) ? atual : '';
+  };
+  preencher('t-empresa', [...new Set(base.map(empresaTerceiroDe))].sort((a,b)=>a.localeCompare(b,'pt-BR')), 'Todas as empresas');
+  preencher('t-equip', [...new Set(base.map(r=>r.equipamento).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR')), 'Todos os veículos');
+
+  const soma = (arr)=>arr.reduce((s,r)=>s+(r.precoTotal||0),0);
+  const porSt = {aberta:[], fechada:[], descontado:[]};
+  rows.forEach(r=>porSt[statusTerceiro(r, mapa)].push(r));
+  document.getElementById('t-resumo').innerHTML = [
+    ['Total abastecido (filtro)', fmtMoney(soma(rows)), `${rows.length} lançamento(s)`],
+    ['⏳ NF ainda aberta', fmtMoney(soma(porSt.aberta)), 'feche a NF para poder descontar'],
+    ['🔒 Pronto p/ descontar', fmtMoney(soma(porSt.fechada)), 'NF fechada, falta lançar na medição'],
+    ['✅ Já descontado', fmtMoney(soma(porSt.descontado)), 'lançado em alguma medição'],
+  ].map(k=>`<div class="kpi"><div class="label">${k[0]}</div><div class="value">${k[1]}</div><div class="sub">${k[2]}</div></div>`).join('');
+
+  // resumo por empresa → veículo
+  const porEmp = {};
+  rows.forEach(r=>{ const e = empresaTerceiroDe(r); (porEmp[e] = porEmp[e] || []).push(r); });
+  document.getElementById('t-por-empresa').innerHTML = rows.length ? `<table><thead><tr><th>Empresa terceira</th><th class="num">Veículos</th><th class="num">Total</th><th class="num">NF aberta</th><th class="num">A descontar</th><th class="num">Descontado</th></tr></thead><tbody>` +
+    Object.entries(porEmp).sort((a,b)=>soma(b[1])-soma(a[1])).map(([e,rs])=>{
+      const m = (st)=>soma(rs.filter(r=>statusTerceiro(r,mapa)===st));
+      return `<tr><td><b>${escapeHtml(e)}</b></td><td class="num">${new Set(rs.map(r=>r.equipamento)).size}</td><td class="num">${fmtMoney(soma(rs))}</td><td class="num">${fmtMoney(m('aberta'))}</td><td class="num" style="color:#b3760a;font-weight:700">${fmtMoney(m('fechada'))}</td><td class="num" style="color:#1c7c4c">${fmtMoney(m('descontado'))}</td></tr>`;
+    }).join('') + `</tbody></table>` : '';
+
+  TERC_SEL.forEach(id=>{ if(!rows.some(r=>String(r.id)===id)) TERC_SEL.delete(id); });
+  const nSel = TERC_SEL.size;
+  document.getElementById('t-sel-info').textContent = nSel ? `${nSel} selecionado(s) · ${fmtMoney(soma(rows.filter(r=>TERC_SEL.has(String(r.id)))))}` : 'Nenhum selecionado';
+  document.getElementById('t-barra-acao').style.display = pf ? '' : 'none';
+
+  if(!rows.length){ box.innerHTML = '<p class="helper">Nenhum abastecimento de terceiro nos filtros atuais. (Terceiro = veículo cadastrado na Frota como “Terceirizado”, ou lançamento com empresa diferente da Tripoloni.)</p>'; return; }
+  box.innerHTML = `<div class="table-scroll"><table><thead><tr>
+    <th><input type="checkbox" id="t-sel-todos" title="Selecionar todos os visíveis" style="width:auto"></th>
+    <th>Data</th><th>Empresa</th><th>Veículo</th><th>NF</th><th class="num">Litros</th><th class="num">Valor</th><th>Situação</th><th>Medição</th></tr></thead><tbody>` +
+    rows.slice(0,500).map(r=>{
+      const st = statusTerceiro(r, mapa), d = mapa.get(String(r.id));
+      const v = veiculoDoEquip(r.equipamento);
+      return `<tr><td><input type="checkbox" data-t-sel="${escapeHtml(String(r.id))}" style="width:auto" ${TERC_SEL.has(String(r.id))?'checked':''}></td>
+      <td>${fmtDate(r.data)}</td><td>${escapeHtml(empresaTerceiroDe(r))}</td>
+      <td>${escapeHtml(r.equipamento||'—')}${v&&v.placa?' <span class="helper" style="margin:0">'+escapeHtml(v.placa)+'</span>':''}</td>
+      <td>${nfFechadaCli(r.nf)?'🔒 ':''}${escapeHtml(r.nf ?? '—')}</td>
+      <td class="num">${fmtNum(r.quantidade,1)}</td><td class="num">${fmtMoney(r.precoTotal)}</td>
+      <td>${ROTULO_STATUS_TERC[st]}</td>
+      <td>${d ? escapeHtml(d.medicao||'')+(d.dataDesconto?' · '+fmtDate(d.dataDesconto):'') : '—'}</td></tr>`;
+    }).join('') + `</tbody></table></div>` + (rows.length>500 ? `<p class="helper">Mostrando 500 de ${rows.length} — use os filtros.</p>` : '');
+}
+
+async function acaoDescontoTerceiros(acao){
+  if(!TERC_SEL.size){ toast('Marque pelo menos um lançamento na tabela.'); return; }
+  const medicao = (document.getElementById('t-medicao').value || '').trim();
+  const mapa = mapaDescontos();
+  const ids = [...TERC_SEL];
+  if(acao === 'descontarTerceiros'){
+    if(!medicao){ toast('Informe a medição (ex: Medição 10/2026).'); return; }
+    const ruins = ids.filter(id=>{ const r = DB.find(x=>String(x.id)===id); return !r || mapa.has(id) || !nfFechadaCli(r.nf); });
+    if(ruins.length){ toast(`${ruins.length} item(ns) marcado(s) não podem ser descontados (NF aberta ou já descontado). Desmarque e tente de novo.`); return; }
+  } else {
+    if(!ids.every(id=>mapa.has(id))){ toast('Só dá para desfazer em lançamentos que já estão descontados.'); return; }
+  }
+  const total = DB.filter(r=>TERC_SEL.has(String(r.id))).reduce((s,r)=>s+(r.precoTotal||0),0);
+  const ok = await confirmModal(acao==='descontarTerceiros' ? 'Marcar como descontado' : 'Desfazer desconto',
+    acao==='descontarTerceiros' ? `${ids.length} lançamento(s), ${fmtMoney(total)}, serão marcados como descontados em “${medicao}”.` : `${ids.length} lançamento(s) voltam para “pronto p/ descontar”.`);
+  if(!ok) return;
+  try{
+    const resp = await fetch(SYNC_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ action:acao, lancIds:ids, medicao, data: document.getElementById('t-data-desc').value || todayStr(), idToken: ID_TOKEN }) });
+    const json = await parseJsonResponse(resp);
+    if(json.status !== 'ok'){ toast(json.mensagem || 'Falha.'); return; }
+    DESCONTOS = json.descontosTerceiros || DESCONTOS;
+    TERC_SEL.clear();
+    toast(json.mensagem || 'Feito.');
+    renderTerceiros(); renderListaVeiculos(); renderLancTable();
+  }catch(err){ console.error(err); toast('Erro de conexão. Tenta de novo.'); }
+}
+
+function exportarTerceiros(){
+  const { rows, mapa } = linhasTerceiros();
+  if(!rows.length){ toast('Nada para exportar nos filtros atuais.'); return; }
+  const dados = rows.map(r=>{
+    const d = mapa.get(String(r.id)), v = veiculoDoEquip(r.equipamento);
+    return { 'Empresa': empresaTerceiroDe(r), 'Veículo': r.equipamento||'', 'Placa': (v&&v.placa)||'', 'Data': fmtDate(r.data), 'NF': r.nf ?? '', 'Produto': r.produto||'', 'Litros': r.quantidade ?? '', 'Valor': r.precoTotal ?? '', 'Situação': ROTULO_STATUS_TERC[statusTerceiro(r, mapa)].replace(/^\S+\s/,''), 'Medição': d?d.medicao:'', 'Data do desconto': d&&d.dataDesconto?fmtDate(d.dataDesconto):'' };
+  });
+  const ws = XLSX.utils.json_to_sheet(dados), wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Terceiros');
+  XLSX.writeFile(wb, `terceiros_medicao_${todayStr()}.xlsx`);
+}
+
+function initTerceirosTab(){
+  const view = document.getElementById('view-terceiros'); if(!view) return;
+  const m = document.getElementById('t-medicao');
+  if(m && !m.value){ const d = new Date(); m.value = `Medição ${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`; }
+  const dd = document.getElementById('t-data-desc'); if(dd && !dd.value) dd.value = todayStr();
+  view.addEventListener('input', e=>{ if(e.target.classList.contains('flt-terc')) renderTerceiros(); });
+  view.addEventListener('change', e=>{
+    const t = e.target;
+    if(t.classList.contains('flt-terc')) { renderTerceiros(); return; }
+    if(t.id === 't-sel-todos'){ view.querySelectorAll('[data-t-sel]').forEach(cb=>{ cb.checked = t.checked; if(t.checked) TERC_SEL.add(cb.dataset.tSel); else TERC_SEL.delete(cb.dataset.tSel); }); renderTerceiros(); return; }
+    if(t.dataset && t.dataset.tSel !== undefined){ if(t.checked) TERC_SEL.add(t.dataset.tSel); else TERC_SEL.delete(t.dataset.tSel); const info = document.getElementById('t-sel-info'); if(info) info.textContent = TERC_SEL.size + ' selecionado(s)'; }
+  });
+  document.getElementById('t-btn-descontar').addEventListener('click', ()=>acaoDescontoTerceiros('descontarTerceiros'));
+  document.getElementById('t-btn-desfazer').addEventListener('click', ()=>acaoDescontoTerceiros('desfazerDescontoTerceiros'));
+  document.getElementById('t-btn-pronto').addEventListener('click', ()=>{ const { rows, mapa } = linhasTerceiros(); rows.forEach(r=>{ if(statusTerceiro(r,mapa)==='fechada') TERC_SEL.add(String(r.id)); }); renderTerceiros(); });
+  document.getElementById('t-btn-excel').addEventListener('click', exportarTerceiros);
+  document.getElementById('t-btn-limpar').addEventListener('click', ()=>{ view.querySelectorAll('.flt-terc').forEach(el=>{ el.value=''; }); renderTerceiros(); });
 }
 
 if('serviceWorker' in navigator){
