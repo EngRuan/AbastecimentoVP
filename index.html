@@ -2547,7 +2547,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.20-95';
+const APP_VERSION = 'v2026.10.20-97';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -6516,6 +6516,7 @@ async function atualizarTudoUI(){
 
 async function pullFromSheetsSilencioso(){
   if(!SYNC_URL || !ID_TOKEN) return;
+  _ultimoPull = Date.now();
   try{
     const resp = await fetch(`${SYNC_URL}?action=pull&idToken=${encodeURIComponent(ID_TOKEN)}`);
     const json = await parseJsonResponse(resp);
@@ -6566,6 +6567,52 @@ async function pullFromSheetsSilencioso(){
     renderListaRequisicoesAdmin();
     renderSelecaoRequisicaoMotorista();
   }catch(err){ console.warn('Falha ao atualizar em segundo plano:', err); }
+}
+
+/* ---- Dois usuários mexendo ao mesmo tempo ----
+   (1) Mantém a tela do colega fresca: puxa de novo ao voltar pra aba e de 2 em 2 min.
+   (2) Se uma ação falhar porque o item mudou/sumiu (alguém já editou, apagou, aprovou),
+       avisa em português claro e atualiza os dados sozinho, pra pessoa só conferir e refazer. */
+let _ultimoPull = 0, _avisoDesatualizadoEm = 0;
+const RE_DESATUALIZADO = /n[ãa]o encontrad|n[ãa]o existe|j[áa] (foi|est[áa]|havia|existe)|j[áa] foi (usad|cancel|aprov|rejeit|descont|fecha)|desatualiz|alterad[oa] por|n[ãa]o est[áa] mais/i;
+function _usuarioDigitando(){ const a = document.activeElement; return !!a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && !a.readOnly && a.type !== 'checkbox'; }
+function atualizarSeVelho(maxMs){
+  if(!SYNC_URL || !ID_TOKEN || document.visibilityState !== 'visible') return;
+  if(Date.now() - _ultimoPull < maxMs || _usuarioDigitando()) return;
+  pullFromSheetsSilencioso();
+}
+function initSincronizacaoMultiusuario(){
+  document.addEventListener('visibilitychange', ()=>atualizarSeVelho(30*1000));
+  window.addEventListener('focus', ()=>atualizarSeVelho(30*1000));
+  setInterval(()=>atualizarSeVelho(2*60*1000), 60*1000);
+  // "Push" por consulta leve: pergunta ao servidor se alguém salvou algo; se sim, puxa na hora.
+  let ultimaVersaoServidor = null;
+  setInterval(async ()=>{
+    if(!SYNC_URL || !ID_TOKEN || document.visibilityState !== 'visible' || _usuarioDigitando()) return;
+    try{
+      const r = await fetch(`${SYNC_URL}?action=mudancas`); const j = await r.json();
+      if(j && j.status === 'ok'){
+        if(ultimaVersaoServidor !== null && j.v !== ultimaVersaoServidor && Date.now() - _ultimoPull > 3000){ await pullFromSheetsSilencioso(); }
+        ultimaVersaoServidor = j.v;
+      }
+    }catch(_){}
+  }, 20*1000);
+  const fetchOriginal = window.fetch.bind(window);
+  window.fetch = async function(url, opts){
+    const resp = await fetchOriginal(url, opts);
+    try{
+      if(SYNC_URL && String(url).startsWith(SYNC_URL) && opts && opts.method === 'POST'){
+        resp.clone().json().then(j=>{
+          if(j && j.status === 'erro' && RE_DESATUALIZADO.test(String(j.mensagem||'')) && !/token|sess[ãa]o|login/i.test(String(j.mensagem||'')) && Date.now() - _avisoDesatualizadoEm > 5000){
+            _avisoDesatualizadoEm = Date.now();
+            toast('⚠️ Outra pessoa alterou isso antes de você (sua tela estava desatualizada). Atualizei os dados — confira e refaça se precisar.');
+            pullFromSheetsSilencioso();
+          }
+        }).catch(()=>{});
+      }
+    }catch(_){}
+    return resp;
+  };
 }
 
 async function pedirLiberacao(dataStr){
@@ -9689,6 +9736,7 @@ async function pushToSheets(mostrarToast){
 }
 
 async function pullFromSheets(){
+  _ultimoPull = Date.now();
   if(!SYNC_URL){ toast('Configure a URL do Apps Script primeiro.'); return; }
   if(!ID_TOKEN){ toast('Faça login com o Google primeiro.'); return; }
   logSync('Puxando dados do Sheets (histórico completo)...');
@@ -9807,6 +9855,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     initTerceirosTab();
     initOutbox();
     initTransferencias();
+    initSincronizacaoMultiusuario();
 
     document.getElementById('btn-pedir-liberacao-extra').addEventListener('click', async ()=>{
       const ok = await confirmModal('Pedir liberação extra', 'Isso avisa o admin que você vai precisar de mais um abastecimento hoje, além do limite normal. Continuar?');
