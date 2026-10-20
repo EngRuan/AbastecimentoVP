@@ -2547,7 +2547,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.20-94';
+const APP_VERSION = 'v2026.10.20-95';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -5093,7 +5093,8 @@ function renderListaEmpresas(){
     box.innerHTML = `<p class="helper">Nenhuma empresa cadastrada ainda.</p>`;
     return;
   }
-  const ordenadas = [...EMPRESAS].sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR'));
+  const _obraEmp = e=>{ const l = String(e.obra||'').split(/[,;]/).map(x=>x.trim()).filter(Boolean); return l.length ? l : ['422']; };
+  const ordenadas = [...EMPRESAS].filter(e=>!OBRA_ATIVA || _obraEmp(e).includes(String(OBRA_ATIVA))).sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR'));
   const NOMES_TIPO_EMPRESA = { propria:'Própria', locadora:'Locadora', terceirizada:'Terceirizada' };
   box.innerHTML = ordenadas.map(e=>`
     <div class="usuario-item" data-nome="${escapeHtml(e.nome)}">
