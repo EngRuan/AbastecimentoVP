@@ -2547,7 +2547,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.21-100';
+const APP_VERSION = 'v2026.10.21-101';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -6865,7 +6865,8 @@ function posicionarFormLancamento(modoPreview){
   if(!wrap){
     wrap = document.createElement('div');
     wrap.className = 'card'; wrap.id = 'card-lanc-manual'; wrap.style.display = 'none';
-    wrap.innerHTML = '<h2>✍️ Lançamento manual</h2>';
+    wrap.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;"><h2 style="margin:0;">✍️ Lançamento manual</h2><button type="button" class="btn secondary" id="btn-imp-lanc" title="Importa uma planilha de requisições/abastecimentos, confere tudo numa prévia e só então envia para Aprovações.">📥 Importar planilha</button></div>';
+    wrap.querySelector('#btn-imp-lanc').addEventListener('click', ()=>abrirImportacao('lanc'));
     viewAprov.insertBefore(wrap, viewAprov.firstChild);
     initCardsColapsaveis();
   }
@@ -10006,6 +10007,40 @@ const IMP_CFG = {
     ],
     modelo: [{'Requisição':'3480','Data':'18/10/2026','Litros':'40,5','Preço unit.':'6,89','Valor total':'','Km/Hor.':'108531','NF mãe':'13714'}],
   },
+  lanc: {
+    titulo: 'Importar lançamentos manuais (planilha de requisições)', perm: 'lancamento_manual',
+    explica: 'Cada linha vira um <b>lançamento manual</b> que cai na aba <b>Aprovações</b> (igual ao lançamento digitado) — nada vira oficial sem a conferência e a NF. Obrigatórios: <b>Data, Equipamento, Produto e Litros</b>. Informe o <b>Valor total</b> ou o <b>Preço unit.</b> (o outro é calculado). Na prévia o app confere equipamento, produto, Km, NF fechada e possíveis duplicados.',
+    campos: [
+      {k:'data', rot:'Data', alias:['data','dataabastecimento','dataabast','dt'], tipo:'data', obrig:true, larg:120},
+      {k:'requisicao', rot:'Requisição', alias:['requisicao','nrequisicao','nreq','req','numerodarequisicao','numreq'], larg:90},
+      {k:'equipamento', rot:'Equipamento', alias:['equipamento','eqp','prefixo','codigo','veiculo','vp'], obrig:true, larg:100, up:true},
+      {k:'motorista', rot:'Motorista', alias:['motorista','condutor','nome'], larg:130, up:true},
+      {k:'posto', rot:'Posto', alias:['posto','fornecedor'], larg:130, up:true},
+      {k:'produto', rot:'Produto', alias:['produto','combustivel'], obrig:true, larg:110, up:true},
+      {k:'quantidade', rot:'Litros', alias:['litros','quantidade','qtd','qtde','quant','lt'], tipo:'num', obrig:true, larg:75},
+      {k:'precoUnit', rot:'Preço unit.', alias:['precounit','precounitario','valorunit','valorunitario','precolitro','preco'], tipo:'num', larg:80},
+      {k:'precoTotal', rot:'Valor total', alias:['valortotal','precototal','total','valor'], tipo:'num', larg:90},
+      {k:'kmHor', rot:'Km/Hor.', alias:['km','kmhor','kmhorimetro','horimetro','hodometro','kmatual'], tipo:'num', larg:85},
+      {k:'nf', rot:'NF', alias:['nf','nfmae','notafiscal','nfmaefechamento','nnf'], larg:80},
+      {k:'empresa', rot:'Empresa', alias:['empresa'], larg:110, up:true},
+      {k:'cupom', rot:'Cupom', alias:['cupom','ncupom','numerocupom'], larg:80},
+    ],
+    modelo: [
+      {'Data':'18/10/2026','Requisição':'3480','Equipamento':'VP0555','Motorista':'FULANO DE TAL','Posto':'POSTO EXEMPLO','Produto':'ETANOL','Litros':'40,5','Preço unit.':'4,19','Valor total':'','Km/Hor.':'108531','NF':'13714','Empresa':'','Cupom':''},
+      {'Data':'19/10/2026','Requisição':'3481','Equipamento':'CB0101','Motorista':'BELTRANO','Posto':'POSTO EXEMPLO','Produto':'DIESEL S-10','Litros':'80','Preço unit.':'','Valor total':'504,00','Km/Hor.':'2310','NF':'13714','Empresa':'','Cupom':''},
+    ],
+    instrucoes: [
+      ['Como preencher'],
+      ['• Uma linha por abastecimento. Apague as 2 linhas de exemplo antes de usar.'],
+      ['• Data: dd/mm/aaaa. Litros e valores aceitam vírgula (40,5).'],
+      ['• Equipamento: o mesmo código da Frota (ex.: VP0555). Equipamento não cadastrado gera aviso.'],
+      ['• Produto: DIESEL, DIESEL S-10, DIESEL S-500, ETANOL, GASOLINA, ARLA 32, ADITIVO, LUBRIFICANTE, LUBRAX TOP, OLEO SHELL HELIX ou OUTRO.'],
+      ['• Informe o Valor total OU o Preço unit. — o outro o app calcula.'],
+      ['• Km/Hor. menor que a leitura anterior não bloqueia: vai marcado para AUTORIZAÇÃO.'],
+      ['• NF de uma nota já FECHADA é recusada. Requisição, motorista, posto, empresa e cupom são opcionais.'],
+      ['• Depois de enviar a planilha o app mostra uma PRÉVIA: corrija direto na tabela, desmarque o que não quiser e só então confirme.'],
+    ],
+  },
   veic: {
     titulo: 'Cadastrar veículos/equipamentos em lote', perm: 'cadastro_frota_postos',
     explica: 'Só o <b>Equipamento</b> é obrigatório. Equipamento que já existe na Frota é <b>pulado</b> (não duplica nem sobrescreve).',
@@ -10136,6 +10171,7 @@ function impRenderInicio(){
   document.getElementById('imp-modelo').onclick = ()=>{
     const ws = XLSX.utils.json_to_sheet(cfg.modelo);
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Modelo');
+    if(cfg.instrucoes){ const wi = XLSX.utils.aoa_to_sheet(cfg.instrucoes); wi['!cols'] = [{wch:120}]; XLSX.utils.book_append_sheet(wb, wi, 'Instruções'); }
     XLSX.writeFile(wb, `modelo_importacao_${IMP.tipo}.xlsx`);
   };
 }
@@ -10186,6 +10222,21 @@ function impLerArquivo(e){
   reader.readAsArrayBuffer(file);
 }
 
+function impChave(tipo, v){
+  if(tipo === 'lanc') return [v.data, String(v.equipamento||'').trim().toUpperCase(), v.quantidade, v.kmHor, v.nf, v.posto].map(x=>String(x==null?'':x).trim().toUpperCase()).join('|');
+  const k = tipo==='req' ? 'numero' : (tipo==='veic' ? 'equipamento' : 'nome');
+  return String(v[k]).trim().toUpperCase();
+}
+function impRotuloChave(tipo){
+  if(tipo === 'lanc') return 'abastecimento (data, equipamento, litros, Km, NF e posto)';
+  const k = tipo==='req' ? 'numero' : (tipo==='veic' ? 'equipamento' : 'nome');
+  return IMP_CFG[tipo].campos.find(c=>c.k===k).rot;
+}
+function impNormProduto(p){
+  const n = impNorm(p);
+  const mapa = { diesel:'DIESEL', dieselc:'DIESEL', s10:'DIESEL S-10', dieels10:'DIESEL S-10', diesels10:'DIESEL S-10', s500:'DIESEL S-500', diesels500:'DIESEL S-500', etanol:'ETANOL', alcool:'ETANOL', gasolina:'GASOLINA', gasolinac:'GASOLINA', arla:'ARLA 32', arla32:'ARLA 32', aditivo:'ADITIVO', lubrificante:'LUBRIFICANTE', oleo:'LUBRIFICANTE', lubraxtop:'LUBRAX TOP', oleoshellhelix:'OLEO SHELL HELIX', outro:'OUTRO' };
+  return mapa[n] || null;
+}
 /* ---- validação (por linha) ---- */
 function impReqAberta(numero){
   const n = String(numero||'').trim();
@@ -10196,11 +10247,11 @@ function impValidarLinha(i){
   const l = IMP.linhas[i], v = l.v, tipo = IMP.tipo, cfg = IMP_CFG[tipo];
   l.st = 'ok'; l.msg = ''; l.info = null;
   for(const c of cfg.campos){ if(c.obrig && !String(v[c.k]||'').trim()){ l.st='erro'; l.msg = `Falta ${c.rot}.`; return; } }
-  const chave = tipo==='req' ? 'numero' : (tipo==='veic' ? 'equipamento' : 'nome');
-  const val = String(v[chave]).trim().toUpperCase();
+  const val = impChave(tipo, v);
   // duplicado dentro da própria planilha (só a 1ª ocorrência vale)
-  const antes = IMP.linhas.slice(0,i).some(o=>o.inc && String(o.v[chave]).trim().toUpperCase() === val && o.st!=='erro');
-  if(antes){ l.st='erro'; l.msg='Repetida na planilha (já tem linha anterior com o mesmo ' + cfg.campos.find(c=>c.k===chave).rot + ').'; return; }
+  const antes = IMP.linhas.slice(0,i).some(o=>o.inc && impChave(tipo, o.v) === val && o.st!=='erro');
+  if(antes){ l.st='erro'; l.msg='Repetida na planilha (já tem linha anterior com o mesmo ' + impRotuloChave(tipo) + ').'; return; }
+  if(tipo === 'lanc') return impValidarLanc(l);
   if(tipo === 'req'){
     const rq = impReqAberta(v.numero);
     if(!rq){ l.st='erro'; l.msg='Requisição não encontrada (confere o número e a obra).'; return; }
@@ -10245,6 +10296,43 @@ function impValidarLinha(i){
   }
 }
 
+function impValidarLanc(l){
+  const v = l.v; const avisos = [];
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(v.data||'')){ l.st='erro'; l.msg='Data inválida (use dd/mm/aaaa).'; return; }
+  if(v.data > todayStr()){ l.st='erro'; l.msg='Data no futuro.'; return; }
+  const eq = String(v.equipamento||'').trim().toUpperCase();
+  const veic = veiculoDoEquip(eq);
+  if(!veic){
+    if(VISITANTES && VISITANTES[eq]) avisos.push('Veículo de outra obra (visitante).');
+    else avisos.push('Equipamento não cadastrado na Frota.');
+  } else if(veic.desmobilizado){ avisos.push('Equipamento está DESMOBILIZADO.'); }
+  const prod = impNormProduto(v.produto);
+  if(!prod){ l.st='erro'; l.msg=`Produto "${v.produto}" não reconhecido (use DIESEL, DIESEL S-10, ETANOL, GASOLINA, ARLA 32…).`; return; }
+  v.produto = prod;
+  if(veic && veic.combustivelAutorizado && PRODUTOS_COMBUSTIVEL.has(prod)){
+    const aut = String(veic.combustivelAutorizado).toUpperCase();
+    if(aut !== 'QUALQUER' && aut !== 'QUALQUER UM' && !aut.includes(prod.replace(/ S-\d+/,''))) avisos.push(`Combustível autorizado do equipamento é ${aut}.`);
+  }
+  const q = numBR(v.quantidade);
+  if(!q || q<=0){ l.st='erro'; l.msg='Litros inválidos.'; return; }
+  let total = numBR(v.precoTotal); const un = numBR(v.precoUnit);
+  if(!(total>0) && !(un>0)){ l.st='erro'; l.msg='Falta o valor total (ou o preço unitário).'; return; }
+  if(!(total>0)) total = Math.round(q*un*100)/100;
+  const pu = un>0 ? un : total/q;
+  if(PRODUTOS_COMBUSTIVEL.has(prod) && (pu > 15 || pu < 2)) avisos.push(`Preço por litro estranho (R$ ${pu.toFixed(2).replace('.',',')}).`);
+  if(v.nf && nfFechadaCli(v.nf)){ l.st='erro'; l.msg=`🔒 A NF ${v.nf} está fechada.`; return; }
+  if(v.kmHor){
+    const km = numBR(v.kmHor);
+    if(isNaN(km)){ l.st='erro'; l.msg='Km/Hor. inválido.'; return; }
+    const msgKm = validarKmManual(eq, v.data, km);
+    if(msgKm) avisos.push('Km irregular — vai para AUTORIZAÇÃO: ' + msgKm);
+    else { const lim = limitesKm(eq, v.data, null); if(lim.lower && km === lim.lower.km) avisos.push('Km IGUAL ao da última leitura.'); }
+  } else if(PRODUTOS_COMBUSTIVEL.has(prod)){ avisos.push('Sem Km/Hor. — a média km/L não será calculada.'); }
+  if(v.posto && POSTOS.length && !POSTOS.some(x=>String(x.nome||'').trim().toUpperCase() === String(v.posto).trim().toUpperCase())) avisos.push('Posto não cadastrado (não exige NF mãe).');
+  const dup = DB.concat(PENDENTES||[]).some(r=>String(r.equipamento||'').toUpperCase()===eq && String(r.data||'').slice(0,10)===v.data && Math.abs((Number(r.quantidade)||0)-q) < 0.01);
+  if(dup) avisos.push('⚠️ Possível DUPLICADO: já existe lançamento/pendente igual (mesmo equipamento, data e litros).');
+  if(avisos.length){ l.st='aviso'; l.msg = avisos.join(' '); }
+}
 /* ---- prévia ---- */
 function impDestinoReq(l){
   const rq = l.info; if(!rq) return '—';
@@ -10309,7 +10397,7 @@ function impAtualizarStatus(){
     if(l.st==='ok') ok++; else if(l.st==='aviso'){ aviso++; ok++; } else if(l.st==='erro') erro++; else pula++;
   });
   document.getElementById('imp-sum').innerHTML = `<span>✅ Vão ser gravadas: <b>${ok}</b></span><span>⚠️ Com aviso: <b>${aviso}</b></span><span>❌ Com erro (não gravam): <b>${erro}</b></span><span>⏭️ Puladas: <b>${pula}</b></span><span>☐ Desmarcadas: <b>${off}</b></span>`;
-  const bt = document.getElementById('imp-gravar'); if(bt){ bt.disabled = ok===0; bt.textContent = IMP.tipo==='req' ? `✅ Marcar ${ok} como usadas (vão pra 2ª aprovação)` : `✅ Gravar ${ok} linha(s)`; }
+  const bt = document.getElementById('imp-gravar'); if(bt){ bt.disabled = ok===0; bt.textContent = IMP.tipo==='req' ? `✅ Marcar ${ok} como usadas (vão pra 2ª aprovação)` : (IMP.tipo==='lanc' ? `✅ Enviar ${ok} lançamento(s) para Aprovações` : `✅ Gravar ${ok} linha(s)`); }
   const bp2 = document.getElementById('imp-preencher'); if(bp2) bp2.disabled = ok===0;
 }
 
@@ -10332,7 +10420,7 @@ async function impGravar(){
   }
   try{ await pullFromSheetsSilencioso(); }catch(e){}
   const oks = resultados.filter(r=>r.ok), bad = resultados.filter(r=>!r.ok);
-  const chave = tipo==='req' ? 'numero' : (tipo==='veic' ? 'equipamento' : 'nome');
+  const chave = tipo==='req' ? 'numero' : (tipo==='veic' ? 'equipamento' : (tipo==='lanc' ? 'equipamento' : 'nome'));
   box.innerHTML = `
     <div style="display:flex;justify-content:space-between;"><h2 style="margin:0 0 8px;">${bad.length?'⚠️':'✅'} Importação concluída</h2><button class="btn ghost" id="imp-x">✖ Fechar</button></div>
     <p style="font-size:14px;"><b>${oks.length}</b> gravada(s)${bad.length?` · <b style="color:var(--bad);">${bad.length}</b> com problema`:''}.${tipo==='req'?' As requisições marcadas já estão na <b>2ª aprovação</b>, esperando a Nota Fiscal.':''}</p>
@@ -10358,6 +10446,23 @@ async function impEnviarLinha(tipo, l){
       kmHor: v.kmHor ? numBR(v.kmHor) : null, nf: v.nf ? String(v.nf).trim() : null, data: v.data || todayStr() } });
     if(r.ok){ REQUISICOES_EMITIDAS = r.json.requisicoesEmitidas || REQUISICOES_EMITIDAS; PENDENTES = r.json.pendentes || PENDENTES; delete REQ_RASC[l.info.id]; REQ_SEL.delete(l.info.id); }
     return r;
+  }
+  if(tipo === 'lanc'){
+    const eq = String(v.equipamento).trim().toUpperCase();
+    const q = numBR(v.quantidade); let un = numBR(v.precoUnit); let total = numBR(v.precoTotal);
+    if(!(total>0)) total = Math.round(q*un*100)/100;
+    if(!(un>0)) un = Math.round(total/q*1000)/1000;
+    const km = v.kmHor ? numBR(v.kmHor) : null;
+    const msgKm = km != null ? validarKmManual(eq, v.data, km) : null;
+    const dados = { manual:true, paraAutorizacao:!!msgKm, motivo: msgKm ? ('Km irregular (importação) — ' + msgKm) : null, data:v.data, equipamento:eq, produto:v.produto,
+      posto:(v.posto||'').trim().toUpperCase() || null, quantidade:q, precoUnit:un||null, precoTotal:total||null, kmHor:km, nfSugerido:(v.nf||'').trim() || null,
+      cupom:(v.cupom||'').trim() || null, requisicao:(v.requisicao||'').trim() || null, motorista:(v.motorista||'').trim().toUpperCase() || null,
+      empresa:(v.empresa||'').trim().toUpperCase() || null, fotoUrlCupom:null, fotoUrlRequisicao:null, obra:obraParaNovo(eq) };
+    const item = outboxAdd('manual', dados, eq);
+    const rs = await outboxEnviar(item);
+    if(rs.ok) return { ok:true };
+    if(rs.motivo === 'rejeitado'){ outboxRemove(item.oid, false); return { ok:false, msg: rs.msg || 'Recusado pelo servidor.' }; }
+    return { ok:false, msg: 'Salvo neste computador, mas NÃO enviado (' + outboxMotivoTexto(rs.motivo) + ') — ele tenta de novo sozinho.' };
   }
   if(tipo === 'veic'){
     const t = impNorm(v.tipo);
