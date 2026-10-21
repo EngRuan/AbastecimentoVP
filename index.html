@@ -934,7 +934,7 @@ td.num, th.num{text-align:right;font-variant-numeric:tabular-nums;}
 /* ---------- Modal ---------- */
 .modal-backdrop{
   position:fixed;inset:0;background:rgba(10,14,25,.45);display:none;
-  align-items:center;justify-content:center;z-index:100;padding:20px;
+  align-items:center;justify-content:center;z-index:10000;padding:20px;
 }
 .modal-backdrop.show{display:flex;}
 .modal{
@@ -2185,7 +2185,7 @@ body.preview-motorista #view-lancamentos::before{
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
         <h2 style="margin:0;">🚗 Frota — próprios, alugados e terceirizados</h2>
-        <span style="display:flex;gap:8px;flex-wrap:wrap;"><button type="button" class="btn secondary" onclick="abrirImportacao('veic')">📥 Importar do Excel</button><button type="button" class="btn secondary" id="btn-imp-sisma">📥 Importar consolidado SISMA</button><button type="button" class="btn secondary" id="btn-pdf-frota">📄 Exportar PDF da Frota</button></span>
+        <span style="display:flex;gap:8px;flex-wrap:wrap;"><button type="button" class="btn secondary" onclick="abrirImportacao('veic')">📥 Importar do Excel</button><button type="button" class="btn secondary" data-dup="veiculo" style="display:none">🧬 Duplicados</button><button type="button" class="btn secondary" id="btn-imp-sisma">📥 Importar consolidado SISMA</button><button type="button" class="btn secondary" id="btn-pdf-frota">📄 Exportar PDF da Frota</button></span>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px;">
         <input type="text" class="flt-frota" id="flt-frota-busca" placeholder="🔎 Buscar equipamento, placa, modelo, condutor..." style="padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px;max-width:100%;" >
@@ -2300,7 +2300,7 @@ body.preview-motorista #view-lancamentos::before{
       </form>
     </div>
     <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;"><h2 style="margin:0;">🏢 Empresas cadastradas</h2><button type="button" class="btn secondary" onclick="abrirImportacao('emp')">📥 Importar do Excel</button></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;"><h2 style="margin:0;">🏢 Empresas cadastradas</h2><button type="button" class="btn secondary" onclick="abrirImportacao('emp')">📥 Importar do Excel</button><button type="button" class="btn secondary" data-dup="empresa" style="display:none">🧬 Duplicados</button></div>
       <div id="lista-empresas" style="margin-top:14px;"></div>
     </div>
     <div class="card" id="card-cruzamento-empresas" style="display:none;">
@@ -2547,7 +2547,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.20-97';
+const APP_VERSION = 'v2026.10.21-99';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -4104,6 +4104,7 @@ document.addEventListener('input', e=>{ const el = e.target; if(el.classList && 
 document.addEventListener('change', e=>{ const el = e.target; if(el.classList && el.classList.contains('flt-frota')) renderListaVeiculos(); else if(el.classList && el.classList.contains('flt-user')) renderListaUsuarios(); });
 function limparFiltros(cls){ document.querySelectorAll('.'+cls).forEach(el=>{ el.value=''; }); (cls==='flt-frota'?renderListaVeiculos:renderListaUsuarios)(); }
 function renderListaVeiculos(){
+  try{ atualizarBotoesDuplicados(); }catch(_){}
   const box = document.getElementById('lista-veiculos');
   if(!box) return;
   populateCondutorSelect();
@@ -4434,7 +4435,7 @@ function checarRequisicaoLocal(equipamento, kmTxt, motoristaEmail){
   if(u && eq){
     const vinc = String(u.equipamento||'').split(',').map(x=>x.trim().toUpperCase()).filter(Boolean);
     if(vinc.length && vinc.indexOf(eq) === -1){
-      if((NIVEL_PAPEL[USUARIO_ATUAL.papel]||0) >= 4 || pode('lancamento_direto')) out.confirmar = (out.confirmar ? out.confirmar + '\n\n' : '') + `${eq} NÃO é um dos equipamentos vinculados a ${u.nome||u.email} (${vinc.join(', ')}).`, out.forcarEquip = true;
+      if((NIVEL_PAPEL[USUARIO_ATUAL.papel]||0) >= 3 || pode('lancamento_direto')) out.confirmar = (out.confirmar ? out.confirmar + '\n\n' : '') + `${eq} NÃO é um dos equipamentos vinculados a ${u.nome||u.email} (${vinc.join(', ')}).`, out.forcarEquip = true;
       else out.erro = `${eq} não é um dos equipamentos vinculados a ${u.nome||u.email} (${vinc.join(', ')}). Confere o equipamento ou peça pra um gestor liberar.`;
     }
   }
@@ -5086,6 +5087,7 @@ function initPostosTab(){
 let editandoEmpresaNome = null;
 
 function renderListaEmpresas(){
+  try{ atualizarBotoesDuplicados(); }catch(_){}
   const box = document.getElementById('lista-empresas');
   if(!box) return;
   populateEmpresaVinculadaSelect();
@@ -6649,7 +6651,12 @@ const PRODUTOS_COMBUSTIVEL = new Set(['DIESEL','ETANOL','GASOLINA','DIESEL S-10'
    Lista vazia = sem restrição (não impede nada). */
 function equipamentosPermitidosDoUsuario(){
   if(!USUARIO_ATUAL || (USUARIO_ATUAL.papel !== 'motorista') || !USUARIO_ATUAL.equipamento) return [];
-  return String(USUARIO_ATUAL.equipamento).split(',').map(s=>s.trim().toUpperCase()).filter(Boolean);
+  const lista = String(USUARIO_ATUAL.equipamento).split(',').map(s=>s.trim().toUpperCase()).filter(Boolean);
+  // requisição aberta emitida pra ele num outro carro também libera esse carro
+  const meu = String(USUARIO_ATUAL.email||'').toLowerCase();
+  (REQUISICOES_EMITIDAS||[]).forEach(r=>{ const e = String(r.equipamento||'').trim().toUpperCase();
+    if(e && String(r.status||'').toLowerCase()==='aberta' && String(r.motoristaEmail||'').toLowerCase()===meu && !lista.includes(e)) lista.push(e); });
+  return lista;
 }
 
 /* Maior Km/Hor já registrado pra um equipamento, olhando TODO o histórico
@@ -10677,6 +10684,73 @@ function abrirModalSimples(titulo, html){
   ov.addEventListener('click', e=>{ if(e.target === ov || e.target.closest('[data-fechar]')) ov.remove(); });
   document.body.appendChild(ov);
   return ov;
+}
+
+
+/* ---- cadastros duplicados: detectar e unir ---- */
+function _alnum(v){ return String(v||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+function _chaveEquip(v){ const m = _alnum(v).match(/^([A-Z]+)0*(\d+)$/); return m ? m[1]+String(parseInt(m[2],10)) : _alnum(v); }
+function _chaveEmpresaNome(n){ return String(n||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/\bS\s*\/\s*A\b/g,' ').replace(/[^A-Z0-9 ]/g,' ').split(/\s+/).filter(w=>w && !['LTDA','ME','EPP','SA','EIRELI','CIA','LT'].includes(w)).join(''); }
+function _agrupar(itens, chaves){
+  const pai = itens.map((_,i)=>i); const achar = i=>pai[i]===i?i:(pai[i]=achar(pai[i]));
+  const vistos = {};
+  itens.forEach((it,i)=>chaves(it).filter(Boolean).forEach(k=>{ if(k in vistos) pai[achar(i)] = achar(vistos[k]); else vistos[k] = i; }));
+  const g = {}; itens.forEach((it,i)=>{ (g[achar(i)] = g[achar(i)] || []).push(it); });
+  return Object.values(g).filter(l=>l.length>1);
+}
+function acharDuplicados(tipo){
+  if(tipo === 'veiculo'){
+    return _agrupar(VEICULOS, v=>[ 'E'+_chaveEquip(v.equipamento), _alnum(v.placa).length>=6 ? 'P'+_alnum(v.placa) : '', _alnum(v.serie).length>=8 ? 'S'+_alnum(v.serie) : '' ]);
+  }
+  return _agrupar(EMPRESAS, e=>[ 'N'+_chaveEmpresaNome(e.nome), String(e.cnpj||'').replace(/\D/g,'').length===14 ? 'C'+String(e.cnpj).replace(/\D/g,'') : '' ]);
+}
+function _qtdHistorico(tipo, it){
+  const campo = tipo==='veiculo' ? 'equipamento' : 'empresa'; const nome = String(tipo==='veiculo'?it.equipamento:it.nome).trim().toUpperCase();
+  return DB.filter(r=>String(r[campo]||'').trim().toUpperCase() === nome).length;
+}
+function abrirDuplicados(tipo){
+  const grupos = acharDuplicados(tipo);
+  const rotulo = tipo==='veiculo' ? 'veículos' : 'empresas';
+  const ov = abrirModalSimples(`🧬 Cadastros duplicados — ${rotulo}`, '');
+  const corpo = ov.querySelector('[data-corpo]');
+  const nomeDe = it=>tipo==='veiculo' ? it.equipamento : it.nome;
+  const desenhar = ()=>{
+    if(!grupos.length){ corpo.innerHTML = `<p class="helper">✅ Nenhum duplicado encontrado em ${rotulo}.</p>`; return; }
+    corpo.innerHTML = `<p class="helper">Encontrei <b>${grupos.length}</b> grupo(s) que parecem ser o mesmo cadastro (nome parecido, mesma placa/série ou mesmo CNPJ). Marque qual <b>fica</b>: o histórico dos outros passa para ele, os campos vazios dele são completados e os outros são excluídos.</p>` +
+      grupos.map((g,gi)=>{
+        const melhor = g.map(it=>({it, q:_qtdHistorico(tipo,it)})).sort((a,b)=>b.q-a.q)[0].it;
+        const obras = new Set(g.map(it=>String(it.obra||'422')));
+        return `<div class="card" style="margin:8px 0;padding:10px;border:1px solid #d8dee9;border-radius:8px;" data-g="${gi}">` +
+          g.map((it,ii)=>`<label style="display:flex;gap:8px;align-items:flex-start;padding:4px 0;"><input type="radio" name="dup-${gi}" value="${escapeHtml(nomeDe(it))}" ${it===melhor?'checked':''}>
+            <span><b>${escapeHtml(nomeDe(it))}</b> <span class="helper">· obra ${escapeHtml(String(it.obra||'422'))} · ${_qtdHistorico(tipo,it)} lançamento(s)${tipo==='veiculo' ? (it.placa?' · placa '+escapeHtml(it.placa):'')+(it.serie?' · série '+escapeHtml(it.serie):'')+(it.modelo?' · '+escapeHtml(it.modelo):'') : (it.cnpj?' · CNPJ '+escapeHtml(it.cnpj):'')}</span></span></label>`).join('') +
+          `${obras.size>1?'<div class="helper" style="color:#b45309;">⚠️ Estão em obras diferentes — o que ficar mantém a obra dele'+(tipo==='empresa'?' (as obras são somadas)':'')+'.</div>':''}
+          <div style="text-align:right;"><button type="button" class="btn" data-unir="${gi}">🧬 Unir este grupo</button></div></div>`;
+      }).join('');
+    corpo.querySelectorAll('[data-unir]').forEach(btn=>btn.addEventListener('click', async ()=>{
+      const gi = Number(btn.dataset.unir); const g = grupos[gi];
+      const manter = (corpo.querySelector(`input[name="dup-${gi}"]:checked`)||{}).value; if(!manter) return;
+      const remover = g.map(nomeDe).filter(n=>n!==manter);
+      if(!await confirmModal('Unir cadastros', `Manter ${manter} e excluir ${remover.join(', ')}? O histórico ${remover.length>1?'de todos eles':'dele'} passa para ${manter}. Isso não dá para desfazer.`)) return;
+      btn.disabled = true; btn.textContent = 'Unindo…';
+      try{
+        const json = await postarAcao({ action:'unificarCadastros', tipo, manter, remover, unirObras: tipo==='empresa' });
+        if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao unir.'); btn.disabled = false; btn.textContent = '🧬 Unir este grupo'; return; }
+        toast(json.mensagem);
+        grupos.splice(gi,1);
+        await pullFromSheetsSilencioso();
+        desenhar();
+      }catch(err){ console.error(err); toast('Erro de conexão ao unir.'); btn.disabled = false; btn.textContent = '🧬 Unir este grupo'; }
+    }));
+  };
+  desenhar();
+}
+function atualizarBotoesDuplicados(){
+  document.querySelectorAll('[data-dup]').forEach(b=>{
+    const t = b.dataset.dup; const n = (VEICULOS.length||EMPRESAS.length) ? acharDuplicados(t).length : 0;
+    b.style.display = pode('editar_cadastros') ? '' : 'none';
+    b.textContent = n ? `🧬 Duplicados (${n})` : '🧬 Duplicados';
+    if(!b._ligado){ b._ligado = true; b.addEventListener('click', ()=>abrirDuplicados(t)); }
+  });
 }
 
 /* ---- barra de seleção em lote (Frota) ---- */
