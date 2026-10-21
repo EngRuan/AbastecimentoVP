@@ -2547,7 +2547,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.21-99';
+const APP_VERSION = 'v2026.10.21-100';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -5786,7 +5786,7 @@ function pendEditHtml(p, np, rasc){
             </div>
             <div class="field" style="margin:0;">
               <label style="font-size:11px;">Posto</label>
-              <input type="text" class="pendente-edit" data-edit-posto=""${escapeHtml(p.id)}" value="${escapeHtml(rasc.posto !== undefined ? rasc.posto : (p.posto||''))}">
+              <input type="text" class="pendente-edit" data-edit-posto="${escapeHtml(p.id)}" value="${escapeHtml(rasc.posto !== undefined ? rasc.posto : (p.posto||''))}">
             </div>
             <div class="field" style="margin:0;">
               <label style="font-size:11px;">Quantidade</label>
@@ -5870,6 +5870,7 @@ function renderListaPendentes(){
           </div>
           <button class="btn secondary" data-gerar-req="${escapeHtml(p.id)}">🔢 Gerar requisição</button>
           <button class="btn" data-gerar-confirmar="${escapeHtml(p.id)}" title="Já tem a NF mãe? Gera a requisição e confirma de uma vez, sem passar pela 2ª aprovação.">⚡ Gerar e confirmar (já tenho a NF)</button>
+          <button class="btn secondary" data-salvar-edicao="${escapeHtml(p.id)}" title="Grava as correções acima sem confirmar — o lançamento continua na fila.">💾 Salvar edições</button>
           <button class="btn ghost" data-rejeitar="${escapeHtml(p.id)}">🗑️ Rejeitar</button>
         </div>
       </div>`;
@@ -5890,6 +5891,7 @@ function renderListaPendentes(){
             <div class="helper nf-total" data-nf-total="${escapeHtml(p.id)}" style="margin:3px 0 0;font-size:11.5px;"></div>
           </div>
           <button class="btn secondary" data-confirmar="${escapeHtml(p.id)}">✅ Confirmar e enviar</button>
+          <button class="btn secondary" data-salvar-edicao="${escapeHtml(p.id)}" title="Grava as correções acima sem confirmar — o lançamento continua na fila.">💾 Salvar edições</button>
           <button class="btn ghost" data-rejeitar="${escapeHtml(p.id)}">🗑️ Rejeitar</button>
         </div>
       </div>`;
@@ -5931,6 +5933,22 @@ function renderListaPendentes(){
         data: box.querySelector(`[data-edit-data="${CSS.escape(id)}"]`)?.value || '',
       };
       confirmarPendenteUI(id, nfInput ? nfInput.value.trim() : '', edicoes);
+    });
+  });
+  box.querySelectorAll('[data-salvar-edicao]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const id = btn.dataset.salvarEdicao;
+      const q = c=>box.querySelector(`[data-edit-${c}="${CSS.escape(id)}"]`)?.value || '';
+      const edicoes = { posto: q('posto').trim().toUpperCase(), quantidade: q('quantidade'), precoUnit: q('precounit'), precoTotal: q('precototal'), kmHor: q('kmhor'), data: q('data') };
+      btn.disabled = true; const t = btn.textContent; btn.textContent = 'Salvando…';
+      try{
+        const json = await postarAcao({ action:'salvarEdicaoPendente', id, edicoes });
+        if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao salvar.'); btn.disabled = false; btn.textContent = t; return; }
+        PENDENTES = json.pendentes || PENDENTES;
+        delete PEND_RASCUNHO[id];
+        renderListaPendentes();
+        toast('💾 Edições salvas.');
+      }catch(err){ console.error(err); toast('Erro de conexão ao salvar.'); btn.disabled = false; btn.textContent = t; }
     });
   });
   box.querySelectorAll('[data-rejeitar]').forEach(btn=>{
