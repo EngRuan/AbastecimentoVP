@@ -2547,7 +2547,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.21-101';
+const APP_VERSION = 'v2026.10.21-104';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -5755,6 +5755,7 @@ function atualizarCardPendentes(){
 }
 /* Rascunho do que foi digitado nos pendentes — sobrevive aos re-renders (busca, gerar requisição, atualizar). */
 let PEND_RASCUNHO = {};
+let HISTORICO_COMPLETO = false; // true depois de "carregar histórico completo" (vale até recarregar a página)
 function capturarRascunhoPendentes(){
   const box = document.getElementById('lista-pendentes');
   if(!box) return;
@@ -6497,6 +6498,7 @@ async function carregarHistoricoCompletoUI(){
     const json = await parseJsonResponse(resp);
     if(json.status !== 'ok' || !Array.isArray(json.dados)){ toast(json.mensagem || 'Falha ao carregar histórico.'); return; }
     DB = json.dados.map(sanitizeRecord);
+    HISTORICO_COMPLETO = true; // as atualizações automáticas passam a trazer tudo também
     PERIODO_LIMITADO = !!json.periodoLimitado;
     AUDITORIA = json.auditoria || AUDITORIA;
     recalcularTodasMedias();
@@ -6534,13 +6536,35 @@ async function atualizarTudoUI(){
   }
 }
 
+/* A atualização automática re-desenha listas e selects; sem isso o que a pessoa
+   já escolheu/digitou num formulário (ex.: motorista e equipamento da requisição)
+   voltava para "Selecione". Guarda os campos antes e devolve depois. */
+function snapshotCampos(){
+  const m = {};
+  document.querySelectorAll('select[id], input[id], textarea[id]').forEach(el=>{
+    if(el.type === 'file' || el.type === 'button') return;
+    m[el.id] = el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value;
+  });
+  return m;
+}
+function restaurarCampos(m){
+  Object.keys(m).forEach(id=>{
+    const el = document.getElementById(id); if(!el || el.type === 'file') return;
+    if(el.type === 'checkbox' || el.type === 'radio'){ if(el.checked !== m[id]) el.checked = m[id]; return; }
+    if(el.value === m[id] || m[id] === '') return;
+    if(el.tagName === 'SELECT'){ if([...el.options].some(o=>o.value === m[id])) el.value = m[id]; }
+    else el.value = m[id];
+  });
+}
+
 async function pullFromSheetsSilencioso(){
   if(!SYNC_URL || !ID_TOKEN) return;
   _ultimoPull = Date.now();
   try{
-    const resp = await fetch(`${SYNC_URL}?action=pull&idToken=${encodeURIComponent(ID_TOKEN)}`);
+    const resp = await fetch(`${SYNC_URL}?action=pull&idToken=${encodeURIComponent(ID_TOKEN)}${HISTORICO_COMPLETO ? '&completo=1' : ''}`);
     const json = await parseJsonResponse(resp);
     if(json.status !== 'ok' || !Array.isArray(json.dados)) return;
+    const _snapCampos = snapshotCampos();
     DB = json.dados.map(sanitizeRecord);
     PERIODO_LIMITADO = !!json.periodoLimitado;
     SOLICITACOES = json.solicitacoes || [];
@@ -6586,6 +6610,7 @@ async function pullFromSheetsSilencioso(){
     populateReqSelects();
     renderListaRequisicoesAdmin();
     renderSelecaoRequisicaoMotorista();
+    restaurarCampos(_snapCampos);
   }catch(err){ console.warn('Falha ao atualizar em segundo plano:', err); }
 }
 
@@ -6596,9 +6621,26 @@ async function pullFromSheetsSilencioso(){
 let _ultimoPull = 0, _avisoDesatualizadoEm = 0;
 const RE_DESATUALIZADO = /n[ãa]o encontrad|n[ãa]o existe|j[áa] (foi|est[áa]|havia|existe)|j[áa] foi (usad|cancel|aprov|rejeit|descont|fecha)|desatualiz|alterad[oa] por|n[ãa]o est[áa] mais/i;
 function _usuarioDigitando(){ const a = document.activeElement; return !!a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && !a.readOnly && a.type !== 'checkbox'; }
+let _ultimaInteracao = 0, _atualizacaoPendente = false;
+['keydown','input','change','pointerdown'].forEach(ev=>document.addEventListener(ev, ()=>{ _ultimaInteracao = Date.now(); }, true));
+function _modalAberto(){ return !!document.querySelector('#modal-import.show, .modal-backdrop.show, [data-corpo]'); }
+/* Ocupado = a pessoa mexeu em algo há pouco (digitando, escolhendo, editando). Nesse caso a
+   atualização automática NÃO redesenha nada: só avisa num botãozinho, e ela atualiza quando quiser. */
+function _ocupado(){ return Date.now() - _ultimaInteracao < 60*1000 || _usuarioDigitando() || _modalAberto(); }
+function _avisoDadosNovos(mostrar){
+  let b = document.getElementById('aviso-dados-novos');
+  if(!mostrar){ if(b) b.remove(); return; }
+  if(b) return;
+  b = document.createElement('button'); b.id = 'aviso-dados-novos'; b.type = 'button'; b.className = 'btn';
+  b.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:9000;box-shadow:0 4px 16px rgba(0,0,0,.3);';
+  b.textContent = '🔄 Há dados novos de outro usuário — clique para atualizar';
+  b.onclick = async ()=>{ _atualizacaoPendente = false; _avisoDadosNovos(false); await pullFromSheetsSilencioso(); toast('Dados atualizados.'); };
+  document.body.appendChild(b);
+}
 function atualizarSeVelho(maxMs){
   if(!SYNC_URL || !ID_TOKEN || document.visibilityState !== 'visible') return;
-  if(Date.now() - _ultimoPull < maxMs || _usuarioDigitando()) return;
+  if(Date.now() - _ultimoPull < maxMs) return;
+  if(_ocupado()){ _atualizacaoPendente = true; return; }
   pullFromSheetsSilencioso();
 }
 function initSincronizacaoMultiusuario(){
@@ -6608,11 +6650,15 @@ function initSincronizacaoMultiusuario(){
   // "Push" por consulta leve: pergunta ao servidor se alguém salvou algo; se sim, puxa na hora.
   let ultimaVersaoServidor = null;
   setInterval(async ()=>{
-    if(!SYNC_URL || !ID_TOKEN || document.visibilityState !== 'visible' || _usuarioDigitando()) return;
+    if(!SYNC_URL || !ID_TOKEN || document.visibilityState !== 'visible') return;
     try{
+      if(!_ocupado() && _atualizacaoPendente && Date.now() - _ultimoPull > 3000){ _atualizacaoPendente = false; _avisoDadosNovos(false); await pullFromSheetsSilencioso(); return; }
       const r = await fetch(`${SYNC_URL}?action=mudancas`); const j = await r.json();
       if(j && j.status === 'ok'){
-        if(ultimaVersaoServidor !== null && j.v !== ultimaVersaoServidor && Date.now() - _ultimoPull > 3000){ await pullFromSheetsSilencioso(); }
+        if(ultimaVersaoServidor !== null && j.v !== ultimaVersaoServidor && Date.now() - _ultimoPull > 3000){
+          if(_ocupado()){ _atualizacaoPendente = true; _avisoDadosNovos(true); }
+          else await pullFromSheetsSilencioso();
+        }
         ultimaVersaoServidor = j.v;
       }
     }catch(_){}
@@ -9770,6 +9816,7 @@ async function pullFromSheets(){
     const resp = await fetch(`${SYNC_URL}?action=pull&idToken=${encodeURIComponent(ID_TOKEN)}&completo=1`);
     const json = await parseJsonResponse(resp);
     if(json.status !== 'ok' || !Array.isArray(json.dados)) throw new Error(json.mensagem || 'resposta inesperada do servidor');
+    HISTORICO_COMPLETO = true;
     const ok = await confirmModal('Puxar dados do Sheets', `Foram encontrados ${json.dados.length} registros no Sheets. Isso vai SUBSTITUIR os ${DB.length} registros locais. Continuar?`);
     if(!ok){ logSync('Importação cancelada pelo usuário.'); return; }
     DB = json.dados.map(sanitizeRecord);
