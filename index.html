@@ -2547,7 +2547,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.21-104';
+const APP_VERSION = 'v2026.10.23-105';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -5755,6 +5755,7 @@ function atualizarCardPendentes(){
 }
 /* Rascunho do que foi digitado nos pendentes — sobrevive aos re-renders (busca, gerar requisição, atualizar). */
 let PEND_RASCUNHO = {};
+let _pullSeq = 0;
 let HISTORICO_COMPLETO = false; // true depois de "carregar histórico completo" (vale até recarregar a página)
 function capturarRascunhoPendentes(){
   const box = document.getElementById('lista-pendentes');
@@ -6560,10 +6561,14 @@ function restaurarCampos(m){
 async function pullFromSheetsSilencioso(){
   if(!SYNC_URL || !ID_TOKEN) return;
   _ultimoPull = Date.now();
+  const _meuSeq = ++_pullSeq, _obraNoPedido = OBRA_ATIVA;
   try{
     const resp = await fetch(`${SYNC_URL}?action=pull&idToken=${encodeURIComponent(ID_TOKEN)}${HISTORICO_COMPLETO ? '&completo=1' : ''}`);
     const json = await parseJsonResponse(resp);
     if(json.status !== 'ok' || !Array.isArray(json.dados)) return;
+    // resposta velha (pedida antes de trocar de obra, ou ultrapassada por uma mais nova): descarta,
+    // senão os dados da outra obra voltam a aparecer depois de você voltar pra sua
+    if(_meuSeq !== _pullSeq || OBRA_ATIVA !== _obraNoPedido) return;
     const _snapCampos = snapshotCampos();
     DB = json.dados.map(sanitizeRecord);
     PERIODO_LIMITADO = !!json.periodoLimitado;
