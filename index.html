@@ -2547,7 +2547,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.23-105';
+const APP_VERSION = 'v2026.10.23-106';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -3406,7 +3406,7 @@ function initSeletorObra(){
   sel.addEventListener('change', async ()=>{
     OBRA_ATIVA = sel.value;
     try{ localStorage.setItem(OBRA_ATIVA_KEY, OBRA_ATIVA); }catch(e){}
-    await atualizarTudoUI();
+    try{ await pullFromSheetsSilencioso(); toast('Dados atualizados.'); }catch(err){ toast('Falha ao atualizar: ' + err.message); }
     resetFormVeiculo(); resetFormPosto(); resetFormEmpresa(); resetFormUsuario();
   });
 }
@@ -6568,7 +6568,7 @@ async function pullFromSheetsSilencioso(){
     if(json.status !== 'ok' || !Array.isArray(json.dados)) return;
     // resposta velha (pedida antes de trocar de obra, ou ultrapassada por uma mais nova): descarta,
     // senão os dados da outra obra voltam a aparecer depois de você voltar pra sua
-    if(_meuSeq !== _pullSeq || OBRA_ATIVA !== _obraNoPedido) return;
+    if(OBRA_ATIVA !== _obraNoPedido){ return pullFromSheetsSilencioso(); } // trocou de obra no meio: refaz já pra obra atual
     const _snapCampos = snapshotCampos();
     DB = json.dados.map(sanitizeRecord);
     PERIODO_LIMITADO = !!json.periodoLimitado;
