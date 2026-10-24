@@ -2557,7 +2557,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.24-109';
+const APP_VERSION = 'v2026.10.24-110';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -6388,14 +6388,15 @@ function abrirLancamentoManualDaNota(idx){
     <p class="helper">Dados lidos de <b>${escapeHtml(n.arquivo)}</b>. Confira e ajuste — vai para <b>Aprovações</b>, como um lançamento digitado.${eq ? '' : ' <b style="color:var(--bad);">Não achei o equipamento pela placa'+(d.placa?' ('+escapeHtml(d.placa)+')':'')+' — informe abaixo.</b>'}</p>
     <div class="form-grid">
       <div class="field"><label>Data</label><input type="date" id="nm-data" value="${escapeHtml(d.data || todayStr())}"></div>
-      <div class="field"><label>Equipamento*</label><input type="text" id="nm-equip" value="${escapeHtml(eq)}" placeholder="Ex.: VP0555"></div>
+      <div class="field"><label>Equipamento*</label><input type="text" id="nm-equip" list="nm-equip-lista" value="${escapeHtml(eq)}" placeholder="Ex.: VP0555"><datalist id="nm-equip-lista">${VEICULOS.map(v=>`<option value="${escapeHtml(v.equipamento)}">${escapeHtml(v.placa||'')}</option>`).join('')}</datalist></div>
       <div class="field"><label>Motorista</label><input type="text" id="nm-mot" value="${escapeHtml(d.motorista || '')}"></div>
+      <div class="field"><label>Empresa</label><input type="text" id="nm-emp" list="nm-emp-lista" value="TRIPOLONI"><datalist id="nm-emp-lista">${[...new Set(['TRIPOLONI'].concat(EMPRESAS.map(e=>e.nome)))].map(e=>`<option value="${escapeHtml(e)}"></option>`).join('')}</datalist></div>
       <div class="field"><label>Posto</label><input type="text" id="nm-posto" value="${escapeHtml(d.posto || '')}"></div>
       <div class="field"><label>Produto</label><select id="nm-prod">${prods.map(x=>`<option ${x===d.produto?'selected':''}>${x}</option>`).join('')}</select></div>
       <div class="field"><label>Litros</label><input type="text" id="nm-qtd" value="${d.quantidade != null ? numParaInput(d.quantidade) : ''}"></div>
       <div class="field"><label>Preço unit.</label><input type="text" id="nm-pu" value="${d.precoUnit != null ? numParaInput(d.precoUnit) : ''}"></div>
       <div class="field"><label>Valor total</label><input type="text" id="nm-tot" value="${d.precoTotal != null ? numParaInput(d.precoTotal) : ''}"></div>
-      <div class="field"><label>Km/Hor.</label><input type="text" id="nm-km" value="${d.km != null ? d.km : ''}"></div>
+      <div class="field"><label>Km/Hor.</label><input type="text" id="nm-km" value="${(d.km != null && d.km < 5000000) ? d.km : ''}" placeholder="${d.km >= 5000000 ? 'Km da nota inválido ('+d.km+') — digite' : ''}"></div>
       <div class="field"><label>Nº do cupom${d.cupomOrigem ? ' <span class="helper">(lido de: '+escapeHtml(d.cupomOrigem)+')</span>' : ''}</label><input type="text" id="nm-cupom" value="${escapeHtml(d.cupom || d.nf || '')}"></div>
       <div class="field"><label>NF mãe (opcional)</label><input type="text" id="nm-nf" value=""></div>
       <div class="field"><label>Requisição (opcional)</label><input type="text" id="nm-req" value="${escapeHtml(d.requisicao || '')}"></div>
@@ -6414,7 +6415,7 @@ function abrirLancamentoManualDaNota(idx){
     const msgKm = (km != null && !isNaN(km)) ? validarKmManual(equip, data, km) : null;
     const dados = { manual:true, paraAutorizacao:!!msgKm, motivo: msgKm ? ('Km irregular (nota PDF) — ' + msgKm) : null, data, equipamento:equip, produto:g('nm-prod'),
       posto:g('nm-posto').toUpperCase() || null, quantidade:q, precoUnit:pu, precoTotal:tot, kmHor:(km != null && !isNaN(km)) ? km : null, nfSugerido: nf || null,
-      cupom: g('nm-cupom') || null, requisicao: g('nm-req') || null, motorista: g('nm-mot').toUpperCase() || null, empresa:null, fotoUrlCupom:null, fotoUrlRequisicao:null, obra: obraParaNovo(equip) };
+      cupom: g('nm-cupom') || null, requisicao: g('nm-req') || null, motorista: g('nm-mot').toUpperCase() || null, empresa: g('nm-emp').toUpperCase() || null, fotoUrlCupom:null, fotoUrlRequisicao:null, obra: obraParaNovo(equip) };
     const btn = ov.querySelector('#nm-ok'); btn.disabled = true; btn.textContent = 'Enviando…';
     const item = outboxAdd('manual', dados, equip);
     const rs = await outboxEnviar(item);
