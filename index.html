@@ -2471,6 +2471,16 @@ body.preview-motorista #view-lancamentos::before{
       <div id="nota-pdf-status" class="helper" style="margin:6px 0 0;"></div>
       <div id="nota-pdf-resultado" style="margin-top:10px;"></div>
     </div>
+    <div class="card" id="card-demonstrativo">
+      <h2>📑 Nota fiscal completa do posto (demonstrativo de vendas)</h2>
+      <p class="helper" style="margin-top:0;">Joga aqui o PDF <b>"Demonstrativo de vendas realizada no período"</b> que o posto manda junto com a NF mãe. O app lê a lista de cupons e <b>cruza cada um pelo número do cupom</b> com os lançamentos: mostra o que casou, o que está com valor diferente, o que o posto cobrou e <b>não tem lançamento</b>, e o que você lançou e o posto <b>não listou</b>. Depois você aplica a NF mãe nos lançamentos que casaram.</p>
+      <label class="nota-zona" id="demo-zona" style="display:block;">
+        📎 Clique pra escolher o PDF da nota completa (ou arraste aqui)
+        <input type="file" id="demo-input" accept="application/pdf,.pdf" multiple style="display:none;">
+      </label>
+      <div id="demo-status" class="helper" style="margin:6px 0 0;"></div>
+      <div id="demo-resultado" style="margin-top:10px;"></div>
+    </div>
     <div class="card" id="card-pendentes">
       <h2>📥 Lançamentos aguardando revisão</h2>
       <div id="lista-pendentes"></div>
@@ -2547,7 +2557,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.23-106';
+const APP_VERSION = 'v2026.10.24-109';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -6047,6 +6057,38 @@ async function textoDoPdf(arquivo){
   return texto;
 }
 
+
+/* Número do CUPOM: tenta vários lugares, em ordem (if / else if / else):
+   1) chave de acesso de 44 dígitos (NFC-e/CF-e) — o nº da nota são os dígitos 26 a 34, é o mais confiável;
+   2) rótulos impressos: "Doc. Número", "NFC-e nº", "Extrato nº", "CF-e", "COO", "Cupom", "Número".
+   Se a chave e o rótulo discordarem, vale a chave. */
+function extrairNumeroCupom(texto){
+  const t = String(texto || '');
+  let chave = null;
+  const mc = t.match(/(?:\d[\s.]?){44}/);
+  if(mc){
+    const dig = mc[0].replace(/\D/g,'');
+    if(dig.length === 44 && ['55','65','59'].includes(dig.slice(20,22))) chave = dig;
+  }
+  const rotulos = [
+    ['Doc. Número', /Doc\.?\s*N[uú]mero\s*:?\s*(\d{3,9})/i],
+    ['NFC-e', /NFC[\s\-]?e[^\n\d]{0,25}?N[º°o.]*\s*:?\s*(\d{3,9})/i],
+    ['Extrato', /Extrato\s*(?:N[º°o]\.?|N[uú]mero)?\s*:?\s*(\d{3,9})/i],
+    ['CF-e', /CF[\s\-]?e[^\n\d]{0,30}?N[º°o.]*\s*:?\s*(\d{3,9})/i],
+    ['COO', /\bCOO\s*:?\s*(\d{3,9})/i],
+    ['Cupom', /Cupom(?:\s*Fiscal)?\s*(?:N[º°o]\.?|N[uú]mero)?\s*:?\s*(\d{3,9})/i],
+    ['Número', /N[uú]mero\s*:?\s*(\d{3,9})/i],
+  ];
+  let porRotulo = null, rotuloUsado = null;
+  for(const [nome, re] of rotulos){ const m = t.match(re); if(m){ porRotulo = String(parseInt(m[1],10)); rotuloUsado = nome; break; } }
+  if(chave){
+    const nChave = String(parseInt(chave.slice(25,34),10));
+    return { numero: nChave, origem: 'chave de acesso', chave, divergente: porRotulo && porRotulo !== nChave ? porRotulo : null };
+  }
+  if(porRotulo) return { numero: porRotulo, origem: rotuloUsado, chave: null, divergente: null };
+  return null;
+}
+
 /* Tira os dados do texto da nota (extrato/cupom "a prazo" do posto). */
 function extrairDadosNotaPdf(texto){
   const linhas = String(texto || '').replace(/\r/g,'').split('\n').map(l=>l.replace(/\s+/g,' ').trim()).filter(Boolean);
@@ -6082,6 +6124,13 @@ function extrairDadosNotaPdf(texto){
     m = plano.match(/Req(?:uisi[cç][aã]o)?\.?\s*:?\s*(\d{3,})/i);
     if(m) out.requisicao = m[1];
   }
+  if(!out.requisicao){
+    m = plano.match(/Part\.?\s*:?\s*(\d{3,8})(?![\d,.\-\/])/i);   // modelo "Placa:… Km:… Part: 71810" (o nº depois de Part é a requisição)
+    if(m) out.requisicao = m[1];
+  }
+  const rcp = extrairNumeroCupom(plano);
+  out.cupom = rcp ? rcp.numero : (out.nf || null);
+  out.cupomOrigem = rcp ? rcp.origem : (out.nf ? 'Doc. Número' : null);
   m = plano.match(/Km\s*:?\s*(\d+)/i);
   if(m) out.km = parseInt(m[1], 10);
   m = plano.match(/Motorista\s*:\s*([^\n]+)/i);
@@ -6153,6 +6202,7 @@ async function lerNotasPdfUI(arquivos){
       status.textContent = `⏳ Lendo ${f.name}...`;
       const texto = await textoDoPdf(f);
       if(!texto.trim()){ toast(`${f.name}: o PDF não tem texto (parece escaneado) — tira print/foto e usa a leitura de foto.`); continue; }
+      if(ehDemonstrativoVendas(texto)){ const dem = parseDemonstrativoVendas(texto); if(dem.cupons.length){ DEMONSTRATIVOS_LIDOS = DEMONSTRATIVOS_LIDOS.filter(d=>!(d.dem.nf === dem.nf && d.dem.posto === dem.posto)); DEMONSTRATIVOS_LIDOS.unshift({ arquivo: f.name, dem }); renderDemonstrativos(); toast(`${f.name}: é a nota completa (demonstrativo) — conferência na zona "Nota fiscal completa" logo abaixo.`); continue; } }
       const dados = extrairDadosNotaPdf(texto);
       NOTAS_PDF_LIDAS.unshift({ arquivo: f.name, dados, cruz: cruzarNotaComSistema(dados), aplicada: false });
     }catch(err){
@@ -6257,6 +6307,9 @@ function renderNotasPdf(){
     } else if(!c.avisos.length || c.reqEmitida){
       acao = `<div class="helper" style="margin-top:8px;">Nenhum lançamento pendente casou com essa nota ainda. Se o motorista ainda não lançou, depois de lançar é só jogar o PDF de novo.</div>`;
     }
+    if(!n.aplicada && !c.candidatos.length && pode('lancamento_manual') && d.quantidade && d.precoTotal){
+      acao += `<div class="btn-row" style="margin-top:8px;"><button type="button" class="btn" data-nota-manual="${i}" title="Cria um lançamento manual (vai para Aprovações) já com os dados lidos da nota — você confere e ajusta antes de enviar.">✍️ Criar lançamento manual com os dados da nota</button></div>`;
+    }
     const rDiv = registroComDataDivergente(n);
     if(rDiv) acao += `<div class="btn-row" style="margin-top:8px;"><button type="button" class="btn secondary" data-nota-datafix="${i}">📅 Corrigir data do lançamento gravado (${escapeHtml(rDiv.equipamento||'—')}): ${fmtDate(rDiv.data)} → ${fmtDate(d.data)}</button></div>`;
     return `<div class="aprov-item" style="flex-direction:column;align-items:stretch;gap:2px;">
@@ -6280,13 +6333,15 @@ function renderNotasPdf(){
   box.querySelectorAll('[data-nota-datafix-todas]').forEach(b=>b.addEventListener('click', ()=>corrigirDatasPelasNotas(idxDiverg)));
   box.querySelectorAll('[data-nota-aplicar]').forEach(b=>b.addEventListener('click', ()=>aplicarNotaPdf(parseInt(b.dataset.notaAplicar,10))));
   box.querySelectorAll('[data-nota-criar]').forEach(b=>b.addEventListener('click', ()=>criarPendenteDaNota(parseInt(b.dataset.notaCriar,10))));
+  box.querySelectorAll('[data-nota-manual]').forEach(b=>b.addEventListener('click', ()=>abrirLancamentoManualDaNota(parseInt(b.dataset.notaManual,10))));
   box.querySelectorAll('[data-nota-remover]').forEach(b=>b.addEventListener('click', ()=>{ NOTAS_PDF_LIDAS.splice(parseInt(b.dataset.notaRemover,10),1); renderNotasPdf(); }));
 }
 
 function destacarPendente(id){
   renderListaPendentes();
   const el = document.querySelector(`#lista-pendentes .aprov-item[data-id="${CSS.escape(String(id))}"]`);
-  if(el){ el.classList.add('nota-destaque'); el.scrollIntoView({ behavior:'smooth', block:'center' }); }
+  // só destaca (sem rolar a tela): quem está passando vários PDFs em sequência não pode ser jogado lá pra baixo a cada um
+  if(el){ el.classList.add('nota-destaque'); }
 }
 
 async function aplicarNotaPdf(idx){
@@ -6314,6 +6369,66 @@ async function aplicarNotaPdf(idx){
   renderNotasPdf();
   destacarPendente(p.id);
   toast('Nota aplicada: requisição e dados preenchidos — confere e confirma.');
+}
+
+
+/* Nota PDF SEM requisição: cria um lançamento manual (cai em Aprovações) com os dados lidos da nota. */
+function equipamentoDaNota(d){
+  const fonte = VEICULOS.length ? VEICULOS : MAPA_PLACAS;
+  if(d.placa){ const v = fonte.find(x=>x.placa && normPlaca(x.placa) === normPlaca(d.placa)); if(v) return v.equipamento; }
+  const toks = String(d.texto||'').toUpperCase().match(/\b[A-Z]{2,4}\s?\d{2,5}\b/g) || [];
+  for(const t of toks){ const v = VEICULOS.find(x=>_chaveEquip(x.equipamento) === _chaveEquip(t)); if(v) return v.equipamento; }
+  return '';
+}
+function abrirLancamentoManualDaNota(idx){
+  const n = NOTAS_PDF_LIDAS[idx]; if(!n) return;
+  const d = n.dados; const eq = equipamentoDaNota(d);
+  const prods = ['DIESEL','DIESEL S-10','DIESEL S-500','ETANOL','GASOLINA','ARLA 32','ADITIVO','LUBRIFICANTE','LUBRAX TOP','OLEO SHELL HELIX','OUTRO'];
+  const ov = abrirModalSimples('✍️ Lançamento manual a partir da nota', `
+    <p class="helper">Dados lidos de <b>${escapeHtml(n.arquivo)}</b>. Confira e ajuste — vai para <b>Aprovações</b>, como um lançamento digitado.${eq ? '' : ' <b style="color:var(--bad);">Não achei o equipamento pela placa'+(d.placa?' ('+escapeHtml(d.placa)+')':'')+' — informe abaixo.</b>'}</p>
+    <div class="form-grid">
+      <div class="field"><label>Data</label><input type="date" id="nm-data" value="${escapeHtml(d.data || todayStr())}"></div>
+      <div class="field"><label>Equipamento*</label><input type="text" id="nm-equip" value="${escapeHtml(eq)}" placeholder="Ex.: VP0555"></div>
+      <div class="field"><label>Motorista</label><input type="text" id="nm-mot" value="${escapeHtml(d.motorista || '')}"></div>
+      <div class="field"><label>Posto</label><input type="text" id="nm-posto" value="${escapeHtml(d.posto || '')}"></div>
+      <div class="field"><label>Produto</label><select id="nm-prod">${prods.map(x=>`<option ${x===d.produto?'selected':''}>${x}</option>`).join('')}</select></div>
+      <div class="field"><label>Litros</label><input type="text" id="nm-qtd" value="${d.quantidade != null ? numParaInput(d.quantidade) : ''}"></div>
+      <div class="field"><label>Preço unit.</label><input type="text" id="nm-pu" value="${d.precoUnit != null ? numParaInput(d.precoUnit) : ''}"></div>
+      <div class="field"><label>Valor total</label><input type="text" id="nm-tot" value="${d.precoTotal != null ? numParaInput(d.precoTotal) : ''}"></div>
+      <div class="field"><label>Km/Hor.</label><input type="text" id="nm-km" value="${d.km != null ? d.km : ''}"></div>
+      <div class="field"><label>Nº do cupom${d.cupomOrigem ? ' <span class="helper">(lido de: '+escapeHtml(d.cupomOrigem)+')</span>' : ''}</label><input type="text" id="nm-cupom" value="${escapeHtml(d.cupom || d.nf || '')}"></div>
+      <div class="field"><label>NF mãe (opcional)</label><input type="text" id="nm-nf" value=""></div>
+      <div class="field"><label>Requisição (opcional)</label><input type="text" id="nm-req" value="${escapeHtml(d.requisicao || '')}"></div>
+    </div>
+    <div class="btn-row"><button type="button" class="btn" id="nm-ok">✅ Enviar para Aprovações</button><button type="button" class="btn ghost" data-fechar>Cancelar</button></div>`);
+  ov.querySelector('#nm-ok').onclick = async ()=>{
+    const g = id=>ov.querySelector('#'+id).value.trim();
+    const equip = g('nm-equip').toUpperCase(), data = g('nm-data');
+    const q = numBR(g('nm-qtd')); let tot = numBR(g('nm-tot')); let pu = numBR(g('nm-pu'));
+    if(!equip || !data){ toast('Informe a data e o equipamento.'); return; }
+    if(!(q>0)){ toast('Informe os litros.'); return; }
+    if(!(tot>0) && !(pu>0)){ toast('Informe o valor total ou o preço unitário.'); return; }
+    if(!(tot>0)) tot = Math.round(q*pu*100)/100; if(!(pu>0)) pu = Math.round(tot/q*1000)/1000;
+    const nf = g('nm-nf'); if(nf && nfFechadaCli(nf)){ toast(`🔒 A NF ${nf} está fechada.`); return; }
+    const km = g('nm-km') ? numBR(g('nm-km')) : null;
+    const msgKm = (km != null && !isNaN(km)) ? validarKmManual(equip, data, km) : null;
+    const dados = { manual:true, paraAutorizacao:!!msgKm, motivo: msgKm ? ('Km irregular (nota PDF) — ' + msgKm) : null, data, equipamento:equip, produto:g('nm-prod'),
+      posto:g('nm-posto').toUpperCase() || null, quantidade:q, precoUnit:pu, precoTotal:tot, kmHor:(km != null && !isNaN(km)) ? km : null, nfSugerido: nf || null,
+      cupom: g('nm-cupom') || null, requisicao: g('nm-req') || null, motorista: g('nm-mot').toUpperCase() || null, empresa:null, fotoUrlCupom:null, fotoUrlRequisicao:null, obra: obraParaNovo(equip) };
+    const btn = ov.querySelector('#nm-ok'); btn.disabled = true; btn.textContent = 'Enviando…';
+    const item = outboxAdd('manual', dados, equip);
+    const rs = await outboxEnviar(item);
+    if(rs.ok){
+      n.aplicada = true; ov.remove(); renderNotasPdf();
+      try{ await pullFromSheetsSilencioso(); }catch(e){}
+      toast(`✅ ${equip} enviado para Aprovações${msgKm ? ' (Km irregular — vai para autorização)' : ''}.`);
+    } else if(rs.motivo === 'rejeitado'){
+      outboxRemove(item.oid, false); toast('❌ ' + (rs.msg || 'Recusado pelo servidor.')); btn.disabled = false; btn.textContent = '✅ Enviar para Aprovações';
+    } else {
+      n.aplicada = true; ov.remove(); renderNotasPdf();
+      toast('💾 Salvo neste computador, mas ainda NÃO enviado (' + outboxMotivoTexto(rs.motivo) + ') — tenta de novo sozinho.');
+    }
+  };
 }
 
 async function criarPendenteDaNota(idx){
@@ -6358,6 +6473,165 @@ function initCardsColapsaveis(){
       try{ localStorage.setItem('cards_colapsados', JSON.stringify(salvo)); }catch(e){}
     });
   });
+}
+
+
+/* ---------------------------------------------------------------------
+   NOTA FISCAL COMPLETA ("Demonstrativo de vendas realizada no período"):
+   o posto manda UMA nota (NF mãe) com a lista de todos os cupons. Aqui a
+   gente lê o PDF e cruza cada cupom (pelo NÚMERO DO CUPOM) com os lançamentos.
+--------------------------------------------------------------------- */
+let DEMONSTRATIVOS_LIDOS = [];
+function ehDemonstrativoVendas(texto){ return /DEMONSTRATIVO\s+DE\s+VENDAS/i.test(String(texto||'')) && /REFERENTE\s+NOTA\s+FISCAL/i.test(String(texto||'')); }
+function parseDemonstrativoVendas(texto){
+  const linhas = String(texto||'').replace(/\r/g,'').split('\n').map(l=>l.replace(/\s+/g,' ').trim()).filter(Boolean);
+  const plano = linhas.join('\n');
+  const out = { nf:null, posto:null, cnpj:null, adquirente:null, cupons:[] };
+  let m = plano.match(/REFERENTE\s+NOTA\s+FISCAL\s+N[ºo°]?\s*:?\s*(\d+)/i); if(m) out.nf = String(parseInt(m[1],10));
+  m = plano.match(/RAZ[AÃ]O SOCIAL\s*:\s*([^\n]+?)(?:\s+ENDERE|\n|$)/i); if(m) out.posto = m[1].trim();
+  m = plano.match(/CNPJ\s*:\s*([\d.\/\-]+)/i); if(m) out.cnpj = m[1];
+  m = plano.match(/ADQUIR(?:I|E)NTE\s*:\s*([^\n]+?)(?:\s+ENDERE|\n|$)/i); if(m) out.adquirente = m[1].trim();
+  const vistos = new Set();
+  linhas.forEach(l=>{
+    const r = l.match(/^(\d{2})\/(\d{2})\/(\d{2,4})\s+(\d{3,9})\s+(\d{1,3}(?:\.\d{3})*,\d{2})\b(.*)$/);
+    if(!r) return;
+    const num = String(parseInt(r[4],10)); if(vistos.has(num)) return; vistos.add(num);
+    const ano = r[3].length === 2 ? '20' + r[3] : r[3];
+    const resto = r[6] || ''; const ch = resto.match(/\d{44}/);
+    const pl = resto.replace(/\d{44}/,'').match(/\b[A-Z]{3}-?\d[A-Z0-9]\d{2}\b/);
+    out.cupons.push({ data: `${ano}-${r[2]}-${r[1]}`, numero: num, valor: numBR(r[5]), chave: ch ? ch[0] : null, placa: pl ? pl[0] : '' });
+  });
+  return out;
+}
+function _normTxt(v){ return String(v||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z0-9 ]/g,' ').replace(/\s+/g,' ').trim(); }
+function cruzarDemonstrativo(dem){
+  const idx = (lista, campo)=>{ const m = new Map(); (lista||[]).forEach(r=>{ const c = r[campo]; if(c != null && String(c).trim() !== ''){ const k = normReqNum(c); if(!m.has(k)) m.set(k, r); } }); return m; };
+  const porCupomDB = idx(DB, 'cupom'), porCupomPend = idx(PENDENTES, 'cupom');
+  const nfMae = dem.nf;
+  const linhas = dem.cupons.map(c=>{
+    const k = normReqNum(c.numero);
+    const r = porCupomDB.get(k), p = r ? null : porCupomPend.get(k);
+    const x = { c, r, p, st:'faltando', msg:'', cand:[] };
+    const reg = r || p;
+    if(reg){
+      const dif = Math.abs((Number(reg.precoTotal)||0) - c.valor);
+      if(dif > 0.01){ x.st = 'valor'; x.msg = `Valor do lançamento ${fmtMoney(reg.precoTotal)} ≠ ${fmtMoney(c.valor)} do posto.`; }
+      else { x.st = r ? 'ok' : 'pendente'; x.msg = r ? '' : 'Está em Aprovações (ainda não confirmado).'; }
+      if(r){
+        const nfAtual = String(r.nf == null ? '' : r.nf).trim();
+        if(!nfAtual) x.precisaNf = true;
+        else if(normReqNum(nfAtual) !== normReqNum(nfMae)) { x.nfOutra = nfAtual; x.msg = (x.msg ? x.msg + ' ' : '') + `Já está na NF ${nfAtual}.`; }
+      }
+    } else {
+      x.cand = (DB||[]).filter(rr=>!String(rr.cupom||'').trim() && String(rr.data||'').slice(0,10) === c.data && Math.abs((Number(rr.precoTotal)||0) - c.valor) <= 0.01);
+      if(x.cand.length){ x.st = 'provavel'; x.msg = `Lançamento sem nº de cupom com mesma data e valor: ${x.cand.map(z=>z.equipamento||'—').join(', ')}.`; }
+      else x.msg = 'Cupom cobrado pelo posto e NÃO existe lançamento com esse número (nem com mesma data e valor).';
+    }
+    return x;
+  });
+  // lançamentos desse posto, no período do demonstrativo, que o posto NÃO listou
+  const datas = dem.cupons.map(c=>c.data).sort(); const ini = datas[0], fim = datas[datas.length-1];
+  const chavePosto = _normTxt(dem.posto).split(' ').filter(w=>w && !['AUTO','POSTO','LTDA','ME','EPP','SA'].includes(w));
+  const cupSet = new Set(dem.cupons.map(c=>normReqNum(c.numero)));
+  const extras = (ini && chavePosto.length) ? (DB||[]).filter(r=>{
+    const d = String(r.data||'').slice(0,10); if(d < ini || d > fim) return false;
+    const pn = _normTxt(r.posto); if(!chavePosto.every(w=>pn.includes(w))) return false;
+    if(String(r.cupom||'').trim() && cupSet.has(normReqNum(r.cupom))) return false;
+    return true;
+  }) : [];
+  return { linhas, extras, total: dem.cupons.reduce((s,c)=>s+c.valor,0) };
+}
+async function lerDemonstrativosUI(arquivos){
+  const lista = [...arquivos].filter(f=>/\.pdf$/i.test(f.name) || f.type === 'application/pdf');
+  if(!lista.length){ toast('Escolhe um arquivo PDF.'); return; }
+  const status = document.getElementById('demo-status');
+  for(const f of lista){
+    try{
+      if(status) status.textContent = `⏳ Lendo ${f.name}...`;
+      const texto = await textoDoPdf(f);
+      if(!texto.trim()){ toast(`${f.name}: o PDF não tem texto (parece escaneado).`); continue; }
+      if(!ehDemonstrativoVendas(texto)){ toast(`${f.name}: não parece um "Demonstrativo de vendas" (nota completa do posto). Use a zona "Nota fiscal em PDF" para extratos de um cupom só.`); continue; }
+      const dem = parseDemonstrativoVendas(texto);
+      if(!dem.cupons.length){ toast(`${f.name}: não achei a lista de cupons.`); continue; }
+      DEMONSTRATIVOS_LIDOS = DEMONSTRATIVOS_LIDOS.filter(d=>!(d.dem.nf === dem.nf && d.dem.posto === dem.posto));
+      DEMONSTRATIVOS_LIDOS.unshift({ arquivo: f.name, dem });
+    }catch(err){ console.error(err); toast(`Falha ao ler ${f.name}: ${err.message}`); }
+  }
+  if(status) status.textContent = '';
+  renderDemonstrativos();
+}
+function renderDemonstrativos(){
+  const box = document.getElementById('demo-resultado'); if(!box) return;
+  if(!DEMONSTRATIVOS_LIDOS.length){ box.innerHTML = ''; return; }
+  box.innerHTML = DEMONSTRATIVOS_LIDOS.map((it, i)=>{
+    const dem = it.dem, cr = cruzarDemonstrativo(dem);
+    const cont = st=>cr.linhas.filter(x=>x.st === st).length;
+    const nOk = cont('ok') + cont('pendente'), nVal = cont('valor'), nProv = cont('provavel'), nFalta = cont('faltando');
+    const aplicaveis = cr.linhas.filter(x=>x.precisaNf && x.st === 'ok').length;
+    const fechada = nfFechadaCli(dem.nf);
+    const rot = {ok:'✅ Casou', pendente:'🕓 Em aprovação', valor:'⚠️ Valor diferente', provavel:'🔎 Provável', faltando:'❌ Sem lançamento'};
+    const cor = {ok:'', pendente:'', valor:'background:#fff8e1;', provavel:'background:#eef5ff;', faltando:'background:#fdeaea;'};
+    return `<div class="aprov-item" style="flex-direction:column;align-items:stretch;gap:8px;" data-demo="${i}">
+      <div><b>NF mãe ${escapeHtml(dem.nf || '—')}</b>${fechada ? ' 🔒 (fechada)' : ''} · ${escapeHtml(dem.posto || 'Posto')} · ${dem.cupons.length} cupons · total <b>${fmtMoney(cr.total)}</b> <span class="helper">(${escapeHtml(it.arquivo)})</span></div>
+      <div class="imp-sum" style="display:flex;gap:8px;flex-wrap:wrap;font-size:13px;"><span>✅ Casaram: <b>${nOk}</b></span><span>⚠️ Valor diferente: <b>${nVal}</b></span><span>🔎 Prováveis: <b>${nProv}</b></span><span>❌ Sem lançamento: <b>${nFalta}</b></span><span>📌 Lançados e não listados: <b>${cr.extras.length}</b></span></div>
+      <div class="btn-row">
+        ${pode('editar_base') && !fechada ? `<button type="button" class="btn secondary" data-demo-nf="${i}" ${aplicaveis?'':'disabled'}>📌 Aplicar NF ${escapeHtml(dem.nf||'')} em ${aplicaveis} lançamento(s) que casaram</button>
+        <button type="button" class="btn secondary" data-demo-vinc="${i}" ${nProv?'':'disabled'}>🔗 Vincular ${nProv} provável(is) (preenche cupom + NF)</button>` : ''}
+        <button type="button" class="btn ghost" data-demo-xls="${i}">⬇️ Baixar conferência (Excel)</button>
+        <button type="button" class="btn ghost" data-demo-rm="${i}">✖ Remover</button>
+      </div>
+      <details ${nVal+nProv+nFalta ? 'open' : ''}><summary style="cursor:pointer;font-weight:600;font-size:13px;">Cupom a cupom</summary>
+      <div class="imp-tab" style="overflow:auto;max-height:50vh;margin-top:6px;"><table style="width:100%;font-size:12px;border-collapse:collapse;">
+        <thead><tr><th style="text-align:left">Data</th><th style="text-align:left">Cupom</th><th style="text-align:right">Valor</th><th style="text-align:left">Situação</th><th style="text-align:left">Lançamento</th></tr></thead>
+        <tbody>${cr.linhas.map(x=>{ const reg = x.r || x.p; return `<tr style="${cor[x.st]}"><td>${fmtDate(x.c.data)}</td><td>${escapeHtml(x.c.numero)}</td><td style="text-align:right">${fmtMoney(x.c.valor)}</td><td>${rot[x.st]}</td><td>${reg ? escapeHtml([reg.equipamento, reg.motorista, reg.nf ? 'NF '+reg.nf : 'sem NF'].filter(Boolean).join(' · ')) : ''} ${x.msg ? `<span class="helper">${escapeHtml(x.msg)}</span>` : ''}</td></tr>`; }).join('')}</tbody></table></div></details>
+      ${cr.extras.length ? `<details><summary style="cursor:pointer;font-weight:600;font-size:13px;color:var(--bad);">📌 ${cr.extras.length} lançamento(s) deste posto no período que NÃO estão no demonstrativo</summary><div style="font-size:12px;margin-top:6px;">${cr.extras.map(r=>`• ${fmtDate(r.data)} · ${escapeHtml(r.equipamento||'—')} · ${fmtMoney(r.precoTotal)} · cupom ${escapeHtml(String(r.cupom||'—'))} · NF ${escapeHtml(String(r.nf||'—'))}`).join('<br>')}</div></details>` : ''}
+    </div>`;
+  }).join('');
+  box.querySelectorAll('[data-demo-rm]').forEach(b=>b.addEventListener('click', ()=>{ DEMONSTRATIVOS_LIDOS.splice(Number(b.dataset.demoRm),1); renderDemonstrativos(); }));
+  box.querySelectorAll('[data-demo-nf]').forEach(b=>b.addEventListener('click', ()=>aplicarDemonstrativo(Number(b.dataset.demoNf), false)));
+  box.querySelectorAll('[data-demo-vinc]').forEach(b=>b.addEventListener('click', ()=>aplicarDemonstrativo(Number(b.dataset.demoVinc), true)));
+  box.querySelectorAll('[data-demo-xls]').forEach(b=>b.addEventListener('click', ()=>exportarConferenciaDemonstrativo(Number(b.dataset.demoXls))));
+}
+async function aplicarDemonstrativo(i, vincular){
+  const it = DEMONSTRATIVOS_LIDOS[i]; if(!it) return;
+  if(!pode('editar_base')){ toast('Seu nível não tem permissão para editar lançamentos.'); return; }
+  const dem = it.dem; if(nfFechadaCli(dem.nf)){ toast(`🔒 A NF ${dem.nf} está fechada.`); return; }
+  const cr = cruzarDemonstrativo(dem); const ops = [];
+  if(vincular){
+    const usados = new Set();
+    cr.linhas.filter(x=>x.st === 'provavel').forEach(x=>{
+      const r = x.cand.find(z=>!usados.has(z.id)); if(!r) return;
+      usados.add(r.id); ops.push(()=>{ r.cupom = x.c.numero; if(!String(r.nf||'').trim()) r.nf = dem.nf; });
+    });
+  } else {
+    cr.linhas.filter(x=>x.precisaNf && x.st === 'ok').forEach(x=>ops.push(()=>{ x.r.nf = dem.nf; }));
+  }
+  const n = ops.length;
+  if(!n){ toast('Nada para aplicar.'); return; }
+  if(!await confirmModal('Aplicar NF do demonstrativo', `${vincular ? 'Vincular o número do cupom e a NF' : 'Gravar a NF'} ${dem.nf} em ${n} lançamento(s)? (Só preenche o que está vazio.)`)) return;
+  ops.forEach(f=>f());
+  saveDB();
+  try{ populateFilterSelects(); renderLancTable(); }catch(e){}
+  renderDemonstrativos();
+  const res = await pushToSheets(false);
+  toast(res && res.status === 'ok' ? `${n} lançamento(s) atualizado(s) e sincronizado(s).` : `${n} atualizado(s) aqui — falhou sincronizar: ${(res && res.mensagem) || 'tente na aba Sincronização'}.`);
+}
+function exportarConferenciaDemonstrativo(i){
+  const it = DEMONSTRATIVOS_LIDOS[i]; if(!it) return;
+  const cr = cruzarDemonstrativo(it.dem);
+  const nomes = {ok:'Casou', pendente:'Em aprovação', valor:'Valor diferente', provavel:'Provável', faltando:'Sem lançamento'};
+  const rows = cr.linhas.map(x=>{ const reg = x.r || x.p; return { 'NF mãe': it.dem.nf, 'Data': fmtDate(x.c.data), 'Cupom': x.c.numero, 'Valor posto': x.c.valor, 'Situação': nomes[x.st], 'Equipamento': reg ? reg.equipamento : '', 'Motorista': reg ? reg.motorista : '', 'Valor lançado': reg ? reg.precoTotal : '', 'NF no lançamento': reg ? (reg.nf || '') : '', 'Obs.': x.msg }; });
+  cr.extras.forEach(r=>rows.push({ 'NF mãe': it.dem.nf, 'Data': fmtDate(r.data), 'Cupom': r.cupom || '', 'Valor posto': '', 'Situação': 'Lançado e NÃO listado pelo posto', 'Equipamento': r.equipamento, 'Motorista': r.motorista, 'Valor lançado': r.precoTotal, 'NF no lançamento': r.nf || '', 'Obs.': '' }));
+  const ws = XLSX.utils.json_to_sheet(rows); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Conferência');
+  XLSX.writeFile(wb, `conferencia_NF_${it.dem.nf || 'posto'}.xlsx`);
+}
+function initDemonstrativo(){
+  const input = document.getElementById('demo-input'), zona = document.getElementById('demo-zona');
+  if(!input || !zona) return;
+  input.addEventListener('change', async ()=>{ const fs = input.files; if(fs && fs.length) await lerDemonstrativosUI(fs); input.value = ''; });
+  ['dragover','dragenter'].forEach(ev=>zona.addEventListener(ev, e=>{ e.preventDefault(); zona.classList.add('arrastando'); }));
+  ['dragleave','drop'].forEach(ev=>zona.addEventListener(ev, e=>{ e.preventDefault(); zona.classList.remove('arrastando'); }));
+  zona.addEventListener('drop', async e=>{ if(e.dataTransfer && e.dataTransfer.files.length) await lerDemonstrativosUI(e.dataTransfer.files); });
 }
 
 function initNotaPdf(){
@@ -8940,7 +9214,7 @@ async function handleOcrFile(e, tipo){
       : '(não reconheci nenhum texto nessa foto — tenta de novo com mais luz, sem reflexo, e o cupom bem enquadrado)';
     document.getElementById('ocr-raw-wrap-'+tipo).style.display = 'block';
 
-    const achou = Object.keys(campos).filter(k=>campos[k]!=null);
+    const achou = Object.keys(campos).filter(k=>campos[k]!=null && k.charAt(0) !== '_').map(k=>k === 'cupom' && campos._cupomOrigem ? `cupom (nº lido de: ${campos._cupomOrigem})` : k);
     const linkTexto = linkFoto ? ` <a href="${linkFoto}" target="_blank" rel="noopener">📎 ver foto salva</a>` : '';
     if(tipo === 'requisicao'){
       ocrStatus(tipo, (achou.length
@@ -8949,7 +9223,7 @@ async function handleOcrFile(e, tipo){
     } else {
       ocrStatus(tipo, (achou.length
         ? `✅ Cupom lido! Preenchi automaticamente: ${achou.join(', ')}. Confira antes de salvar.`
-        : '⚠️ Li o cupom mas não consegui identificar os campos automaticamente — clica em "Ver texto completo lido do cupom fiscal" logo abaixo e preenche na mão.') + linkTexto + avisoDrive, 'ok');
+        : '⚠️ Li o cupom mas não consegui identificar os campos automaticamente — clica em "Ver texto completo lido do cupom fiscal" logo abaixo e preenche na mão.') + (achou.length && campos.cupom == null ? ' ⚠️ Não achei o número do cupom (nem na chave de acesso) — digite no campo Cupom.' : '') + linkTexto + avisoDrive, 'ok');
     }
   }catch(err){
     console.error(err);
@@ -8999,8 +9273,11 @@ function extrairCamposCupom(texto){
   // explícito, deixa o cálculo pra aplicarCamposOcr (ele já faz
   // precoTotal/quantidade automaticamente)
 
-  const mNF = texto.match(/(?:N[°º]?\.?\s?F\.?|NOTA FISCAL|CUPOM FISCAL|CUPOM)\s*[:\-nN°º]*\s*(\d{3,9})/i);
+  // NF (fechamento) só se estiver escrito "NF"/"Nota Fiscal"; o número do CUPOM vai pro campo próprio
+  const mNF = texto.match(/(?:N[°º]?\.?\s?F\.?|NOTA FISCAL)\s*[:\-nN°º]*\s*(\d{3,9})/i);
   if(mNF) campos.nf = mNF[1];
+  const rc = extrairNumeroCupom(texto);
+  if(rc){ campos.cupom = rc.numero; campos._cupomOrigem = rc.origem + (rc.divergente ? ` (o rótulo dizia ${rc.divergente}, mas a chave de acesso manda)` : ''); }
 
   // A maioria dos cupons de posto (NFC-e) traz a placa do veículo
   // impressa — cruza com o cadastro de Frota (campo Placa) em
@@ -9045,6 +9322,7 @@ function aplicarCamposOcr(campos, tipo){
     if(q > 0) document.getElementById('l-precounit').value = Math.round((campos.precoTotal/q)*1000)/1000;
   }
   if(campos.nf) document.getElementById('l-nf').value = campos.nf;
+  if(campos.cupom && document.getElementById('l-cupom')) document.getElementById('l-cupom').value = campos.cupom;
   if(campos.kmHor != null && !comRequisicao) document.getElementById('l-kmhor').value = campos.kmHor;
   if(campos.requisicao && !comRequisicao) document.getElementById('l-requisicao').value = campos.requisicao;
   // Equipamento: o cupom só traz a PLACA de verdade impressa (nunca o
@@ -9916,6 +10194,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     initLancFilters();
     initSeletorObra();
     initNotaPdf();
+    initDemonstrativo();
     initCardsColapsaveis();
     initFormLancamento();
     initPerfis();
