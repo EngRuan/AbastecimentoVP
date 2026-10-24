@@ -2234,6 +2234,10 @@ body.preview-motorista #view-lancamentos::before{
             <input type="text" id="p-obra" list="lista-obras" placeholder="Ex: 422  ou  422, 430" title="Obras onde esse cadastro vale. Separe com vírgula.">
           </div>
           <div class="field wide">
+            <label>Outros nomes do posto (razão social, nome fantasia…) <span class="helper" style="margin:0">— separe com ;</span></label>
+            <input type="text" id="p-apelidos" placeholder="Ex: AUTO POSTO IRMAOS LIMA LTDA; IRMAOS LIMA" title="Nomes que aparecem no cupom/nota e devem ser entendidos como este posto. O CNPJ acima também vincula sozinho.">
+          </div>
+          <div class="field wide">
             <label>Observações</label>
             <input type="text" id="p-observacoes" placeholder="Opcional">
           </div>
@@ -2557,7 +2561,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.24-110';
+const APP_VERSION = 'v2026.10.24-111';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -5030,6 +5034,7 @@ function editarPosto(nome){
   document.getElementById('p-telefone').value = p.telefone || '';
   document.getElementById('p-endereco').value = p.endereco || '';
   document.getElementById('p-observacoes').value = p.observacoes || '';
+  document.getElementById('p-apelidos').value = p.apelidos || '';
   document.getElementById('p-obra').value = p.obra || '';
   document.getElementById('posto-form-title').textContent = 'Editando posto';
   document.getElementById('btn-salvar-posto').textContent = 'Salvar alterações';
@@ -5068,6 +5073,7 @@ function initPostosTab(){
       telefone: document.getElementById('p-telefone').value.trim(),
       endereco: document.getElementById('p-endereco').value.trim(),
       observacoes: document.getElementById('p-observacoes').value.trim(),
+      apelidos: document.getElementById('p-apelidos').value.trim(),
       obra: document.getElementById('p-obra').value.trim(),
     };
     if(!dados.nome){ toast('Preenche o nome do posto.'); return; }
@@ -6058,6 +6064,28 @@ async function textoDoPdf(arquivo){
 }
 
 
+
+/* ---- Posto: o cupom traz a RAZÃO SOCIAL ("AUTO POSTO IRMAOS LIMA LTDA") e o cadastro usa o nome
+   FANTASIA ("POSTO IRMAOS LIMA"). Vincula pelo CNPJ, pelos "outros nomes" do cadastro ou por nome parecido. */
+function _palavrasPosto(n){ return _normTxt(n).split(' ').filter(w=>w && !['AUTO','POSTO','LTDA','ME','EPP','SA','EIRELI','COMERCIO','DE','DO','DA','E','COM','COMB','COMBUSTIVEIS','DERIVADOS','PETROLEO'].includes(w)); }
+function nomesDoPosto(p){ return [p.nome].concat(String(p.apelidos||'').split(/[;|]/)).map(x=>String(x||'').trim()).filter(Boolean); }
+function resolverPosto(nome, cnpj){
+  const lista = POSTOS || []; if(!lista.length) return null;
+  const dig = String(cnpj||'').replace(/\D/g,'');
+  if(dig.length === 14){ const p = lista.find(x=>String(x.cnpj||'').replace(/\D/g,'') === dig); if(p) return { posto:p, por:'CNPJ' }; }
+  const nn = _normTxt(nome); if(!nn) return null;
+  let p = lista.find(x=>nomesDoPosto(x).some(a=>_normTxt(a) === nn)); if(p) return { posto:p, por:'nome cadastrado' };
+  const w = _palavrasPosto(nome); if(!w.length) return null;
+  const cand = lista.filter(x=>nomesDoPosto(x).some(a=>{ const wa = _palavrasPosto(a); return wa.length && (wa.every(k=>w.includes(k)) || w.every(k=>wa.includes(k))); }));
+  if(cand.length === 1) return { posto:cand[0], por:'nome parecido' };
+  return null;
+}
+function postoBateComRegistro(postoCadastrado, nomeNoRegistro){
+  const nn = _normTxt(nomeNoRegistro); if(!nn || !postoCadastrado) return false;
+  if(nomesDoPosto(postoCadastrado).some(a=>_normTxt(a) === nn)) return true;
+  const w = _palavrasPosto(nomeNoRegistro); return w.length > 0 && nomesDoPosto(postoCadastrado).some(a=>{ const wa = _palavrasPosto(a); return wa.length && (wa.every(k=>w.includes(k)) || w.every(k=>wa.includes(k))); });
+}
+
 /* Número do CUPOM: tenta vários lugares, em ordem (if / else if / else):
    1) chave de acesso de 44 dígitos (NFC-e/CF-e) — o nº da nota são os dígitos 26 a 34, é o mais confiável;
    2) rótulos impressos: "Doc. Número", "NFC-e nº", "Extrato nº", "CF-e", "COO", "Cupom", "Número".
@@ -6095,6 +6123,8 @@ function extrairDadosNotaPdf(texto){
   const plano = linhas.join('\n');
   const out = { posto:null, data:null, nf:null, produto:null, quantidade:null, precoUnit:null, precoTotal:null, placa:null, requisicao:null, km:null, motorista:null, tokens:[] };
   out.posto = linhas[0] || null;
+  { const mcnpj = plano.match(/CNPJ\s*:?\s*(\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2})/i); out.cnpjPosto = mcnpj ? mcnpj[1] : null; out.postoLido = out.posto;
+    const rp = resolverPosto(out.posto, out.cnpjPosto); if(rp){ out.posto = rp.posto.nome; out.postoPor = rp.por; } }
   let m = plano.match(/(\d{2})\/(\d{2})\/(\d{4})\s+\d{2}:\d{2}/);
   if(!m) m = plano.match(/(\d{2})\/(\d{2})\/(\d{4})/); // nota sem horário
   if(m) out.data = `${m[3]}-${m[2]}-${m[1]}`;
@@ -6286,7 +6316,7 @@ function renderNotasPdf(){
   const barraDatas = idxDiverg.length ? `<div class="aprov-item" style="border-color:var(--bad);"><div class="info">📅 <b>${idxDiverg.length}</b> lançamento(s) já gravado(s) estão com a data diferente da do cupom.</div><button type="button" class="btn" data-nota-datafix-todas="1">Corrigir todas as datas pelas notas</button></div>` : '';
   box.innerHTML = barraDatas + NOTAS_PDF_LIDAS.map((n, i)=>{
     const d = n.dados, c = n.cruz;
-    const resumo = `<b>${escapeHtml(d.posto || 'Nota')}</b> · Cupom/Doc do posto <b>${escapeHtml(d.nf || '—')}</b> · ${d.data ? fmtDate(d.data) : '—'}<br>
+    const resumo = `<b>${escapeHtml(d.posto || 'Nota')}</b>${d.postoPor && d.postoLido && _normTxt(d.postoLido) !== _normTxt(d.posto) ? ` <span class="helper">(na nota: ${escapeHtml(d.postoLido)} — vinculado por ${escapeHtml(d.postoPor)})</span>` : ''} · Cupom/Doc do posto <b>${escapeHtml(d.nf || '—')}</b> · ${d.data ? fmtDate(d.data) : '—'}<br>
       <span style="color:var(--gray);">${escapeHtml(d.produto || '—')} · ${d.quantidade != null ? fmtNum(d.quantidade,3) + ' L' : '—'} · ${d.precoUnit != null ? fmtMoney(d.precoUnit) + '/L' : ''} · total <b>${d.precoTotal != null ? fmtMoney(d.precoTotal) : '—'}</b> · placa na nota: ${escapeHtml(d.placa || '—')} · km: ${d.km != null ? fmtNum(d.km,0) : '—'} · requisição: <b>${escapeHtml(c.numReq || '—')}</b>${c.origem ? ' ('+c.origem+')' : ''}</span>`;
     const avisos = c.avisos.map(a=>`<div style="color:var(--bad);font-size:12.5px;margin-top:4px;">⚠️ ${escapeHtml(a)}</div>`).join('');
     let acao = '';
@@ -6391,7 +6421,7 @@ function abrirLancamentoManualDaNota(idx){
       <div class="field"><label>Equipamento*</label><input type="text" id="nm-equip" list="nm-equip-lista" value="${escapeHtml(eq)}" placeholder="Ex.: VP0555"><datalist id="nm-equip-lista">${VEICULOS.map(v=>`<option value="${escapeHtml(v.equipamento)}">${escapeHtml(v.placa||'')}</option>`).join('')}</datalist></div>
       <div class="field"><label>Motorista</label><input type="text" id="nm-mot" value="${escapeHtml(d.motorista || '')}"></div>
       <div class="field"><label>Empresa</label><input type="text" id="nm-emp" list="nm-emp-lista" value="TRIPOLONI"><datalist id="nm-emp-lista">${[...new Set(['TRIPOLONI'].concat(EMPRESAS.map(e=>e.nome)))].map(e=>`<option value="${escapeHtml(e)}"></option>`).join('')}</datalist></div>
-      <div class="field"><label>Posto</label><input type="text" id="nm-posto" value="${escapeHtml(d.posto || '')}"></div>
+      <div class="field"><label>Posto</label><input type="text" id="nm-posto" list="nm-posto-lista" value="${escapeHtml(d.posto || '')}"><datalist id="nm-posto-lista">${POSTOS.map(p=>`<option value="${escapeHtml(p.nome)}"></option>`).join('')}</datalist>${d.postoLido && d.postoPor ? `<div class="helper" style="margin:2px 0 0">Na nota: ${escapeHtml(d.postoLido)} (vinculado por ${escapeHtml(d.postoPor)})</div>` : ''}</div>
       <div class="field"><label>Produto</label><select id="nm-prod">${prods.map(x=>`<option ${x===d.produto?'selected':''}>${x}</option>`).join('')}</select></div>
       <div class="field"><label>Litros</label><input type="text" id="nm-qtd" value="${d.quantidade != null ? numParaInput(d.quantidade) : ''}"></div>
       <div class="field"><label>Preço unit.</label><input type="text" id="nm-pu" value="${d.precoUnit != null ? numParaInput(d.precoUnit) : ''}"></div>
@@ -6401,7 +6431,10 @@ function abrirLancamentoManualDaNota(idx){
       <div class="field"><label>NF mãe (opcional)</label><input type="text" id="nm-nf" value=""></div>
       <div class="field"><label>Requisição (opcional)</label><input type="text" id="nm-req" value="${escapeHtml(d.requisicao || '')}"></div>
     </div>
+    ${(d.postoLido && pode('cadastro_frota_postos')) ? `<label id="nm-apelido-wrap" style="display:none;font-size:12.5px;"><input type="checkbox" id="nm-apelido" style="width:auto" checked> Guardar "${escapeHtml(d.postoLido)}" como outro nome do posto escolhido (nas próximas notas já vincula sozinho)</label>` : ''}
     <div class="btn-row"><button type="button" class="btn" id="nm-ok">✅ Enviar para Aprovações</button><button type="button" class="btn ghost" data-fechar>Cancelar</button></div>`);
+  const _mostraApelido = ()=>{ const w = ov.querySelector('#nm-apelido-wrap'); if(!w) return; const p = POSTOS.find(x=>x.nome === ov.querySelector('#nm-posto').value.trim().toUpperCase()); w.style.display = (p && !nomesDoPosto(p).some(a=>_normTxt(a) === _normTxt(d.postoLido))) ? 'block' : 'none'; };
+  ov.querySelector('#nm-posto').addEventListener('input', _mostraApelido); _mostraApelido();
   ov.querySelector('#nm-ok').onclick = async ()=>{
     const g = id=>ov.querySelector('#'+id).value.trim();
     const equip = g('nm-equip').toUpperCase(), data = g('nm-data');
@@ -6417,6 +6450,11 @@ function abrirLancamentoManualDaNota(idx){
       posto:g('nm-posto').toUpperCase() || null, quantidade:q, precoUnit:pu, precoTotal:tot, kmHor:(km != null && !isNaN(km)) ? km : null, nfSugerido: nf || null,
       cupom: g('nm-cupom') || null, requisicao: g('nm-req') || null, motorista: g('nm-mot').toUpperCase() || null, empresa: g('nm-emp').toUpperCase() || null, fotoUrlCupom:null, fotoUrlRequisicao:null, obra: obraParaNovo(equip) };
     const btn = ov.querySelector('#nm-ok'); btn.disabled = true; btn.textContent = 'Enviando…';
+    const ckA = ov.querySelector('#nm-apelido');
+    if(ckA && ckA.checked && ov.querySelector('#nm-apelido-wrap').style.display !== 'none'){
+      const pc = POSTOS.find(x=>x.nome === dados.posto);
+      if(pc){ try{ const jr = await postarAcao({ action:'salvarPosto', dados: Object.assign({}, pc, { apelidos: nomesDoPosto(pc).slice(1).concat([d.postoLido]).join('; ') }) }); if(jr.status === 'ok' && jr.posto){ const k = POSTOS.findIndex(x=>x.nome === pc.nome); if(k>=0) POSTOS[k] = jr.posto; } }catch(e){ console.warn(e); } }
+    }
     const item = outboxAdd('manual', dados, equip);
     const rs = await outboxEnviar(item);
     if(rs.ok){
@@ -6491,6 +6529,7 @@ function parseDemonstrativoVendas(texto){
   let m = plano.match(/REFERENTE\s+NOTA\s+FISCAL\s+N[ºo°]?\s*:?\s*(\d+)/i); if(m) out.nf = String(parseInt(m[1],10));
   m = plano.match(/RAZ[AÃ]O SOCIAL\s*:\s*([^\n]+?)(?:\s+ENDERE|\n|$)/i); if(m) out.posto = m[1].trim();
   m = plano.match(/CNPJ\s*:\s*([\d.\/\-]+)/i); if(m) out.cnpj = m[1];
+  out.postoLido = out.posto; { const rp = resolverPosto(out.posto, out.cnpj); if(rp){ out.postoCad = rp.posto; out.postoPor = rp.por; } }
   m = plano.match(/ADQUIR(?:I|E)NTE\s*:\s*([^\n]+?)(?:\s+ENDERE|\n|$)/i); if(m) out.adquirente = m[1].trim();
   const vistos = new Set();
   linhas.forEach(l=>{
@@ -6532,11 +6571,12 @@ function cruzarDemonstrativo(dem){
   });
   // lançamentos desse posto, no período do demonstrativo, que o posto NÃO listou
   const datas = dem.cupons.map(c=>c.data).sort(); const ini = datas[0], fim = datas[datas.length-1];
-  const chavePosto = _normTxt(dem.posto).split(' ').filter(w=>w && !['AUTO','POSTO','LTDA','ME','EPP','SA'].includes(w));
+  const chavePosto = _palavrasPosto(dem.posto);
+  const postoCad = dem.postoCad || null;
   const cupSet = new Set(dem.cupons.map(c=>normReqNum(c.numero)));
-  const extras = (ini && chavePosto.length) ? (DB||[]).filter(r=>{
+  const extras = (ini && (chavePosto.length || postoCad)) ? (DB||[]).filter(r=>{
     const d = String(r.data||'').slice(0,10); if(d < ini || d > fim) return false;
-    const pn = _normTxt(r.posto); if(!chavePosto.every(w=>pn.includes(w))) return false;
+    const pn = _normTxt(r.posto); if(!(postoCad ? postoBateComRegistro(postoCad, r.posto) : chavePosto.every(w=>pn.includes(w)))) return false;
     if(String(r.cupom||'').trim() && cupSet.has(normReqNum(r.cupom))) return false;
     return true;
   }) : [];
@@ -6573,7 +6613,7 @@ function renderDemonstrativos(){
     const rot = {ok:'✅ Casou', pendente:'🕓 Em aprovação', valor:'⚠️ Valor diferente', provavel:'🔎 Provável', faltando:'❌ Sem lançamento'};
     const cor = {ok:'', pendente:'', valor:'background:#fff8e1;', provavel:'background:#eef5ff;', faltando:'background:#fdeaea;'};
     return `<div class="aprov-item" style="flex-direction:column;align-items:stretch;gap:8px;" data-demo="${i}">
-      <div><b>NF mãe ${escapeHtml(dem.nf || '—')}</b>${fechada ? ' 🔒 (fechada)' : ''} · ${escapeHtml(dem.posto || 'Posto')} · ${dem.cupons.length} cupons · total <b>${fmtMoney(cr.total)}</b> <span class="helper">(${escapeHtml(it.arquivo)})</span></div>
+      <div><b>NF mãe ${escapeHtml(dem.nf || '—')}</b>${fechada ? ' 🔒 (fechada)' : ''} · ${escapeHtml(dem.postoCad ? dem.postoCad.nome : (dem.posto || 'Posto'))}${dem.postoCad && dem.postoLido && _normTxt(dem.postoLido) !== _normTxt(dem.postoCad.nome) ? ` <span class="helper">(no PDF: ${escapeHtml(dem.postoLido)} — vinculado por ${escapeHtml(dem.postoPor)})</span>` : ''} · ${dem.cupons.length} cupons · total <b>${fmtMoney(cr.total)}</b> <span class="helper">(${escapeHtml(it.arquivo)})</span></div>
       <div class="imp-sum" style="display:flex;gap:8px;flex-wrap:wrap;font-size:13px;"><span>✅ Casaram: <b>${nOk}</b></span><span>⚠️ Valor diferente: <b>${nVal}</b></span><span>🔎 Prováveis: <b>${nProv}</b></span><span>❌ Sem lançamento: <b>${nFalta}</b></span><span>📌 Lançados e não listados: <b>${cr.extras.length}</b></span></div>
       <div class="btn-row">
         ${pode('editar_base') && !fechada ? `<button type="button" class="btn secondary" data-demo-nf="${i}" ${aplicaveis?'':'disabled'}>📌 Aplicar NF ${escapeHtml(dem.nf||'')} em ${aplicaveis} lançamento(s) que casaram</button>
