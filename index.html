@@ -2561,7 +2561,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.24-111';
+const APP_VERSION = 'v2026.10.26-112';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -3140,7 +3140,7 @@ function handleCredentialResponse(response){
 async function autenticarComToken(idToken, silencioso){
   if(!silencioso) document.getElementById('login-status').textContent = 'Entrando...';
   try{
-    const url = `${SYNC_URL}?action=pull&idToken=${encodeURIComponent(idToken)}&login=1`;
+    const url = `${SYNC_URL}?action=pull&idToken=${encodeURIComponent(idToken)}&login=1${HISTORICO_COMPLETO ? '&completo=1' : ''}`;
     // até 3 tentativas, cada uma com limite de 40s — antes ficava preso em "Entrando..." pra sempre
     let json = null, ultimoErro = null;
     const stEl = document.getElementById('login-status');
@@ -3170,7 +3170,8 @@ async function autenticarComToken(idToken, silencioso){
       return;
     }
     if(json.status !== 'ok'){
-      localStorage.removeItem(ID_TOKEN_KEY);
+      localStorage.removeItem(ID_TOKEN_KEY); cacheLimpar();
+      document.getElementById('login-overlay').style.display = '';
       if(!silencioso) document.getElementById('login-status').textContent = '❌ ' + (json.mensagem || 'Não foi possível entrar. Tenta de novo.');
       return;
     }
@@ -3185,6 +3186,7 @@ async function autenticarComToken(idToken, silencioso){
     localStorage.setItem(ID_TOKEN_KEY, idToken);
     localStorage.setItem(USUARIO_NOME_CACHE_KEY, USUARIO_ATUAL.nome || USUARIO_ATUAL.email);
     iniciarRenovacaoAutomaticaDoToken();
+    const _snapLogin = _uiRestaurado ? snapshotCampos() : null;
 
     DB = (json.dados || []).map(sanitizeRecord);
     PERIODO_LIMITADO = !!json.periodoLimitado;
@@ -3209,6 +3211,7 @@ async function autenticarComToken(idToken, silencioso){
     REQUISICOES_EMITIDAS = json.requisicoesEmitidas || [];
     recalcularTodasMedias();
     saveDB();
+    cacheSalvar(json);
 
     document.getElementById('login-overlay').style.display = 'none';
     document.getElementById('nao-cadastrado-overlay').style.display = 'none';
@@ -3238,6 +3241,8 @@ async function autenticarComToken(idToken, silencioso){
     populateReqSelects();
     renderListaRequisicoesAdmin();
     outboxRender();
+    restaurarEstadoUI();
+    if(_snapLogin) restaurarCampos(_snapLogin);
     setTimeout(()=>outboxTentar(), 1500);
   }catch(err){
     console.error(err);
@@ -3268,12 +3273,14 @@ document.addEventListener('click', e=>{
     });
   }
   if(e.target && e.target.id === 'btn-sair-nao-cadastrado'){
+    cacheLimpar();
     localStorage.removeItem(ID_TOKEN_KEY);
     window.location.reload();
   }
 });
 
 function sairDoApp(){
+  cacheLimpar();
   localStorage.removeItem(ID_TOKEN_KEY);
   localStorage.removeItem(USUARIO_NOME_CACHE_KEY);
   // sem isso, o Google ia logar essa pessoa de volta sozinho na hora
@@ -5772,7 +5779,7 @@ function atualizarCardPendentes(){
 /* Rascunho do que foi digitado nos pendentes — sobrevive aos re-renders (busca, gerar requisição, atualizar). */
 let PEND_RASCUNHO = {};
 let _pullSeq = 0;
-let HISTORICO_COMPLETO = false; // true depois de "carregar histórico completo" (vale até recarregar a página)
+let HISTORICO_COMPLETO = (()=>{ try{ return sessionStorage.getItem('hist_completo') === '1'; }catch(e){ return false; } })(); // true depois de "carregar histórico completo" (vale até recarregar a página)
 function capturarRascunhoPendentes(){
   const box = document.getElementById('lista-pendentes');
   if(!box) return;
@@ -6814,7 +6821,7 @@ async function carregarHistoricoCompletoUI(){
     const json = await parseJsonResponse(resp);
     if(json.status !== 'ok' || !Array.isArray(json.dados)){ toast(json.mensagem || 'Falha ao carregar histórico.'); return; }
     DB = json.dados.map(sanitizeRecord);
-    HISTORICO_COMPLETO = true; // as atualizações automáticas passam a trazer tudo também
+    HISTORICO_COMPLETO = true; try{ sessionStorage.setItem('hist_completo','1'); }catch(_e){} // as atualizações automáticas passam a trazer tudo também
     PERIODO_LIMITADO = !!json.periodoLimitado;
     AUDITORIA = json.auditoria || AUDITORIA;
     recalcularTodasMedias();
@@ -6931,6 +6938,7 @@ async function pullFromSheetsSilencioso(){
     renderListaRequisicoesAdmin();
     renderSelecaoRequisicaoMotorista();
     restaurarCampos(_snapCampos);
+    cacheSalvar(json);
   }catch(err){ console.warn('Falha ao atualizar em segundo plano:', err); }
 }
 
@@ -7014,6 +7022,96 @@ async function pedirLiberacao(dataStr){
     console.error(err);
     toast('Falha ao enviar solicitação: ' + err.message);
   }
+}
+
+
+/* ---- NÃO PERDER NADA NO F5 ----
+   (1) cópia dos últimos dados no IndexedDB: ao recarregar, a tela já aparece cheia (com o que tinha),
+       enquanto o login/atualização confirma tudo em segundo plano;
+   (2) aba aberta, filtros e campos preenchidos ficam guardados na sessão e voltam depois do F5;
+   (3) "histórico completo" continua ligado até fechar a aba. */
+const CACHE_DB = 'tripoloni_cache', CACHE_STORE = 'kv', UI_KEY = 'ui_estado_v1';
+function _idb(){ return new Promise((ok,err)=>{ try{ const r = indexedDB.open(CACHE_DB, 1); r.onupgradeneeded = ()=>r.result.createObjectStore(CACHE_STORE); r.onsuccess = ()=>ok(r.result); r.onerror = ()=>err(r.error); }catch(e){ err(e); } }); }
+let _cacheTimer = null;
+function cacheSalvar(json){
+  clearTimeout(_cacheTimer);
+  _cacheTimer = setTimeout(async ()=>{
+    try{
+      const copia = Object.assign({}, json, { usuario: USUARIO_ATUAL || json.usuario, status:'ok' });
+      const db = await _idb();
+      db.transaction(CACHE_STORE,'readwrite').objectStore(CACHE_STORE).put({ json: copia, obra: OBRA_ATIVA, em: Date.now(), historico: HISTORICO_COMPLETO }, 'ultimo');
+    }catch(e){ console.warn('cache não salvo', e); }
+  }, 800);
+}
+async function cacheLimpar(){
+  try{ sessionStorage.removeItem(UI_KEY); sessionStorage.removeItem('hist_completo'); }catch(e){}
+  try{ const db = await _idb(); db.transaction(CACHE_STORE,'readwrite').objectStore(CACHE_STORE).delete('ultimo'); }catch(e){}
+}
+async function cacheLer(){
+  try{ const db = await _idb(); return await new Promise(ok=>{ const q = db.transaction(CACHE_STORE).objectStore(CACHE_STORE).get('ultimo'); q.onsuccess = ()=>ok(q.result||null); q.onerror = ()=>ok(null); }); }catch(e){ return null; }
+}
+async function restaurarDoCache(){
+  const tokenSalvo = localStorage.getItem(ID_TOKEN_KEY);
+  if(!tokenSalvo) return;
+  const c = await cacheLer();
+  if(!c || !c.json || !c.json.usuario || Date.now() - c.em > 7*24*3600*1000) return;
+  if(ID_TOKEN || USUARIO_ATUAL) return; // o login já terminou antes
+  try{
+    const json = c.json;
+    ID_TOKEN = tokenSalvo; USUARIO_ATUAL = json.usuario;
+    if(c.historico){ HISTORICO_COMPLETO = true; }
+    DB = (json.dados || []).map(sanitizeRecord);
+    PERIODO_LIMITADO = !!json.periodoLimitado;
+    SOLICITACOES = json.solicitacoes || []; USUARIOS = json.usuarios || []; PENDENTES = json.pendentes || [];
+    DIAS_BLOQUEADOS = json.diasBloqueados || DIAS_BLOQUEADOS; NFS_FECHADAS = json.nfsFechadas || NFS_FECHADAS;
+    DESCONTOS = json.descontosTerceiros || []; HIST_OBRA = json.historicoObraVeiculo || HIST_OBRA;
+    HIST_EXTRA = (json.historicoExterno || []).map(sanitizeRecord);
+    CONFIG_SISMA = json.configSisma || CONFIG_SISMA; PERMISSOES = json.permissoes || PERMISSOES;
+    capturarObras(json);
+    CATALOGO_PERMISSOES = json.catalogoPermissoes || CATALOGO_PERMISSOES; AUDITORIA = json.auditoria || [];
+    VEICULOS = json.veiculos || []; MAPA_PLACAS = json.mapaPlacas || []; POSTOS = json.postos || []; EMPRESAS = json.empresas || [];
+    HISTORICO_MOBILIZACAO = json.historicoMobilizacao || []; REQUISICOES_EMITIDAS = json.requisicoesEmitidas || [];
+    recalcularTodasMedias();
+    document.getElementById('login-overlay').style.display = 'none';
+    aplicarPapelNaUI();
+    populateFilterSelects(); refreshRecordPill(); atualizarBannerPeriodoLimitado();
+    renderDashboard(); renderLancTable(); renderAprovacoes(); renderListaUsuarios(); renderCruzamentoMotoristas(); renderListaPendentes();
+    renderConfigDias(); renderConfigSisma(); renderMatrizPermissoes();
+    if(typeof aplicarPermissoesNaUI==='function') aplicarPermissoesNaUI();
+    renderAuditoria(); renderListaVeiculos(); renderListaPostos(); renderCruzamentoFrota(); renderCruzamentoPostos();
+    renderListaEmpresas(); renderCruzamentoEmpresas(); populateReqSelects(); renderListaRequisicoesAdmin();
+    outboxRender();
+    restaurarEstadoUI();
+  }catch(e){ console.warn('restauração do cache falhou', e); }
+}
+let _uiTimer = null;
+function _uiLer(){ try{ return JSON.parse(sessionStorage.getItem(UI_KEY) || '{}') || {}; }catch(e){ return {}; } }
+function _uiSalvar(tab){
+  const st = _uiLer(); if(tab) st.tab = tab;
+  try{ sessionStorage.setItem(UI_KEY, JSON.stringify(st)); }catch(e){}
+}
+function _uiSalvarCampos(){
+  clearTimeout(_uiTimer);
+  _uiTimer = setTimeout(()=>{
+    const st = _uiLer(), m = {};
+    document.querySelectorAll('main select[id], main input[id], main textarea[id]').forEach(el=>{
+      if(['file','button','password'].includes(el.type)) return;
+      const v = el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value;
+      if(v === '' || v === false) return;
+      m[el.id] = v;
+    });
+    st.campos = m;
+    try{ sessionStorage.setItem(UI_KEY, JSON.stringify(st)); }catch(e){}
+  }, 500);
+}
+['input','change'].forEach(ev=>document.addEventListener(ev, e=>{ if(e.target && e.target.closest && e.target.closest('main')) _uiSalvarCampos(); }, true));
+let _uiRestaurado = false;
+function restaurarEstadoUI(){
+  if(_uiRestaurado) return; _uiRestaurado = true;
+  const st = _uiLer();
+  try{ if(st.campos) restaurarCampos(st.campos); }catch(e){ console.warn(e); }
+  try{ if(st.tab && document.querySelector('button[data-tab="'+st.tab+'"]') && !document.querySelector('button[data-tab="'+st.tab+'"]').hidden) ativarTab(st.tab); }catch(e){ console.warn(e); }
+  try{ if(st.campos){ renderLancTable(); renderDashboard(); } }catch(e){}
 }
 
 function saveDB(){
@@ -7260,6 +7358,7 @@ function posicionarFormLancamento(modoPreview){
 }
 
 function ativarTab(nomeTab){
+  try{ _uiSalvar(nomeTab); }catch(_e){}
   const modoPreview = nomeTab === 'lancamentos-preview';
   const nomeReal = modoPreview ? 'lancamentos' : nomeTab;
   posicionarFormLancamento(modoPreview);
@@ -10140,7 +10239,7 @@ async function pullFromSheets(){
     const resp = await fetch(`${SYNC_URL}?action=pull&idToken=${encodeURIComponent(ID_TOKEN)}&completo=1`);
     const json = await parseJsonResponse(resp);
     if(json.status !== 'ok' || !Array.isArray(json.dados)) throw new Error(json.mensagem || 'resposta inesperada do servidor');
-    HISTORICO_COMPLETO = true;
+    HISTORICO_COMPLETO = true; try{ sessionStorage.setItem('hist_completo','1'); }catch(_e){}
     const ok = await confirmModal('Puxar dados do Sheets', `Foram encontrados ${json.dados.length} registros no Sheets. Isso vai SUBSTITUIR os ${DB.length} registros locais. Continuar?`);
     if(!ok){ logSync('Importação cancelada pelo usuário.'); return; }
     DB = json.dados.map(sanitizeRecord);
@@ -10254,6 +10353,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     initOutbox();
     initTransferencias();
     initSincronizacaoMultiusuario();
+    await restaurarDoCache();
 
     document.getElementById('btn-pedir-liberacao-extra').addEventListener('click', async ()=>{
       const ok = await confirmModal('Pedir liberação extra', 'Isso avisa o admin que você vai precisar de mais um abastecimento hoje, além do limite normal. Continuar?');
