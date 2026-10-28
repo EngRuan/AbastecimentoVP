@@ -2561,7 +2561,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.26-112';
+const APP_VERSION = 'v2026.10.28-113';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -3172,6 +3172,7 @@ async function autenticarComToken(idToken, silencioso){
     if(json.status !== 'ok'){
       localStorage.removeItem(ID_TOKEN_KEY); cacheLimpar();
       document.getElementById('login-overlay').style.display = '';
+      if(silencioso){ try{ document.getElementById('login-status').textContent = 'Sua sessão venceu — entre de novo.'; initLogin(); }catch(_e){} }
       if(!silencioso) document.getElementById('login-status').textContent = '❌ ' + (json.mensagem || 'Não foi possível entrar. Tenta de novo.');
       return;
     }
@@ -3181,11 +3182,11 @@ async function autenticarComToken(idToken, silencioso){
       return;
     }
 
-    ID_TOKEN = idToken;
+    ID_TOKEN = json.sessaoLonga || idToken;
     USUARIO_ATUAL = json.usuario;
-    localStorage.setItem(ID_TOKEN_KEY, idToken);
+    localStorage.setItem(ID_TOKEN_KEY, ID_TOKEN);
     localStorage.setItem(USUARIO_NOME_CACHE_KEY, USUARIO_ATUAL.nome || USUARIO_ATUAL.email);
-    iniciarRenovacaoAutomaticaDoToken();
+    if(!String(ID_TOKEN).startsWith('SESSAO:')) iniciarRenovacaoAutomaticaDoToken(); // com sessão própria (30 dias) não precisa renovar nada no Google
     const _snapLogin = _uiRestaurado ? snapshotCampos() : null;
 
     DB = (json.dados || []).map(sanitizeRecord);
@@ -3246,7 +3247,12 @@ async function autenticarComToken(idToken, silencioso){
     setTimeout(()=>outboxTentar(), 1500);
   }catch(err){
     console.error(err);
-    localStorage.removeItem(ID_TOKEN_KEY);
+    const _ehSessao = String(idToken).startsWith('SESSAO:');
+    if(!_ehSessao) localStorage.removeItem(ID_TOKEN_KEY);   // sessão própria só some quando o servidor disser que venceu, nunca por falha de rede
+    if(_ehSessao && silencioso && !USUARIO_ATUAL){
+      const st0 = document.getElementById('login-status'); if(st0) st0.textContent = 'Sem conexão com o servidor — tentando de novo…';
+      if((autenticarComToken._tent = (autenticarComToken._tent||0) + 1) <= 8) setTimeout(()=>autenticarComToken(idToken, true), 12000);
+    }
     if(!silencioso){
       const st = document.getElementById('login-status');
       st.textContent = '❌ Falha ao entrar: ' + err.message + ' ';
@@ -6888,6 +6894,7 @@ async function pullFromSheetsSilencioso(){
     const resp = await fetch(`${SYNC_URL}?action=pull&idToken=${encodeURIComponent(ID_TOKEN)}${HISTORICO_COMPLETO ? '&completo=1' : ''}`);
     const json = await parseJsonResponse(resp);
     if(json.status !== 'ok' || !Array.isArray(json.dados)) return;
+    if(json.sessaoLonga){ ID_TOKEN = json.sessaoLonga; try{ localStorage.setItem(ID_TOKEN_KEY, ID_TOKEN); }catch(_e){} }
     // resposta velha (pedida antes de trocar de obra, ou ultrapassada por uma mais nova): descarta,
     // senão os dados da outra obra voltam a aparecer depois de você voltar pra sua
     if(OBRA_ATIVA !== _obraNoPedido){ return pullFromSheetsSilencioso(); } // trocou de obra no meio: refaz já pra obra atual
@@ -10321,7 +10328,14 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   // pessoa sempre consegue pelo menos entrar, mesmo que algo mais abaixo
   // tenha dado problema.
   const veioDoRedirect = checarLoginPorRedirect() || checarLoginPorRedirectMicrosoft();
-  if(!veioDoRedirect) initLogin();
+  const _sessaoSalva = (()=>{ try{ return localStorage.getItem(ID_TOKEN_KEY) || ''; }catch(e){ return ''; } })();
+  if(!veioDoRedirect && _sessaoSalva.startsWith('SESSAO:')){
+    // já entrou antes: confirma a sessão própria direto no servidor, sem passar pelo Google
+    PROVEDOR_LOGIN = PROVEDOR_LOGIN || 'sessao';
+    autenticarComToken(_sessaoSalva, true);
+    const _drv = ()=>{ try{ initDriveTokenClient(); }catch(e){} };
+    window.addEventListener('load', _drv); setTimeout(_drv, 3000);   // o upload de fotos no Drive continua precisando do cliente do Google
+  } else if(!veioDoRedirect) initLogin();
   document.getElementById('btn-login-senha').addEventListener('click', loginComSenhaUI);
   document.getElementById('btn-atualizar-tudo').addEventListener('click', atualizarTudoUI);
   document.getElementById('btn-carregar-historico-completo').addEventListener('click', carregarHistoricoCompletoUI);
