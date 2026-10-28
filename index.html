@@ -2561,7 +2561,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.28-113';
+const APP_VERSION = 'v2026.10.28-114';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -3284,6 +3284,18 @@ document.addEventListener('click', e=>{
     window.location.reload();
   }
 });
+
+
+let _sessaoVenceuEm = 0;
+function sessaoVenceu(){
+  if(Date.now() - _sessaoVenceuEm < 5000) return; _sessaoVenceuEm = Date.now();
+  try{ localStorage.removeItem(ID_TOKEN_KEY); }catch(e){}
+  ID_TOKEN = null; USUARIO_ATUAL = null;
+  cacheLimpar();
+  const ov = document.getElementById('login-overlay'); if(ov) ov.style.display = '';
+  const st = document.getElementById('login-status'); if(st) st.textContent = 'Sua sessão venceu — entre de novo.';
+  try{ initLogin(); }catch(e){ console.warn(e); }
+}
 
 function sairDoApp(){
   cacheLimpar();
@@ -7002,6 +7014,11 @@ function initSincronizacaoMultiusuario(){
   window.fetch = async function(url, opts){
     const resp = await fetchOriginal(url, opts);
     try{
+      // servidor disse que a sessão não vale mais (venceu, ou token antigo): em vez de ficar travado numa tela
+      // "logada" que não consegue gravar, volta para o login na hora
+      if(SYNC_URL && String(url).startsWith(SYNC_URL) && !/[?&]login=1/.test(String(url)) && !(opts && typeof opts.body === 'string' && /"action":"loginComSenha"/.test(opts.body))){
+        resp.clone().json().then(j=>{ if(j && j.precisaLogin && !j.naoCadastrado) sessaoVenceu(); }).catch(()=>{});
+      }
       if(SYNC_URL && String(url).startsWith(SYNC_URL) && opts && opts.method === 'POST'){
         resp.clone().json().then(j=>{
           if(j && j.status === 'erro' && RE_DESATUALIZADO.test(String(j.mensagem||'')) && !/token|sess[ãa]o|login/i.test(String(j.mensagem||'')) && Date.now() - _avisoDesatualizadoEm > 5000){
@@ -7059,7 +7076,7 @@ async function cacheLer(){
 }
 async function restaurarDoCache(){
   const tokenSalvo = localStorage.getItem(ID_TOKEN_KEY);
-  if(!tokenSalvo) return;
+  if(!tokenSalvo || !String(tokenSalvo).startsWith('SESSAO:')) return;   // token antigo do Google não vale: nada de tela 'logada' falsa
   const c = await cacheLer();
   if(!c || !c.json || !c.json.usuario || Date.now() - c.em > 7*24*3600*1000) return;
   if(ID_TOKEN || USUARIO_ATUAL) return; // o login já terminou antes
