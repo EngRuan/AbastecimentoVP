@@ -2561,7 +2561,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.28-114';
+const APP_VERSION = 'v2026.10.29-115';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -5441,10 +5441,17 @@ function medidorDoEquip(eq){
   if(v) return v.placa ? 'km' : 'hora';
   return 'km';
 }
+/* "Valor Comb" = valor unitário do combustível (R$/litro): o preço unitário do lançamento;
+   se não veio, calcula valor total ÷ litros. */
+function valorCombSisma(r){
+  let pu = Number(r.precoUnit);
+  if(!(pu > 0)){ const q = Number(r.quantidade), t = Number(r.precoTotal); pu = (q > 0 && t > 0) ? t / q : 0; }
+  return pu > 0 ? String(Math.round(pu * 10000) / 10000) : '';
+}
 function exportarSisma(){
   renderLancTable();
   if(!LANC_VISIVEIS.length){ toast('Nenhum lançamento nos filtros atuais — nada pra exportar.'); return; }
-  const linhas = ['dataabastecimento;hora;empresa;Especie;Equipe;KM;Hora;Ponto;Bomba;Combustivel;Quantidade'];
+  const linhas = ['dataabastecimento;hora;empresa;Especie;Equipe;KM;Hora;Ponto;Bomba;Combustivel;Quantidade;Valor Comb'];
   LANC_VISIVEIS.forEach(r=>{
     if(!r.data) return;
     const [ano,mes,dia] = r.data.split('-');
@@ -5458,7 +5465,7 @@ function exportarSisma(){
     linhas.push([
       dataFmt, horaFmt, CONFIG_SISMA.empresa||'', CONFIG_SISMA.especie||'',
       formatarEquipeSisma(r.equipamento), (medidorDoEquip(r.equipamento)==='km' ? (r.kmHor ?? '') : ''), (medidorDoEquip(r.equipamento)==='hora' ? (r.kmHor ?? '') : ''),
-      CONFIG_SISMA.ponto||'', CONFIG_SISMA.bomba||'', codigoProduto, r.quantidade ?? ''
+      CONFIG_SISMA.ponto||'', CONFIG_SISMA.bomba||'', codigoProduto, r.quantidade ?? '', valorCombSisma(r)
     ].join(';'));
   });
   const csv = linhas.join('\r\n');
