@@ -1755,6 +1755,7 @@ body.preview-motorista #view-lancamentos::before{
         <div class="field"><label>NF</label><input type="text" id="t-nf" class="flt-terc" placeholder="Nº da NF"></div>
         <button type="button" class="btn ghost" id="t-btn-limpar">Limpar filtros</button>
         <button type="button" class="btn ghost" id="t-btn-excel">📥 Exportar Excel</button>
+        <button type="button" class="btn" id="t-btn-fechamento" title="Uma aba por empresa, agrupado por veículo, com subtotais (usa os selecionados; sem seleção, o filtro atual)">📄 Emitir fechamento</button>
       </div>
     </div>
     <div class="kpi-grid" id="t-resumo"></div>
@@ -2561,7 +2562,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.29-115';
+const APP_VERSION = 'v2026.10.29-119';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -3795,7 +3796,7 @@ async function enviarLancamentoManualInterno(){
     cupom: (document.getElementById('l-cupom')?.value || '').trim() || null,
     requisicao: document.getElementById('l-requisicao').value.trim() || null,
     motorista: document.getElementById('l-motorista').value.trim().toUpperCase() || null,
-    empresa: document.getElementById('l-empresa').value.trim().toUpperCase() || null,
+    empresa: empresaFixaDoEquip(document.getElementById('l-equipamento').value) || document.getElementById('l-empresa').value.trim().toUpperCase() || null,
     fotoUrlCupom: fotoUrlCupomAtual,
     fotoUrlRequisicao: fotoUrlRequisicaoAtual,
     obra: obraParaNovo(equip),
@@ -5429,6 +5430,26 @@ function formatarEquipeSisma(equip){
    em Auditoria → Integração SISMA. O campo "Km/Hor" do lançamento vai
    pra coluna KM (hodômetro) se o equipamento mede em km, ou pra coluna
    Hora (horímetro) se mede em horas — ver medidorDoEquip(). */
+/* Empresa que o cadastro da Frota manda para esse equipamento (ou null se
+   o veículo não está cadastrado). Terceirizado/alugado = empresa vinculada;
+   próprio = TRIPOLONI. Usada para TRAVAR o campo Empresa no lançamento. */
+function empresaFixaDoEquip(eq){
+  const v = veiculoDoEquip(eq);
+  if(!v) return null;
+  if(v.tipo === 'terceirizado' || v.tipo === 'alugado') return v.empresaVinculada ? String(v.empresaVinculada).trim().toUpperCase() : null;
+  return 'TRIPOLONI';
+}
+function aplicarTravaEmpresa(eq){
+  const el = document.getElementById('l-empresa'); if(!el) return;
+  const fixa = empresaFixaDoEquip(eq);
+  if(fixa){
+    el.value = fixa; el.readOnly = true;
+    el.style.background = '#eef1f5'; el.style.cursor = 'not-allowed';
+    el.title = 'Empresa travada pelo cadastro da Frota. Para mudar, altere o veículo na aba Frota.';
+  } else {
+    el.readOnly = false; el.style.background = ''; el.style.cursor = ''; el.title = '';
+  }
+}
 function veiculoDoEquip(eq){
   const k = String(eq || '').trim().toUpperCase();
   return k ? (VEICULOS || []).find(x=>String(x.equipamento || '').trim().toUpperCase() === k) : null;
@@ -5441,12 +5462,12 @@ function medidorDoEquip(eq){
   if(v) return v.placa ? 'km' : 'hora';
   return 'km';
 }
-/* "Valor Comb" = valor unitário do combustível (R$/litro): o preço unitário do lançamento;
-   se não veio, calcula valor total ÷ litros. */
+/* "Valor Comb" = valor TOTAL do abastecimento (R$): o valor total do lançamento;
+   se não veio, calcula litros × preço unitário. */
 function valorCombSisma(r){
-  let pu = Number(r.precoUnit);
-  if(!(pu > 0)){ const q = Number(r.quantidade), t = Number(r.precoTotal); pu = (q > 0 && t > 0) ? t / q : 0; }
-  return pu > 0 ? String(Math.round(pu * 10000) / 10000) : '';
+  let t = Number(r.precoTotal);
+  if(!(t > 0)){ const q = Number(r.quantidade), pu = Number(r.precoUnit); t = (q > 0 && pu > 0) ? q * pu : 0; }
+  return t > 0 ? String(Math.round(t * 100) / 100) : '';
 }
 function exportarSisma(){
   renderLancTable();
@@ -6480,7 +6501,7 @@ function abrirLancamentoManualDaNota(idx){
     const msgKm = (km != null && !isNaN(km)) ? validarKmManual(equip, data, km) : null;
     const dados = { manual:true, paraAutorizacao:!!msgKm, motivo: msgKm ? ('Km irregular (nota PDF) — ' + msgKm) : null, data, equipamento:equip, produto:g('nm-prod'),
       posto:g('nm-posto').toUpperCase() || null, quantidade:q, precoUnit:pu, precoTotal:tot, kmHor:(km != null && !isNaN(km)) ? km : null, nfSugerido: nf || null,
-      cupom: g('nm-cupom') || null, requisicao: g('nm-req') || null, motorista: g('nm-mot').toUpperCase() || null, empresa: g('nm-emp').toUpperCase() || null, fotoUrlCupom:null, fotoUrlRequisicao:null, obra: obraParaNovo(equip) };
+      cupom: g('nm-cupom') || null, requisicao: g('nm-req') || null, motorista: g('nm-mot').toUpperCase() || null, empresa: empresaFixaDoEquip(equip) || g('nm-emp').toUpperCase() || null, fotoUrlCupom:null, fotoUrlRequisicao:null, obra: obraParaNovo(equip) };
     const btn = ov.querySelector('#nm-ok'); btn.disabled = true; btn.textContent = 'Enviando…';
     const ckA = ov.querySelector('#nm-apelido');
     if(ckA && ckA.checked && ov.querySelector('#nm-apelido-wrap').style.display !== 'none'){
@@ -7503,7 +7524,7 @@ function baseParaCascata(prefix, excluir){
     if(excluir!=='motorista' && motoristaSet.size>0 && !motoristaSet.has(r.motorista)) return false;
     if(excluir!=='produto' && produtoSet.size>0 && !produtoSet.has(r.produto)) return false;
     if(excluir!=='posto' && postoSet.size>0 && !postoSet.has(r.posto)) return false;
-    if(excluir!=='empresa' && empresaSet.size>0 && !empresaSet.has(r.empresa)) return false;
+    if(excluir!=='empresa' && empresaSet.size>0 && !empresaSet.has(empresaEfetiva(r))) return false;
     if(excluir!=='nf' && nfSet.size>0 && !nfSet.has(String(r.nf ?? '').trim())) return false;
     return true;
   });
@@ -7520,7 +7541,7 @@ function refreshFilterOptions(prefix){
   const motoristaList = valoresDistintos(baseParaCascata(prefix,'motorista'), 'motorista');
   const produtoList = valoresDistintos(baseParaCascata(prefix,'produto'), 'produto');
   const postoList = valoresDistintos(baseParaCascata(prefix,'posto'), 'posto');
-  const empresaList = valoresDistintos(baseParaCascata(prefix,'empresa'), 'empresa');
+  const empresaList = valoresDistintos(baseParaCascata(prefix,'empresa').map(r=>({e:empresaEfetiva(r)})), 'e');
 
   FILTER_OPTIONS[prefix+'-equip'] = equipList;
   FILTER_OPTIONS[prefix+'-motorista'] = motoristaList;
@@ -7778,7 +7799,7 @@ function applyFilters(prefix){
     if(motoristaSet.size > 0 && !motoristaSet.has(r.motorista)) return false;
     if(produtoSet.size > 0 && !produtoSet.has(r.produto)) return false;
     if(postoSet.size > 0 && !postoSet.has(r.posto)) return false;
-    if(empresaSet.size > 0 && !empresaSet.has(r.empresa)) return false;
+    if(empresaSet.size > 0 && !empresaSet.has(empresaEfetiva(r))) return false;
     if(nfSet.size > 0 && !nfSet.has(String(r.nf ?? '').trim())) return false;
     return true;
   });
@@ -8631,9 +8652,8 @@ function initFormLancamento(){
     // auto-preenche a partir do cadastro de Frota (Empresa, e condutor
     // principal quando tem) — mas o campo continua 100% editável, é só
     // um ponto de partida pra digitar menos, não trava nada
+    aplicarTravaEmpresa(nome);
     if(veiculoInfo && !ehTelaEnxuta && !editingId){
-      const empresaEl = document.getElementById('l-empresa');
-      if(empresaEl && veiculoInfo.empresaVinculada) empresaEl.value = veiculoInfo.empresaVinculada;
       if(motoristaEl && !motoristaEl.value){
         const nomeCond = nomeCondutor(veiculoInfo);
         if(nomeCond) motoristaEl.value = nomeCond.replace(/\s*\([^)]*\)\s*$/, ''); // tira o "(cargo)" do final
@@ -8755,7 +8775,7 @@ function initFormLancamento(){
       precoUnit: numBR(punit.value) || null,
       precoTotal: numBR(ptotal.value) || null,
       motorista: document.getElementById('l-motorista').value.trim().toUpperCase() || null,
-      empresa: document.getElementById('l-empresa').value.trim().toUpperCase() || 'TRIPOLONI',
+      empresa: empresaFixaDoEquip(equip.value) || document.getElementById('l-empresa').value.trim().toUpperCase() || 'TRIPOLONI',
       equipamento: equip.value.trim().toUpperCase() || null,
       kmHor: isNaN(km) ? null : km,
       obsKm: null,
@@ -8892,6 +8912,7 @@ function resetForm(manterRepetidos){
   });
   document.getElementById('l-unidade').value = 'LT';
   document.getElementById('l-empresa').value = manter ? (manter.empresa || 'TRIPOLONI') : 'TRIPOLONI';
+  aplicarTravaEmpresa('');
 
   if(manter){
     document.getElementById('l-posto').value = manter.posto;
@@ -11002,6 +11023,12 @@ function ehTerceiroReg(r){
   const e = String(r.empresa || '').trim().toUpperCase();
   return !!e && e !== 'TRIPOLONI';
 }
+/* Empresa "de verdade" do lançamento: p/ terceiro vale o cadastro da Frota
+   (igual à aba Terceiros), senão o campo empresa do lançamento. */
+function empresaEfetiva(r){
+  if(ehTerceiroReg(r)) return empresaTerceiroDe(r);
+  return String(r.empresa || '').trim();
+}
 function empresaTerceiroDe(r){
   const v = veiculoDoEquip(r.equipamento);
   if(v && v.empresaVinculada) return v.empresaVinculada;
@@ -11070,6 +11097,21 @@ function renderTerceiros(){
   const soma = (arr)=>arr.reduce((s,r)=>s+(r.precoTotal||0),0);
   const porSt = {aberta:[], fechada:[], descontado:[]};
   rows.forEach(r=>porSt[statusTerceiro(r, mapa)].push(r));
+  // conferência com o Dashboard: mostra por que os números podem diferir
+  (function(){
+    let el = document.getElementById('t-conferencia');
+    if(!el){ el = document.createElement('div'); el.id='t-conferencia'; el.className='helper'; el.style.cssText='margin:6px 0 10px;line-height:1.5'; document.getElementById('t-resumo').before(el); }
+    const dash = applyFilters('f');
+    const dashTerc = dash.filter(ehTerceiroReg).length;
+    const obras = new Set(base.map(obraDoReg));
+    const semData = base.filter(r=>!r.data).length;
+    const diverg = base.filter(r=>{ const v = veiculoDoEquip(r.equipamento); return v && String(r.empresa||'').trim().toUpperCase()==='TRIPOLONI'; }).length;
+    el.innerHTML = `🔎 <b>Conferência:</b> aqui ${rows.length} de ${base.length} lançamento(s) de terceiros (todas as obras${obras.size>1?' – '+obras.size+' obras':''} e todo o período, se não filtrar). `
+      + `O Dashboard, com os filtros dele, tem ${dash.length} lançamento(s) no total, dos quais ${dashTerc} de terceiros. `
+      + `Para bater, use o mesmo período/obra nos dois.`
+      + (diverg ? ` · ${diverg} lançamento(s) de veículo terceirizado estão com empresa “TRIPOLONI” no lançamento (valem pelo cadastro da Frota).` : '')
+      + (semData ? ` · ${semData} sem data.` : '');
+  })();
   document.getElementById('t-resumo').innerHTML = [
     ['Total abastecido (filtro)', fmtMoney(soma(rows)), `${rows.length} lançamento(s)`],
     ['⏳ NF ainda aberta', fmtMoney(soma(porSt.aberta)), 'feche a NF para poder descontar'],
@@ -11147,6 +11189,52 @@ function exportarTerceiros(){
   XLSX.writeFile(wb, `terceiros_medicao_${todayStr()}.xlsx`);
 }
 
+/* Fechamento de combustível p/ medição de terceiros: uma aba por empresa,
+   lançamentos agrupados por veículo, subtotal de cada veículo e total geral
+   (mesmo modelo da planilha "Fechamento_Combustivel"). Usa os selecionados
+   na tabela; se não houver seleção, os filtros atuais. */
+function exportarFechamentoTerceiros(){
+  const { rows } = linhasTerceiros();
+  let lista = TERC_SEL.size ? rows.filter(r=>TERC_SEL.has(String(r.id))) : rows;
+  if(!lista.length){ toast('Nada para emitir nos filtros atuais.'); return; }
+  const cab = ['Nº','Data','NF','Posto','Requisição','Produto','Unidade','Quantidade','Preço Unit.','Preço Total','Motorista','Empresa','Equipamento'];
+  const porEmp = {};
+  lista.forEach(r=>{ const e = empresaTerceiroDe(r); (porEmp[e] = porEmp[e] || []).push(r); });
+  const wb = XLSX.utils.book_new(), usados = new Set();
+  const nomeAba = e=>{ let n = String(e).replace(/[\\\/\?\*\[\]:]/g,' ').trim().slice(0,28) || 'Terceiro', k = n, i = 2; while(usados.has(k.toUpperCase())) k = n.slice(0,25)+' '+(i++); usados.add(k.toUpperCase()); return k; };
+  const num = v=>{ const n = Number(v); return isNaN(n) ? null : n; };
+  Object.keys(porEmp).sort((a,b)=>a.localeCompare(b,'pt-BR')).forEach(emp=>{
+    const grupos = {};
+    porEmp[emp].forEach(r=>{ const k = r.equipamento || '(sem veículo)'; (grupos[k] = grupos[k] || []).push(r); });
+    const aoa = [cab], subs = [];
+    Object.keys(grupos).sort((a,b)=>a.localeCompare(b,'pt-BR')).forEach(eq=>{
+      const g = grupos[eq].sort((a,b)=>(a.data||'').localeCompare(b.data||'') || String(a.id).localeCompare(String(b.id),'pt-BR',{numeric:true}));
+      const ini = aoa.length + 1;
+      g.forEach(r=>{
+        const d = r.data ? new Date(r.data + 'T12:00:00') : null;
+        aoa.push([isNaN(Number(r.id)) ? r.id : Number(r.id), d, String(r.nf ?? ''), r.posto||'', String(r.requisicao ?? ''), r.produto||'', r.unidade||'LT', num(r.quantidade), num(r.precoUnit), num(r.precoTotal), r.motorista||'', emp, r.equipamento||'']);
+      });
+      const fim = aoa.length;
+      aoa.push([null,null,null,null,null,null,null,{t:'n',f:`SUBTOTAL(9,H${ini}:H${fim})`},null,{t:'n',f:`SUBTOTAL(9,J${ini}:J${fim})`}]);
+      subs.push(aoa.length);
+      aoa.push([]);
+    });
+    aoa.push([]);
+    aoa.push([null,null,null,null,null,null,'TOTAL',{t:'n',f:'SUBTOTAL(9,H2:H'+(aoa.length-2)+')'},null,{t:'n',f:'SUBTOTAL(9,J2:J'+(aoa.length-2)+')'}]);
+    const ws = XLSX.utils.aoa_to_sheet(aoa, {cellDates:true});
+    ws['!cols'] = [5,11,8,22,12,12,9,12,11,13,16,14,14].map(w=>({wch:w}));
+    for(let R=1; R<aoa.length; R++){
+      const set = (c,z)=>{ const a = XLSX.utils.encode_cell({r:R,c}); if(ws[a]) ws[a].z = z; };
+      set(1,'dd/mm/yyyy'); set(7,'#,##0.000'); set(8,'#,##0.00'); set(9,'#,##0.00');
+    }
+    XLSX.utils.book_append_sheet(wb, ws, nomeAba(emp));
+  });
+  const ini = document.getElementById('t-data-ini')?.value, fim = document.getElementById('t-data-fim')?.value;
+  const per = (ini||fim) ? `_${ini||'inicio'}_a_${fim||'hoje'}` : `_${todayStr()}`;
+  XLSX.writeFile(wb, `Fechamento_Combustivel${per}.xlsx`, {cellDates:true});
+  toast(`Fechamento emitido: ${Object.keys(porEmp).length} empresa(s), ${lista.length} lançamento(s).`);
+}
+
 function initTerceirosTab(){
   const view = document.getElementById('view-terceiros'); if(!view) return;
   const m = document.getElementById('t-medicao');
@@ -11163,6 +11251,7 @@ function initTerceirosTab(){
   document.getElementById('t-btn-desfazer').addEventListener('click', ()=>acaoDescontoTerceiros('desfazerDescontoTerceiros'));
   document.getElementById('t-btn-pronto').addEventListener('click', ()=>{ const { rows, mapa } = linhasTerceiros(); rows.forEach(r=>{ if(statusTerceiro(r,mapa)==='fechada') TERC_SEL.add(String(r.id)); }); renderTerceiros(); });
   document.getElementById('t-btn-excel').addEventListener('click', exportarTerceiros);
+  document.getElementById('t-btn-fechamento').addEventListener('click', exportarFechamentoTerceiros);
   document.getElementById('t-btn-limpar').addEventListener('click', ()=>{ view.querySelectorAll('.flt-terc').forEach(el=>{ el.value=''; }); renderTerceiros(); });
 }
 
