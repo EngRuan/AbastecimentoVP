@@ -2544,7 +2544,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.30-120';
+const APP_VERSION = 'v2026.10.30-121';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -11175,8 +11175,11 @@ function exportarTerceiros(){
    PDF) por empresa, lançamentos agrupados por veículo, subtotal de cada
    veículo e total geral. Usa os selecionados na tabela; sem seleção, os
    filtros atuais. */
+/* Nº = ordem de lançamento (mesmo da tela Lançamentos: posição do registro na base) */
+function seqLancamento(){ const m = new Map(DB.map((r,i)=>[r.id, i+1])); return r=>m.get(r.id) || ''; }
 function dadosFechamentoTerceiros(){
   const { rows } = linhasTerceiros();
+  const seqDe = seqLancamento();
   const lista = TERC_SEL.size ? rows.filter(r=>TERC_SEL.has(String(r.id))) : rows;
   const cmpNum = (a,b)=>String(a ?? '').localeCompare(String(b ?? ''),'pt-BR',{numeric:true});
   const porEmp = {};
@@ -11186,7 +11189,7 @@ function dadosFechamentoTerceiros(){
     porEmp[emp].forEach(r=>{ const k = r.equipamento || '(sem veículo)'; (g[k] = g[k] || []).push(r); });
     const veiculos = Object.keys(g).sort((a,b)=>a.localeCompare(b,'pt-BR',{numeric:true})).map(eq=>({
       equip: eq,
-      regs: g[eq].slice().sort((a,b)=> String(a.data||'').localeCompare(String(b.data||'')) || cmpNum(a.id,b.id))
+      regs: g[eq].slice().sort((a,b)=> String(a.data||'').localeCompare(String(b.data||'')) || (seqDe(a)-seqDe(b)))
     }));
     return { emp, veiculos };
   });
@@ -11200,7 +11203,7 @@ function dadosFechamentoTerceiros(){
   if(v('t-status')) partes.push('Situação: ' + selTxt('t-status').replace(/^[^\wÀ-ú]+/,''));
   if(v('t-nf')) partes.push('NF: ' + v('t-nf'));
   if(TERC_SEL.size) partes.push(`Somente os ${TERC_SEL.size} lançamento(s) selecionado(s)`);
-  return { lista, empresas, filtro: partes.join(' · ') };
+  return { lista, empresas, filtro: partes.join(' · '), seqDe };
 }
 function nomeArquivoFechamento(ext){
   const ini = document.getElementById('t-data-ini')?.value, fim = document.getElementById('t-data-fim')?.value;
@@ -11208,7 +11211,7 @@ function nomeArquivoFechamento(ext){
 }
 
 function exportarFechamentoTerceiros(){
-  const { lista, empresas, filtro } = dadosFechamentoTerceiros();
+  const { lista, empresas, filtro, seqDe } = dadosFechamentoTerceiros();
   if(!lista.length){ toast('Nada para emitir nos filtros atuais.'); return; }
   const cab = ['Nº','Data','NF','Posto','Requisição','Produto','Unidade','Quantidade','Preço Unit.','Preço Total','Motorista','Empresa','Equipamento'];
   const num = x=>{ const n = Number(x); return (x === null || x === undefined || x === '' || isNaN(n)) ? null : n; };
@@ -11226,7 +11229,7 @@ function exportarFechamentoTerceiros(){
       const ini = aoa.length + 1;
       regs.forEach(r=>{
         const d = r.data ? new Date(r.data + 'T12:00:00') : null;
-        aoa.push([isNaN(Number(r.id)) ? r.id : Number(r.id), d, String(r.nf ?? ''), r.posto||'', String(r.requisicao ?? ''), r.produto||'', r.unidade||'LT', num(r.quantidade), num(r.precoUnit), num(r.precoTotal), r.motorista||'', emp, r.equipamento||'']);
+        aoa.push([seqDe(r), d, String(r.nf ?? ''), r.posto||'', String(r.requisicao ?? ''), r.produto||'', r.unidade||'LT', num(r.quantidade), num(r.precoUnit), num(r.precoTotal), r.motorista||'', emp, r.equipamento||'']);
       });
       const fim = aoa.length;
       negrito.add(aoa.length);
@@ -11262,7 +11265,7 @@ function exportarFechamentoTerceiros(){
 }
 
 function gerarPdfFechamentoTerceiros(){
-  const { lista, empresas, filtro } = dadosFechamentoTerceiros();
+  const { lista, empresas, filtro, seqDe } = dadosFechamentoTerceiros();
   if(!lista.length){ toast('Nada para emitir nos filtros atuais.'); return; }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({unit:'pt', format:'a4', orientation:'landscape'});
@@ -11292,7 +11295,7 @@ function gerarPdfFechamentoTerceiros(){
       let q = 0, vl = 0;
       regs.forEach(r=>{
         q += Number(r.quantidade)||0; vl += Number(r.precoTotal)||0;
-        body.push([r.id ?? '', fmtDate(r.data), r.nf ?? '', r.posto||'', r.requisicao ?? '', r.produto||'', r.unidade||'LT', r.quantidade!=null ? n3(r.quantidade) : '', r.precoUnit!=null ? n2(r.precoUnit) : '', r.precoTotal!=null ? n2(r.precoTotal) : '', r.motorista||'', r.equipamento||'']);
+        body.push([seqDe(r), fmtDate(r.data), r.nf ?? '', r.posto||'', r.requisicao ?? '', r.produto||'', r.unidade||'LT', r.quantidade!=null ? n3(r.quantidade) : '', r.precoUnit!=null ? n2(r.precoUnit) : '', r.precoTotal!=null ? n2(r.precoTotal) : '', r.motorista||'', r.equipamento||'']);
       });
       body.push(linhaSoma('Subtotal '+equip, q, vl, cinza));
       eQ += q; eV += vl;
