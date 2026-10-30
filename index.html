@@ -2544,7 +2544,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v2026.10.30-121';
+const APP_VERSION = 'v2026.10.30-122';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -11503,7 +11503,24 @@ function abrirModalSimples(titulo, html){
 /* ---- cadastros duplicados: detectar e unir ---- */
 function _alnum(v){ return String(v||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
 function _chaveEquip(v){ const m = _alnum(v).match(/^([A-Z]+)0*(\d+)$/); return m ? m[1]+String(parseInt(m[2],10)) : _alnum(v); }
-function _chaveEmpresaNome(n){ return String(n||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/\bS\s*\/\s*A\b/g,' ').replace(/[^A-Z0-9 ]/g,' ').split(/\s+/).filter(w=>w && !['LTDA','ME','EPP','SA','EIRELI','CIA','LT'].includes(w)).join(''); }
+const _PALAVRAS_GENERICAS_EMP = ['LTDA','ME','EPP','SA','EIRELI','CIA','LT','CONSTRUTORA','CONSTRUTOR','CONSTRUCOES','CONSTRUCAO','ENGENHARIA','COMERCIO','SERVICOS','SERVICO','TRANSPORTES','TRANSPORTE','TRANSPORTADORA','LOCACAO','LOCACOES','LOCADORA','EMPREENDIMENTOS','INDUSTRIA','INDUSTRIAL','EQUIPAMENTOS','MAQUINAS','GRUPO','FILIAL','MATRIZ','DE','DA','DO','DAS','DOS','E'];
+function _chaveEmpresaNome(n){ return String(n||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/\bS\s*\/\s*A\b/g,' ').replace(/[^A-Z0-9 ]/g,' ').split(/\s+/).filter(w=>w && !_PALAVRAS_GENERICAS_EMP.includes(w)).join(''); }
+function _lev(a,b){ const m=a.length,n=b.length; if(!m) return n; if(!n) return m; let p=Array.from({length:n+1},(_,i)=>i); for(let i=1;i<=m;i++){ const c=[i]; for(let j=1;j<=n;j++) c[j]=Math.min(p[j]+1,c[j-1]+1,p[j-1]+(a[i-1]===b[j-1]?0:1)); p=c; } return p[n]; }
+/* Duas empresas parecem a mesma? Mesmo CNPJ = sim. CNPJs diferentes = NÃO
+   (são filiais/empresas distintas, mesmo com nome igual). Sem CNPJ em um dos
+   lados: compara o nome (sem palavras genéricas), aceitando contido/erro de digitação. */
+function _empresasParecidas(a,b){
+  const ca = String(a.cnpj||'').replace(/\D/g,''), cb = String(b.cnpj||'').replace(/\D/g,'');
+  if(ca.length===14 && cb.length===14) return ca===cb;
+  const ka = _chaveEmpresaNome(a.nome), kb = _chaveEmpresaNome(b.nome);
+  if(!ka || !kb) return false;
+  if(ka===kb) return true;
+  if(ca.length===14 || cb.length===14) return false; // quem tem CNPJ só casa por nome idêntico (filial pode ter nome parecido)
+  const [c,l] = ka.length<=kb.length ? [ka,kb] : [kb,ka];
+  if(c.length>=6 && l.includes(c)) return true;
+  if(c.length>=7 && _lev(ka,kb) <= (l.length>=12 ? 2 : 1)) return true;
+  return false;
+}
 function _agrupar(itens, chaves){
   const pai = itens.map((_,i)=>i); const achar = i=>pai[i]===i?i:(pai[i]=achar(pai[i]));
   const vistos = {};
@@ -11515,7 +11532,15 @@ function acharDuplicados(tipo){
   if(tipo === 'veiculo'){
     return _agrupar(VEICULOS, v=>[ 'E'+_chaveEquip(v.equipamento), _alnum(v.placa).length>=6 ? 'P'+_alnum(v.placa) : '', _alnum(v.serie).length>=8 ? 'S'+_alnum(v.serie) : '' ]);
   }
-  return _agrupar(EMPRESAS, e=>[ 'N'+_chaveEmpresaNome(e.nome), String(e.cnpj||'').replace(/\D/g,'').length===14 ? 'C'+String(e.cnpj).replace(/\D/g,'') : '' ]);
+  const pai = EMPRESAS.map((_,i)=>i); const achar = i=>pai[i]===i?i:(pai[i]=achar(pai[i]));
+  const cnpjs = EMPRESAS.map(e=>{ const c = String(e.cnpj||'').replace(/\D/g,''); return new Set(c.length===14 ? [c] : []); });
+  for(let i=0;i<EMPRESAS.length;i++) for(let j=i+1;j<EMPRESAS.length;j++){
+    const ri = achar(i), rj = achar(j); if(ri===rj || !_empresasParecidas(EMPRESAS[i],EMPRESAS[j])) continue;
+    const u = new Set([...cnpjs[ri], ...cnpjs[rj]]); if(u.size > 1) continue; // nunca junta CNPJs diferentes (filiais)
+    pai[rj] = ri; cnpjs[ri] = u;
+  }
+  const g = {}; EMPRESAS.forEach((e,i)=>{ (g[achar(i)] = g[achar(i)] || []).push(e); });
+  return Object.values(g).filter(l=>l.length>1);
 }
 function _qtdHistorico(tipo, it){
   const campo = tipo==='veiculo' ? 'equipamento' : 'empresa'; const nome = String(tipo==='veiculo'?it.equipamento:it.nome).trim().toUpperCase();
