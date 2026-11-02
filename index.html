@@ -2350,6 +2350,10 @@ body.preview-motorista #view-lancamentos::before{
         <button class="btn secondary" id="btn-sync-push" type="button">⬆ Enviar dados para o Sheets</button>
         <button class="btn secondary" id="btn-sync-pull" type="button">⬇ Puxar dados do Sheets</button>
       </div>
+      <div id="resumo-sistema-box" style="display:none;margin-top:14px;padding:10px;background:#eef2f9;border-radius:8px;">
+        <b>📊 Resumo do sistema</b> <span class="helper" style="margin:0">(só central) — gera um arquivo com lançamentos, equipamentos, membros e data do primeiro acesso de cada obra, para atualizar a apresentação e o tutorial.</span><br>
+        <button type="button" class="btn ghost" id="btn-resumo-sistema" style="margin-top:6px">📥 Baixar resumo do sistema</button>
+      </div>
       <div class="sync-log" id="sync-log" style="margin-top:14px;">Aguardando ação...</div>
     </div>
   </section>
@@ -2544,7 +2548,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v1.0';
+const APP_VERSION = 'v1.0.1';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -11582,7 +11586,26 @@ function abrirDuplicados(tipo){
   };
   desenhar();
 }
+/* Resumo do sistema (central): baixa um JSON com os números reais por obra */
+async function baixarResumoSistema(){
+  const b = document.getElementById('btn-resumo-sistema'); if(b){ b.disabled = true; b.textContent = 'Gerando…'; }
+  try{
+    const json = await postarAcao({ action:'resumoSistema' });
+    if(json.status !== 'ok'){ toast(json.mensagem || 'Falha ao gerar o resumo.'); return; }
+    const blob = new Blob([JSON.stringify(json.resumo, null, 2)], {type:'application/json'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `resumo_sistema_${todayStr()}.json`; document.body.appendChild(a); a.click(); a.remove();
+    toast('Resumo gerado. Envie o arquivo para atualizar a apresentação e o tutorial.');
+  }catch(e){ console.error(e); toast('Erro de conexão ao gerar o resumo.'); }
+  finally{ if(b){ b.disabled = false; b.textContent = '📥 Baixar resumo do sistema'; } }
+}
+function atualizarBoxResumoSistema(){
+  const box = document.getElementById('resumo-sistema-box'); if(!box) return;
+  box.style.display = (typeof ehCentralCli === 'function' && USUARIO_ATUAL && ehCentralCli()) ? '' : 'none';
+  const b = document.getElementById('btn-resumo-sistema'); if(b && !b._ligado){ b._ligado = true; b.addEventListener('click', baixarResumoSistema); }
+}
+document.addEventListener('click', e=>{ if(e.target.closest && e.target.closest('[data-tab="sync"]')) setTimeout(()=>{ try{ atualizarBoxResumoSistema(); }catch(_){} }, 50); });
 function atualizarBotoesDuplicados(){
+  try{ atualizarBoxResumoSistema(); }catch(_){}
   document.querySelectorAll('[data-dup]').forEach(b=>{
     const t = b.dataset.dup; const n = (VEICULOS.length||EMPRESAS.length) ? acharDuplicados(t).length : 0;
     b.style.display = pode('editar_cadastros') ? '' : 'none';
