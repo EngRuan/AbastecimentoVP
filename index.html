@@ -2392,7 +2392,11 @@ body.preview-motorista #view-lancamentos::before{
       <h2>🎫 Emitir requisição</h2>
       <div class="form-grid" style="margin-top:10px;">
         <div class="field wide">
-          <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="req-terceiro" style="width:auto;"> É pra veículo de empresa terceirizada (motorista não cadastrado no sistema)</label>
+          <label>Empresa* <span style="font-weight:400;font-size:12px;color:var(--gray);">(escolha primeiro — o resto do formulário acompanha a empresa)</span></label>
+          <select id="req-empresa-escolha"><option value="">Tripoloni (equipamento próprio)</option></select>
+        </div>
+        <div class="field wide" style="display:none;">
+          <label><input type="checkbox" id="req-terceiro" style="width:auto;"></label>
         </div>
         <div class="field" id="req-motorista-wrap">
           <label>Motorista <a href="#" id="link-motorista-sem-cadastro" style="font-weight:400;font-size:12px;margin-left:6px;">🖊️ funcionário sem cadastro</a></label>
@@ -2582,7 +2586,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v1.0.4';
+const APP_VERSION = 'v1.1.1';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -4958,7 +4962,7 @@ function initRequisicoesTab(){
     document.getElementById('req-equipamento-wrap').style.display = ehTerceiro ? 'none' : '';
     document.getElementById('req-equipamento-livre-wrap').style.display = 'none';
     document.getElementById('req-equipamento-livre').dataset.modo = '';
-    document.getElementById('req-empresa-terceiro-wrap').style.display = ehTerceiro ? '' : 'none';
+    document.getElementById('req-empresa-terceiro-wrap').style.display = 'none'; // a empresa já é escolhida no seletor do topo
     document.getElementById('req-placa-wrap').style.display = ehTerceiro ? '' : 'none';
     if(ehTerceiro) populateEmpresaTerceiroSelect();
     // se desmarcar terceiro, também sai do modo "sem cadastro" (evita
@@ -4993,6 +4997,27 @@ function initRequisicoesTab(){
   });
 }
 
+function popularEscolhaEmpresa(){
+  const s = document.getElementById('req-empresa-escolha'); if(!s) return;
+  const atual = s.value;
+  s.innerHTML = '<option value="">Tripoloni (equipamento próprio)</option>' +
+    [...EMPRESAS].filter(e=>e.tipo !== 'propria' && !/^TRIPOLONI/i.test(String(e.nome||''))).sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR'))
+      .map(e=>`<option value="${escapeHtml(e.nome)}">${escapeHtml(e.nome)} (terceiro)</option>`).join('') +
+    '<option value="__nova__">+ Cadastrar nova empresa...</option>';
+  s.value = atual;
+  if(s.value !== atual) s.value = '';
+  if(!s.dataset.ligado){
+    s.dataset.ligado = '1';
+    s.addEventListener('change', ()=>{
+      const chk = document.getElementById('req-terceiro'); const selE = document.getElementById('req-empresa-terceiro');
+      populateEmpresaTerceiroSelect();
+      if(s.value === '__nova__'){ selE.value = '__nova__'; selE.dispatchEvent(new Event('change')); s.value = ''; chk.checked = false; chk.dispatchEvent(new Event('change')); return; }
+      const terc = !!s.value;
+      chk.checked = terc; chk.dispatchEvent(new Event('change'));
+      if(terc){ selE.value = s.value; atualizarPlacasDaEmpresa(); }
+    });
+  }
+}
 function atualizarPlacasDaEmpresa(){
   const inp = document.getElementById('req-placa'); const selE = document.getElementById('req-empresa-terceiro');
   if(!inp || !selE) return;
@@ -5030,6 +5055,9 @@ function populateEmpresaTerceiroSelect(){
         }
         populateEmpresaTerceiroSelect();
         sel.value = nome.trim().toUpperCase();
+        popularEscolhaEmpresa();
+        const _esc = document.getElementById('req-empresa-escolha');
+        if(_esc){ _esc.value = sel.value; _esc.dispatchEvent(new Event('change')); }
         toast('Empresa cadastrada!');
       }catch(err){ console.error(err); toast('Falha ao cadastrar: ' + err.message); sel.value = ''; }
     });
@@ -5037,6 +5065,7 @@ function populateEmpresaTerceiroSelect(){
 }
 
 function populateEmpresaVinculadaSelect(){
+  try{ popularEscolhaEmpresa(); }catch(_){}
   const sel = document.getElementById('v-empresa-vinculada');
   if(!sel) return;
   const valorAtual = sel.value;
@@ -5912,6 +5941,67 @@ function pendEditHtml(p, np, rasc){
         </details>`;
 }
 
+/* Cartão visual da aprovação: cabeçalho (Nº requisição + nota + data + posto), faixa de resumo
+   (combustível, total, placa, km) e comparação "Requisição × Lida na nota" com divergência em vermelho. */
+function cartaoVisualPendente(p, np, rasc){
+  const E = escapeHtml;
+  const rq = p.requisicao ? (REQUISICOES_EMITIDAS||[]).find(x=>normReqNum(x.numero) === normReqNum(p.requisicao)) : null;
+  const eq = String(p.equipamento||'').toUpperCase();
+  const v = veiculoDoEquip(eq);
+  const placa = (p.placa || (rq && rq.placa) || (v && v.placa) || '—');
+  const qtd = np.quantidade != null ? np.quantidade : p.quantidade;
+  const ptot = np.precoTotal != null ? np.precoTotal : p.precoTotal;
+  const punit = np.precoUnit != null ? np.precoUnit : p.precoUnit;
+  const km = np.kmHor != null ? np.kmHor : p.kmHor;
+  const dataIso = np.data || String(p.data||'').slice(0,10);
+  const produto = String(p.produto||'—');
+  const cupom = np.docPosto || p.cupom || '';
+  const nf = (rasc && rasc.nf) || p.nfSugerido || '';
+  const bad = 'color:#c0392b;';
+  const navy = 'background:linear-gradient(135deg,#0b2a6f,#002674);color:#fff;';
+  const caixa = 'background:#fff;border:1px solid #d6deef;border-radius:12px;padding:10px 12px;';
+  const par = (rot, val, extra)=>`<div style="flex:1 1 120px;min-width:110px;${extra||''}"><div style="font-size:11px;color:#6b7a99;">${rot}</div><div style="font-size:17px;font-weight:800;color:#0b2a6f;line-height:1.2;">${val}</div></div>`;
+  const reqDiffProd = rq && rq.produto && produto && String(rq.produto).toUpperCase() !== produto.toUpperCase();
+  const reqEq = rq ? String(rq.equipamento || eq || '').toUpperCase() : '';
+  const reqDiffEq = rq && rq.equipamento && eq && String(rq.equipamento).toUpperCase() !== eq;
+  const reqPlaca = rq ? (rq.placa || (veiculoDoEquip(rq.equipamento||eq)||{}).placa || '—') : '—';
+  const kmReq = rq && rq.kmEsperado ? fmtNum(Number(String(rq.kmEsperado).replace(',','.')),0) : '—';
+  const painel = (titulo, icone, corpo, aviso)=>`<div style="flex:1 1 260px;border:1px solid #cdd8f0;border-radius:12px;overflow:hidden;background:#eef3fc;">
+      <div style="${navy}padding:7px 12px;font-weight:700;font-size:14px;">${icone} ${titulo}</div>
+      <div style="padding:10px 12px;font-size:13px;">${corpo}${aviso||''}</div></div>`;
+  const linha = (rot, val, ruim)=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;"><span style="color:#6b7a99;">${rot}</span><b style="${ruim?bad:'color:#0b2a6f;'}">${val}</b></div>`;
+  const corpoReq = rq ? (
+      linha('Placa', E(String(reqPlaca))) + linha('Prefixo', E(reqEq||'—'), reqDiffEq) + linha('Combustível', E(String(rq.produto||'—')), reqDiffProd) +
+      linha('Km esperado', kmReq) + (rq.posto ? linha('Posto', E(String(rq.posto))) : '') +
+      (textoItensReq(rq) ? `<div style="margin-top:4px;font-size:12px;color:#33415f;">${E(textoItensReq(rq))}</div>` : '')
+    ) : `<div style="color:#6b7a99;">Ainda não tem requisição — gere a requisição abaixo.</div>`;
+  const corpoNota = linha('Placa', E(String(placa))) + linha('Prefixo', E(eq||'—'), reqDiffEq) + linha('Combustível', E(produto), reqDiffProd) +
+      linha('Quantidade', `${qtd!=null?fmtNum(qtd,2):'—'} L`) + linha('Valor total', `${ptot!=null?fmtMoney(ptot):'—'}${punit!=null?` <span style="font-weight:600;">(${fmtMoney(punit)}/L)</span>`:''}`) +
+      (cupom ? linha('Cupom do posto', E(String(cupom))) : '');
+  return `<div class="pend-visual" style="display:flex;flex-direction:column;gap:8px;">
+    <div style="${navy}border-radius:14px;padding:10px 14px;display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;justify-content:space-between;">
+      <div>
+        <div style="font-size:12px;opacity:.8;">${p.requisicao ? 'Requisição' : 'Lançamento sem requisição'}</div>
+        <div style="font-size:22px;font-weight:800;line-height:1.15;">${p.requisicao ? 'Nº ' + E(String(p.requisicao)) : '— a gerar'}</div>
+        <div style="font-size:13px;opacity:.9;">${nf ? 'NF mãe ' + E(String(nf)) + ' · ' : ''}${cupom ? 'Cupom ' + E(String(cupom)) + ' · ' : ''}${dataIso ? fmtDate(dataIso) : '—'}</div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:17px;font-weight:800;">⛽ ${E(String(p.posto||'—'))}</div>
+        <div style="font-size:12px;opacity:.85;">${E(String(p.motorista||p.email||''))}</div>
+      </div>
+    </div>
+    <div style="${caixa}display:flex;flex-wrap:wrap;gap:10px 14px;">
+      ${par(E(produto), (ptot!=null?fmtMoney(ptot):'—') + `<div style="font-size:12px;font-weight:600;color:#6b7a99;">${qtd!=null?fmtNum(qtd,2):'—'} L${punit!=null?' · '+fmtMoney(punit)+'/L':''}</div>`)}
+      ${par('Placa do veículo', E(String(placa)) + `<div style="font-size:12px;font-weight:600;color:#6b7a99;">${E(eq||'—')}</div>`)}
+      ${par('Km / Hor.', km!=null?fmtNum(km,0):'—')}
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;">
+      ${painel('Requisição', '📋', corpoReq)}
+      ${painel('Lida na nota / lançada', np.arquivo ? '📄' : '✏️', corpoNota, (reqDiffProd||reqDiffEq) ? `<div style="${bad}font-weight:700;margin-top:4px;">⚠️ Diverge da requisição</div>` : '')}
+    </div>
+  </div>`;
+}
+
 function renderListaPendentes(){
   const box = document.getElementById('lista-pendentes');
   if(!box) return;
@@ -5941,8 +6031,7 @@ function renderListaPendentes(){
     const rasc = PEND_RASCUNHO[p.id] || {};
     const infoBase = `
       <div class="info">
-        <b>${escapeHtml(p.motorista||p.email)}</b> — ${fmtDate(p.data)} · ${escapeHtml(p.equipamento||'—')} · ${escapeHtml(p.produto||'—')}
-        <br><span style="color:var(--gray);">${fmtNum(p.quantidade,1)} L · ${fmtMoney(p.precoTotal)} (${fmtMoney(p.precoUnit)}/L) · Km/Hor: ${p.kmHor!=null?fmtNum(p.kmHor,0):'—'} · Posto: ${escapeHtml(p.posto||'—')}</span>
+        ${cartaoVisualPendente(p, np, rasc)}
         ${(()=>{
           const rq = p.requisicao ? (REQUISICOES_EMITIDAS||[]).find(x=>normReqNum(x.numero) === normReqNum(p.requisicao)) : null;
           if(!rq) return '';
