@@ -5958,10 +5958,10 @@ function cartaoVisualPendente(p, np, rasc){
       linha('Quantidade', `${qtd!=null?fmtNum(qtd,2):'—'} L`) + linha('Valor total', `${ptot!=null?fmtMoney(ptot):'—'}${punit!=null?` <span style="font-weight:600;">(${fmtMoney(punit)}/L)</span>`:''}`) +
       (cupom ? linha('Cupom do posto', E(String(cupom))) : '');
   return `<div class="pend-visual" style="display:flex;flex-direction:column;gap:8px;">
-    <div style="${navy}border-radius:14px;padding:10px 14px;display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;justify-content:space-between;">
+    <div style="${navy}border-radius:12px;padding:8px 12px;display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;justify-content:space-between;">
       <div>
         <div style="font-size:12px;opacity:.8;">${p.requisicao ? 'Requisição' : 'Lançamento sem requisição'}</div>
-        <div style="font-size:22px;font-weight:800;line-height:1.15;">${p.requisicao ? 'Nº ' + E(String(p.requisicao)) : '— a gerar'}</div>
+        <div style="font-size:20px;font-weight:800;line-height:1.1;">${p.requisicao ? 'Nº ' + E(String(p.requisicao)) : '— a gerar'}</div>
         <div style="font-size:13px;opacity:.9;">${nf ? 'NF mãe ' + E(String(nf)) + ' · ' : ''}${cupom ? 'Cupom ' + E(String(cupom)) + ' · ' : ''}${dataIso ? fmtDate(dataIso) : '—'}</div>
       </div>
       <div style="text-align:right;">
@@ -6008,9 +6008,9 @@ function renderListaPendentes(){
   box.innerHTML = visiveis.map(p=>{
     const np = NOTA_PREENCHIDA[p.id] || {};
     const rasc = PEND_RASCUNHO[p.id] || {};
+    const visualPend = cartaoVisualPendente(p, np, rasc);
     const infoBase = `
       <div class="info">
-        ${cartaoVisualPendente(p, np, rasc)}
         ${(()=>{
           const rq = p.requisicao ? (REQUISICOES_EMITIDAS||[]).find(x=>normReqNum(x.numero) === normReqNum(p.requisicao)) : null;
           if(!rq) return '';
@@ -6027,7 +6027,7 @@ function renderListaPendentes(){
     if(!p.requisicao){
       return `
       <div class="aprov-item" data-id="${escapeHtml(p.id)}" style="flex-direction:column;align-items:stretch;gap:10px;">
-        ${infoBase}
+        <div class="pend-cols" style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start;"><div style="flex:1 1 430px;min-width:0;">${visualPend}</div><div style="flex:1 1 400px;min-width:0;display:flex;flex-direction:column;gap:8px;">${infoBase}
         ${np.arquivo ? `<p class="helper" style="margin:0;"><span style="color:var(--ok,#1a8f3c);font-weight:700;">📄 Dados da nota PDF (${escapeHtml(np.arquivo)})${np.docPosto ? ' · cupom do posto nº '+escapeHtml(np.docPosto) : ''} — confere abaixo.</span></p>` : ''}
         ${pendEditHtml(p, np, rasc)}
         <div class="btn-row" style="align-items:flex-end;">
@@ -6045,7 +6045,7 @@ function renderListaPendentes(){
           <button class="btn secondary" data-salvar-edicao="${escapeHtml(p.id)}" title="Grava as correções acima sem confirmar — o lançamento continua na fila.">💾 Salvar edições</button>
           <button class="btn ghost" data-rejeitar="${escapeHtml(p.id)}">🗑️ Rejeitar</button>
         </div>
-      </div>`;
+      </div></div></div>`;
     }
 
     // 2ª aprovação: já tem requisição, falta só a Nota Fiscal (com opção
@@ -6053,7 +6053,7 @@ function renderListaPendentes(){
     // errado — o "✏️ Editar dados" abre os campos, escondidos por padrão)
     return `
       <div class="aprov-item" data-id="${escapeHtml(p.id)}" style="flex-direction:column;align-items:stretch;gap:10px;">
-        ${infoBase}
+        <div class="pend-cols" style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start;"><div style="flex:1 1 430px;min-width:0;">${visualPend}</div><div style="flex:1 1 400px;min-width:0;display:flex;flex-direction:column;gap:8px;">${infoBase}
         <p class="helper" style="margin:0;">${np.arquivo ? ` <span style="color:var(--ok,#1a8f3c);font-weight:700;">📄 Preenchido pela nota PDF (${escapeHtml(np.arquivo)})${np.docPosto ? ' · cupom do posto nº '+escapeHtml(np.docPosto)+' (não é a NF do fechamento)' : ''} — confere e confirma.</span>` : ''}</p>
         ${pendEditHtml(p, np, rasc)}
         <div class="btn-row" style="align-items:flex-end;">
@@ -6066,7 +6066,7 @@ function renderListaPendentes(){
           <button class="btn secondary" data-salvar-edicao="${escapeHtml(p.id)}" title="Grava as correções acima sem confirmar — o lançamento continua na fila.">💾 Salvar edições</button>
           <button class="btn ghost" data-rejeitar="${escapeHtml(p.id)}">🗑️ Rejeitar</button>
         </div>
-      </div>`;
+      </div></div></div>`;
   }).join('');
 
   box.querySelectorAll('[data-gerar-req]').forEach(btn=>{
