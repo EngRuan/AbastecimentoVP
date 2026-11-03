@@ -2,6 +2,34 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
+<script>
+/* GUARDA DE INICIALIZAÇÃO (ES5 puro): se o app não subir (ex.: erro de sintaxe no Safari), mostra o motivo na tela em vez de página em branco */
+(function(){
+  var erros=[];
+  window.__bootErros=erros;
+  window.addEventListener('error',function(ev){ try{ var m=(ev&&ev.message)||'erro'; var s=(ev&&ev.filename)?(' @'+String(ev.filename).split('/').pop()+':'+(ev.lineno||'')+':'+(ev.colno||'')):''; if(ev&&ev.target&&ev.target.tagName&&!ev.message){ m='falha ao carregar '+(ev.target.src||ev.target.href||ev.target.tagName); s=''; } erros.push(m+s); }catch(_){} },true);
+  window.addEventListener('unhandledrejection',function(ev){ try{ erros.push('promessa: '+((ev&&ev.reason&&(ev.reason.message||ev.reason))||'?')); }catch(_){} });
+  function mostrar(){
+    if(window.__appBoot) return;
+    try{
+      var d=document.createElement('div');
+      d.style.cssText='position:fixed;left:0;top:0;right:0;bottom:0;z-index:99999;background:#fff;color:#111;padding:20px;font:14px/1.4 -apple-system,Arial,sans-serif;overflow:auto';
+      var ua=(navigator.userAgent||'').replace(/</g,'&lt;');
+      var lista=erros.length?erros.slice(0,8).map(function(e){return '<li style="margin:4px 0;word-break:break-word">'+String(e).replace(/</g,'&lt;')+'</li>';}).join(''):'<li>nenhum erro registrado (pode ter travado carregando)</li>';
+      d.innerHTML='<h2 style="color:#002674;margin:0 0 8px">Controle de Abastecimento</h2><p>O sistema não terminou de carregar neste navegador.</p><button id="boot-limpar" style="padding:12px 18px;font-size:16px;background:#002674;color:#fff;border:0;border-radius:8px">Limpar e tentar de novo</button><p style="margin-top:16px;font-size:12px;color:#555">Se continuar, tire um print desta tela e mande pro Ruan.</p><ul style="font-size:12px;color:#a00;padding-left:18px">'+lista+'</ul><p style="font-size:11px;color:#777;word-break:break-word">'+ua+'</p>';
+      document.body.appendChild(d);
+      document.getElementById('boot-limpar').onclick=function(){
+        try{ localStorage.clear(); sessionStorage.clear(); }catch(_){}
+        try{ if(window.indexedDB&&indexedDB.databases){ indexedDB.databases().then(function(l){ l.forEach(function(x){ indexedDB.deleteDatabase(x.name); }); }); } }catch(_){}
+        try{ if(window.caches){ caches.keys().then(function(k){ k.forEach(function(n){ caches.delete(n); }); }); } }catch(_){}
+        try{ if(navigator.serviceWorker){ navigator.serviceWorker.getRegistrations().then(function(r){ r.forEach(function(x){ x.unregister(); }); }); } }catch(_){}
+        setTimeout(function(){ location.replace(location.pathname+'?r='+Date.now()); },700);
+      };
+    }catch(_){}
+  }
+  window.addEventListener('load',function(){ setTimeout(mostrar,6000); });
+})();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Controle de Abastecimento — Tripoloni Construtora</title>
 <link rel="manifest" href="manifest.json">
@@ -2540,6 +2568,12 @@ const LOGO_B64 = "iVBORw0KGgoAAAANSUhEUgAACIIAAAKDCAYAAABsAzM0AAAABGdBTUEAALGPC/
    ========================================================================= */
 
 const STORAGE_KEY = 'tripoloni_abastecimento_v1';
+/* Safari (iPhone/iPad/Mac) só deixa ~5 MB no localStorage e o histórico já passa de 2 MB:
+   guardar a base inteira ali estourava a cota ("QuotaExceededError") e quebrava o login.
+   A cópia local da base fica no IndexedDB (cacheSalvar); aqui limpamos a cópia antiga
+   e protegemos qualquer gravação pequena para nunca derrubar o app. */
+try{ localStorage.removeItem(STORAGE_KEY); }catch(_){}
+try{ const _setItemOrig = Storage.prototype.setItem; Storage.prototype.setItem = function(k,v){ try{ return _setItemOrig.call(this,k,v); }catch(e){ console.warn('Armazenamento local cheio/bloqueado:', k, e && e.name); } }; }catch(_){}
 const SYNC_URL_KEY = 'tripoloni_abastecimento_sync_url';
 
 /* URL do Apps Script já implantada — deixa o app pronto pra usar
@@ -2548,7 +2582,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v1.0.1';
+const APP_VERSION = 'v1.0.4';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -4959,6 +4993,17 @@ function initRequisicoesTab(){
   });
 }
 
+function atualizarPlacasDaEmpresa(){
+  const inp = document.getElementById('req-placa'); const selE = document.getElementById('req-empresa-terceiro');
+  if(!inp || !selE) return;
+  let dl = document.getElementById('req-placa-lista');
+  if(!dl){ dl = document.createElement('datalist'); dl.id = 'req-placa-lista'; document.body.appendChild(dl); inp.setAttribute('list','req-placa-lista'); }
+  const emp = String(selE.value||'').trim().toUpperCase();
+  if(!emp || emp === '__NOVA__'){ dl.innerHTML = ''; return; }
+  const lista = (VEICULOS||[]).filter(v=>(v.tipo==='terceirizado'||v.tipo==='alugado') && String(v.empresaVinculada||'').trim().toUpperCase()===emp);
+  dl.innerHTML = lista.map(v=>{ const val = v.placa || v.equipamento; return `<option value="${escapeHtml(String(val))}">${escapeHtml([v.equipamento, v.modelo].filter(Boolean).join(' · '))}</option>`; }).join('');
+  inp.placeholder = lista.length ? `${lista.length} cadastrado(s) nessa empresa — toque pra escolher` : 'Nenhum cadastrado nessa empresa — digite a placa';
+}
 function populateEmpresaTerceiroSelect(){
   const sel = document.getElementById('req-empresa-terceiro');
   if(!sel) return;
@@ -4967,8 +5012,10 @@ function populateEmpresaTerceiroSelect(){
     [...EMPRESAS].sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR')).map(e=>`<option value="${escapeHtml(e.nome)}">${escapeHtml(e.nome)} (${e.tipo})</option>`).join('') +
     '<option value="__nova__">+ Cadastrar nova empresa...</option>';
   sel.value = valorAtual;
+  atualizarPlacasDaEmpresa();
   if(!sel.dataset.listenerNova){
     sel.dataset.listenerNova = '1';
+    sel.addEventListener('change', atualizarPlacasDaEmpresa);
     sel.addEventListener('change', async ()=>{
       if(sel.value !== '__nova__') return;
       const nome = window.prompt('Nome da empresa terceirizada:');
@@ -7153,8 +7200,7 @@ function restaurarEstadoUI(){
 }
 
 function saveDB(){
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(DB));
-  refreshRecordPill();
+  refreshRecordPill(); // a cópia local da base é feita no IndexedDB (cacheSalvar), não no localStorage
 }
 function refreshRecordPill(){
   document.getElementById('record-count-pill').textContent = `${DB.length} registros`;
@@ -7284,7 +7330,7 @@ function recalcularTodasMedias(){
       const temLeitura = r.kmHor !== null && r.kmHor !== undefined && !isNaN(r.kmHor);
       if(kmAnterior !== null && temLeitura && PRODUTOS_COMBUSTIVEL.has((r.produto||'').toUpperCase()) && r.quantidade > 0){
         const dist = r.kmHor - kmAnterior;
-        if(dist > 0 && dist <= 3000){
+        if(dist > 0 && (dist <= 3000 || dist / r.quantidade <= 25)){
           const media = dist / r.quantidade;
           r.mediaKmL = (media > 0 && media <= 60) ? Math.round(media*1000)/1000 : null;
         } else {
@@ -10337,6 +10383,7 @@ async function pullFromSheets(){
    INIT
 --------------------------------------------------------------------- */
 document.addEventListener('DOMContentLoaded', async ()=>{
+  window.__appBoot = true;
   // a URL embutida no código (DEFAULT_SYNC_URL) sempre ganha — ela é
   // atualizada a cada nova implantação do Apps Script. Antes o app dava
   // prioridade pra uma URL antiga salva no navegador (útil quando cada
