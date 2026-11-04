@@ -5863,6 +5863,7 @@ function atualizarCardPendentes(){
 }
 /* Rascunho do que foi digitado nos pendentes — sobrevive aos re-renders (busca, gerar requisição, atualizar). */
 let PEND_RASCUNHO = {};
+let PEND_SEL = new Set();   // pendentes marcados para aprovar em lote
 let _pullSeq = 0;
 let HISTORICO_COMPLETO = (()=>{ try{ return sessionStorage.getItem('hist_completo') === '1'; }catch(e){ return false; } })(); // true depois de "carregar histórico completo" (vale até recarregar a página)
 function capturarRascunhoPendentes(){
@@ -6003,10 +6004,12 @@ function renderListaPendentes(){
     return;
   }
   capturarRascunhoPendentes();
-  box.innerHTML = visiveis.map(p=>{
+  PEND_SEL.forEach(id=>{ if(!PENDENTES.some(p=>String(p.id)===id)) PEND_SEL.delete(id); });
+  const barraLote = `<div id="barra-lote-pend" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:#eef3fc;border:1px solid #cdd8f0;border-radius:12px;padding:10px 12px;margin-bottom:10px;"><label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer;"><input type="checkbox" id="pend-sel-todos" style="width:auto;"> Selecionar todos (${visiveis.length})</label><button type="button" class="btn" id="btn-aprovar-lote" style="background:#0b6b3a;">⚡ Aprovar selecionados e gerar requisição</button><span id="pend-sel-info" class="helper" style="margin:0;"></span></div>`;
+  box.innerHTML = barraLote + visiveis.map(p=>{
     const np = NOTA_PREENCHIDA[p.id] || {};
     const rasc = PEND_RASCUNHO[p.id] || {};
-    const visualPend = cartaoVisualPendente(p, np, rasc);
+    const visualPend = `<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin:0 0 6px;cursor:pointer;"><input type="checkbox" data-pend-sel="${escapeHtml(p.id)}" style="width:auto;" ${PEND_SEL.has(String(p.id)) ? 'checked' : ''}> Incluir na aprovação em lote</label>` + cartaoVisualPendente(p, np, rasc);
     const infoBase = `
       <div class="info">
         ${(()=>{
@@ -6067,6 +6070,12 @@ function renderListaPendentes(){
       </div></div></div>`;
   }).join('');
 
+  const _infoLote = ()=>{ const el = document.getElementById('pend-sel-info'); if(el) el.textContent = PEND_SEL.size ? `${PEND_SEL.size} selecionado(s)` : 'Marque os cartões (ou todos) e aprove de uma vez: gera o nº da requisição e confirma.'; const t = document.getElementById('pend-sel-todos'); if(t) t.checked = box.querySelectorAll('[data-pend-sel]').length > 0 && [...box.querySelectorAll('[data-pend-sel]')].every(c=>c.checked); };
+  box.querySelectorAll('[data-pend-sel]').forEach(cb=>cb.addEventListener('change', ()=>{ if(cb.checked) PEND_SEL.add(cb.dataset.pendSel); else PEND_SEL.delete(cb.dataset.pendSel); _infoLote(); }));
+  const _todos = document.getElementById('pend-sel-todos');
+  if(_todos) _todos.addEventListener('change', ()=>{ box.querySelectorAll('[data-pend-sel]').forEach(cb=>{ cb.checked = _todos.checked; if(_todos.checked) PEND_SEL.add(cb.dataset.pendSel); else PEND_SEL.delete(cb.dataset.pendSel); }); _infoLote(); });
+  const _bl = document.getElementById('btn-aprovar-lote'); if(_bl) _bl.addEventListener('click', aprovarPendentesEmLote);
+  _infoLote();
   box.querySelectorAll('[data-gerar-req]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       const id = btn.dataset.gerarReq;
@@ -6918,6 +6927,53 @@ async function confirmarPendenteUI(id, nf, edicoes){
     console.error(err);
     toast('Falha ao confirmar: ' + err.message);
   }
+}
+
+
+/* APROVAR EM LOTE: para cada pendente marcado, gera o nº da requisição (se ainda não tem) e confirma —
+   as mesmas etapas e travas do "Gerar e confirmar", uma de cada vez (o servidor numera em sequência). */
+function _edicoesDoCard(id){
+  const box = document.getElementById('lista-pendentes');
+  const q = c=>box.querySelector(`[data-edit-${c}="${CSS.escape(id)}"]`)?.value || '';
+  return { posto: q('posto').trim().toUpperCase(), quantidade: q('quantidade'), precoUnit: q('precounit'), precoTotal: q('precototal'), kmHor: q('kmhor'), data: q('data') };
+}
+async function aprovarPendentesEmLote(){
+  const box = document.getElementById('lista-pendentes');
+  capturarRascunhoPendentes();
+  const alvo = PENDENTES.filter(p=>PEND_SEL.has(String(p.id)));
+  if(!alvo.length){ toast('Marque pelo menos um lançamento (ou "Selecionar todos").'); return; }
+  const ok = await confirmModal('Aprovar em lote', `Vai gerar a requisição e confirmar ${alvo.length} lançamento(s), um por um. Os que tiverem problema (sem NF mãe, NF fechada, km irregular…) ficam na lista com o motivo. Continuar?`);
+  if(!ok) return;
+  const btn = document.getElementById('btn-aprovar-lote'); if(btn) btn.disabled = true;
+  const falhas = []; let feitos = 0, i = 0;
+  for(const p of alvo){
+    i++; if(btn) btn.textContent = `⏳ ${i} de ${alvo.length}…`;
+    const id = p.id; const rasc = PEND_RASCUNHO[id] || {};
+    const nf = String(rasc.nf !== undefined ? rasc.nf : (p.nfSugerido || '')).trim();
+    const rot = `${p.equipamento||'—'} ${p.data ? fmtDate(p.data) : ''}`.trim();
+    try{
+      const edicoes = _edicoesDoCard(id);
+      if(postoPendenteCadastrado(id, edicoes) && !nf){ falhas.push(`${rot}: posto cadastrado — falta a NF mãe`); continue; }
+      if(nf && nfFechadaCli(nf)){ falhas.push(`${rot}: NF ${nf} está fechada`); continue; }
+      let atual = PENDENTES.find(x=>x.id === id) || p;
+      if(!atual.requisicao){
+        const reqManual = (box.querySelector(`[data-req-de="${CSS.escape(id)}"]`)?.value || '').trim();
+        const j1 = await postarAcao({ action:'atribuirRequisicao', id, requisicao: reqManual || null });
+        if(j1.status !== 'ok'){ falhas.push(`${rot}: ${j1.mensagem || 'falha ao gerar requisição'}`); continue; }
+        PENDENTES = j1.pendentes || PENDENTES;
+      }
+      const npC = NOTA_PREENCHIDA[id]; const ed = (npC && npC.docPosto) ? Object.assign({}, edicoes, { cupom: npC.docPosto }) : edicoes;
+      const j2 = await postarAcao({ action:'confirmarPendente', id, nf, edicoes: ed });
+      if(j2.status !== 'ok'){ falhas.push(`${rot}: ${j2.mensagem || 'falha ao confirmar'} (a requisição já foi gerada)`); continue; }
+      delete PEND_RASCUNHO[id]; delete NOTA_PREENCHIDA[id]; PEND_SEL.delete(String(id));
+      PENDENTES = j2.pendentes || PENDENTES.filter(x=>x.id !== id);
+      feitos++;
+    }catch(err){ console.error(err); falhas.push(`${rot}: ${err.message}`); }
+  }
+  renderListaPendentes();
+  try{ pullFromSheetsSilencioso(); }catch(_){}
+  toast(`✅ ${feitos} aprovado(s)${falhas.length ? ' · ⚠️ ' + falhas.length + ' com pendência' : ''}.`);
+  if(falhas.length) alert('Ficaram na lista (resolva e aprove de novo):\n\n' + falhas.join('\n'));
 }
 
 async function rejeitarPendenteUI(id){
