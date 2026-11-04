@@ -2576,7 +2576,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v1.0.3';
+const APP_VERSION = 'v1.0.1';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -7495,6 +7495,14 @@ function posicionarFormLancamento(modoPreview){
     else if(!mover && baseCard.parentNode === viewAprov){ slotB.parentNode.insertBefore(baseCard, slotB.nextSibling); }
     baseCard.classList.toggle('hide-so-nivel1', !mover);
   }
+  let barraPdf = document.getElementById('barra-pdf-posto');
+  if(!barraPdf){
+    barraPdf = document.createElement('div'); barraPdf.id = 'barra-pdf-posto'; barraPdf.className = 'card'; barraPdf.style.cssText = 'display:none;padding:12px 16px;';
+    barraPdf.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;"><div><b>📄 Importar PDF do posto</b><div class="helper" style="margin:2px 0 0;">Jogue aqui o relatório do posto (detalhamento, extrato, fechamento + demonstrativo). O sistema converte a placa em equipamento e manda os abastecimentos pra Aprovações.</div></div><button type="button" class="btn" id="btn-pdf-posto" style="background:#0b6b3a;">📄 Escolher PDF(s)…</button></div>';
+    viewAprov.insertBefore(barraPdf, viewAprov.firstChild);
+    barraPdf.querySelector('#btn-pdf-posto').addEventListener('click', ()=>{ abrirImportacao('lanc'); const f = document.getElementById('imp-pdf-file'); if(f) f.click(); });
+  }
+  barraPdf.style.display = (!!USUARIO_ATUAL && !ehMotorista && !modoPreview && pode('lancamento_manual')) ? '' : 'none';
   if(wrap.parentNode === viewAprov) viewAprov.appendChild(wrap); // sempre por último, depois da base de lançamentos
   const naAprovacao = !!USUARIO_ATUAL && !ehMotorista && !modoPreview && pode('lancamento_manual');
   if(naAprovacao){
@@ -10728,7 +10736,17 @@ function impCriarModal(){
   #modal-import tr.imp-erro{background:#fdeaea;} #modal-import tr.imp-pula{background:#f3f3f3;color:#777;} #modal-import tr.imp-aviso{background:#fff8e1;}
   #modal-import tr.imp-off td{opacity:.45;}
   #modal-import .imp-sum{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0;font-size:13px;}
-  #modal-import .imp-sum span{padding:4px 10px;border-radius:14px;background:#eef2f8;}`;
+  #modal-import .imp-sum span{padding:4px 10px;border-radius:14px;background:#eef2f8;}
+  #modal-import.imp-cartoes .imp-tab{max-height:70vh;border:0;}
+  #modal-import.imp-cartoes table,#modal-import.imp-cartoes tbody{display:block;}
+  #modal-import.imp-cartoes thead{display:none;}
+  #modal-import.imp-cartoes tr{display:flex;flex-wrap:wrap;gap:8px 10px;border:1px solid #cdd8f0;border-radius:12px;padding:10px 12px;margin-bottom:10px;background:#fff;}
+  #modal-import.imp-cartoes tr.imp-erro{background:#fdeaea;} #modal-import.imp-cartoes tr.imp-aviso{background:#fff8e1;}
+  #modal-import.imp-cartoes td{border:0;padding:0;flex:1 1 130px;min-width:110px !important;}
+  #modal-import.imp-cartoes td::before{content:attr(data-l);display:block;font-size:10.5px;color:#6b7a99;margin-bottom:2px;}
+  #modal-import.imp-cartoes td.imp-st{flex:1 1 100%;order:-1;font-weight:600;}
+  #modal-import.imp-cartoes td:nth-child(1),#modal-import.imp-cartoes td:nth-child(2){flex:0 0 auto;min-width:0 !important;order:-2;}
+  #modal-import select{width:100%;box-sizing:border-box;padding:4px 5px;font-size:12px;border:1px solid #cfd6e2;border-radius:5px;}`;
   document.head.appendChild(st);
   const d = document.createElement('div');
   d.id = 'modal-import';
@@ -10913,6 +10931,7 @@ function parsePostoPdf(texto, nomeArquivo){
 }
 
 function _placaNorm(p){ return String(p||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+function impRecalcLitros(l){ const t = numBR(l.v.precoTotal), u = numBR(l.v.precoUnit); l.v.quantidade = (t > 0 && u > 0) ? numParaInput(Math.round(t/u*1000)/1000) : ''; }
 function impLinhasDePdfs(resultados){
   const nfPorCupom = new Map();
   resultados.filter(r=>r.formato==='demonstrativo').forEach(r=>(r.demonstrativo.cupons||[]).forEach(c=>nfPorCupom.set(normReqNum(c.numero), r.nf)));
@@ -10929,7 +10948,17 @@ function impLinhasDePdfs(resultados){
       const v = { data:g.data, requisicao:'', equipamento:eq, motorista:String(g.motorista||'').toUpperCase(), posto:postoNome,
         produto:g.produto, quantidade:numParaInput(g.quantidade), precoUnit:numParaInput(g.precoUnit), precoTotal:numParaInput(g.precoTotal),
         kmHor:numParaInput(g.km), nf:String(nf||''), empresa:fixa || 'TRIPOLONI', cupom:String(g.cupom||'') };
-      linhas.push({ v, inc:true, st:'ok', msg:'', linhaPlanilha:n });
+      const l = { v, inc:true, st:'ok', msg:'', linhaPlanilha:n };
+      if(!(numBR(v.quantidade) > 0) && numBR(v.precoTotal) > 0){
+        // relatório só com valor: sugere combustível (do cadastro do equipamento) e o último preço do posto; litros = valor ÷ preço. Tudo editável na prévia.
+        if(!v.produto && veic && veic.combustivelAutorizado){ const au = impNormProduto(String(veic.combustivelAutorizado).split(/[\/,;+]/)[0]); if(au) v.produto = au; }
+        if(v.produto && !(numBR(v.precoUnit) > 0)){
+          const ult = DB.filter(x=>x.produto===v.produto && String(x.posto||'').toUpperCase()===postoNome.toUpperCase() && x.precoUnit>0).sort((p,q)=>String(q.data).localeCompare(String(p.data)))[0];
+          if(ult) v.precoUnit = numParaInput(ult.precoUnit);
+        }
+        l.autoLitros = true; impRecalcLitros(l);
+      }
+      linhas.push(l);
     });
   });
   return linhas;
@@ -10948,23 +10977,10 @@ async function impLerPdfs(e){
     }catch(err){ console.error(err); resumo.push(`${f.name}: erro ao ler (${err.message})`); }
   }
   const linhas = impLinhasDePdfs(resultados);
-  // relatório sem litros (só valor): calcula litros = valor ÷ preço por litro, com o preço informado pelo usuário
-  const semLitros = linhas.filter(l=>!(numBR(l.v.quantidade) > 0) && numBR(l.v.precoTotal) > 0);
-  if(semLitros.length){
-    const pp = window.prompt(`${semLitros.length} lançamento(s) vieram só com o VALOR (sem litros).\nPra calcular os litros, informe o preço por litro (ex.: 4,19). Deixe em branco pra preencher na mão depois:`, '');
-    const pu = pp ? numBR(String(pp).replace(',', '.')) : NaN;
-    if(pu > 0){
-      const pr = (window.prompt('Combustível desses lançamentos (ETANOL, GASOLINA, DIESEL, DIESEL S-10):', 'ETANOL') || 'ETANOL').trim().toUpperCase();
-      semLitros.forEach(l=>{
-        const q = Math.round(numBR(l.v.precoTotal) / pu * 1000) / 1000;
-        l.v.quantidade = numParaInput(q); l.v.precoUnit = numParaInput(pu); if(!l.v.produto) l.v.produto = pr;
-        l.calculado = true;
-      });
-      resumo.push(`↪ Litros calculados em ${semLitros.length} lançamento(s): valor ÷ R$ ${String(pp).trim()}/L (${pr}). Confira o preço real da nota.`);
-    }
-  }
   if(!linhas.length){ alert('Não achei abastecimentos nesses PDFs.\n\n' + resumo.join('\n') + '\n\nSe for só o Demonstrativo de vendas, mande junto o relatório com os litros do posto.'); return; }
   IMP.linhas = linhas; IMP.arquivo = files.map(f=>f.name).join(' + ');
+  const semCad = [...new Set(linhas.filter(l=>!veiculoDoEquip(l.v.equipamento)).map(l=>l.v.equipamento))];
+  if(semCad.length) resumo.push(`⚠️ ${semCad.length} placa(s) sem cadastro na Frota (ficam com a própria placa; corrija na prévia ou cadastre o equipamento): ${semCad.slice(0,15).join(', ')}${semCad.length>15?'…':''}`);
   impValidarTodas(); impRenderPrevia();
   alert('PDF(s) lidos:\n\n' + resumo.join('\n') + '\n\nConfira tudo na prévia antes de gravar. Equipamento é achado pela PLACA do cadastro da Frota; o que não achar fica marcado.');
 }
@@ -11079,6 +11095,7 @@ function impValidarLanc(l){
   const dup = DB.concat(PENDENTES||[]).some(r=>String(r.equipamento||'').toUpperCase()===eq && String(r.data||'').slice(0,10)===v.data && Math.abs((Number(r.quantidade)||0)-q) < 0.01);
   if(v.cupom && DB.concat(PENDENTES||[]).some(r=>String(r.cupom||'').trim() === String(v.cupom).trim() && String(r.posto||'').trim().toUpperCase() === String(v.posto||'').trim().toUpperCase())) avisos.push('⚠️ Cupom '+v.cupom+' do posto já lançado.');
   if(dup) avisos.push('⚠️ Possível DUPLICADO: já existe lançamento/pendente igual (mesmo equipamento, data e litros).');
+  if(l.autoLitros) avisos.push('Litros calculados (valor ÷ preço/L) — confira o preço e o combustível.');
   if(avisos.length){ l.st='aviso'; l.msg = avisos.join(' '); }
 }
 /* ---- prévia ---- */
@@ -11090,6 +11107,7 @@ function impDestinoReq(l){
 function impRenderPrevia(){
   const cfg = IMP_CFG[IMP.tipo];
   const ehReq = IMP.tipo === 'req';
+  document.getElementById('modal-import').classList.toggle('imp-cartoes', IMP.tipo === 'lanc');
   document.getElementById('imp-box').innerHTML = `
     <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
       <h2 style="margin:0 0 4px;">🔎 Prévia — ${cfg.titulo}</h2>
@@ -11117,6 +11135,14 @@ function impRenderPrevia(){
     const el = ev.target; if(!el.dataset || el.dataset.i === undefined || !el.dataset.k) return;
     const i = Number(el.dataset.i), k = el.dataset.k;
     IMP.linhas[i].v[k] = el.value;
+    const L = IMP.linhas[i];
+    if(IMP.tipo === 'lanc'){
+      if(k === 'quantidade') L.autoLitros = false;
+      else if(L.autoLitros && (k === 'precoUnit' || k === 'precoTotal')){
+        impRecalcLitros(L);
+        const q = el.closest('tr').querySelector('[data-k="quantidade"]'); if(q) q.value = L.v.quantidade;
+      }
+    }
     IMP.linhas.forEach((_,j)=>{ if(j>=i) impValidarLinha(j); });
     impAtualizarStatus();
   });
@@ -11130,7 +11156,15 @@ function impRenderPrevia(){
 }
 function impLinhaHtml(l,i){
   const cfg = IMP_CFG[IMP.tipo];
-  return `<tr data-row="${i}"><td><input type="checkbox" data-inc="${i}" ${l.inc?'checked':''}></td><td>${l.linhaPlanilha}</td><td class="imp-st"></td>${IMP.tipo==='req'?'<td class="imp-dest"></td>':''}${cfg.campos.map(c=>`<td style="min-width:${c.larg||90}px"><input type="text" data-i="${i}" data-k="${c.k}" value="${escapeHtml(l.v[c.k])}"></td>`).join('')}</tr>`;
+  const PRODS = ['','DIESEL','DIESEL S-10','DIESEL S-500','ETANOL','GASOLINA','ARLA 32','ADITIVO','LUBRIFICANTE','OUTRO'];
+  const campo = c=>{
+    if(IMP.tipo === 'lanc' && c.k === 'produto'){
+      const cur = String(l.v.produto||'').toUpperCase();
+      return `<select data-i="${i}" data-k="produto">${PRODS.map(p=>`<option value="${p}" ${p===cur?'selected':''}>${p||'— escolher —'}</option>`).join('')}</select>`;
+    }
+    return `<input type="text" data-i="${i}" data-k="${c.k}" value="${escapeHtml(l.v[c.k])}">`;
+  };
+  return `<tr data-row="${i}"><td data-l="Gravar"><input type="checkbox" data-inc="${i}" ${l.inc?'checked':''}></td><td data-l="Linha">${l.linhaPlanilha}</td><td class="imp-st" data-l="Situação"></td>${IMP.tipo==='req'?'<td class="imp-dest"></td>':''}${cfg.campos.map(c=>`<td data-l="${c.rot}${c.obrig?' *':''}" style="min-width:${c.larg||90}px">${campo(c)}</td>`).join('')}</tr>`;
 }
 function impAtualizarStatus(){
   const trs = document.querySelectorAll('#imp-box tbody tr');
