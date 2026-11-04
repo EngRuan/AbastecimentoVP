@@ -1719,9 +1719,6 @@ body.preview-motorista #view-lancamentos::before{
           <button class="btn secondary" id="btn-export-xlsx" type="button">Exportar Excel</button>
         </div>
         <div class="field">
-          <button class="btn secondary" id="btn-export-sisma" type="button">Exportar SISMA</button>
-        </div>
-        <div class="field">
           <button class="btn ghost" id="btn-backup-json" type="button">Backup (JSON)</button>
         </div>
         <div class="field">
@@ -1902,6 +1899,7 @@ body.preview-motorista #view-lancamentos::before{
       <div class="btn-row" style="margin-top:14px;">
         <button class="btn" id="btn-refresh-report" type="button">Atualizar prévia</button>
         <button class="btn secondary" id="btn-gerar-pdf" type="button">Gerar PDF</button>
+        <button class="btn secondary" id="btn-export-sisma" type="button" title="CSV no layout do SISMA, só com o que está nos filtros do relatório">Exportar SISMA</button>
       </div>
     </div>
 
@@ -2578,7 +2576,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v1.0.1';
+const APP_VERSION = 'v1.0.3';
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -5511,8 +5509,8 @@ function valorCombSisma(r){
   return t > 0 ? String(Math.round(t * 100) / 100) : '';
 }
 function exportarSisma(){
-  renderLancTable();
-  if(!LANC_VISIVEIS.length){ toast('Nenhum lançamento nos filtros atuais — nada pra exportar.'); return; }
+  const LANC_VISIVEIS = applyFilters('r'); // usa os filtros da própria aba Relatório
+  if(!LANC_VISIVEIS.length){ toast('Nenhum lançamento nos filtros do relatório — nada pra exportar.'); return; }
   const linhas = ['dataabastecimento;hora;empresa;Especie;Equipe;KM;Hora;Ponto;Bomba;Combustivel;Quantidade;Valor Comb'];
   LANC_VISIVEIS.forEach(r=>{
     if(!r.data) return;
@@ -5537,7 +5535,7 @@ function exportarSisma(){
   a.href = url; a.download = `sisma_${todayStr()}.csv`;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  toast(`CSV do SISMA gerado com ${LANC_VISIVEIS.length} lançamento(s) — só o que está nos filtros.`);
+  toast(`CSV do SISMA gerado com ${LANC_VISIVEIS.length} lançamento(s) — só o que está nos filtros do relatório.`);
 }
 
 function initUsuariosTab(){
@@ -10788,12 +10786,16 @@ function impRenderInicio(){
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
       <button class="btn" id="imp-escolher">📂 Escolher planilha Excel…</button>
       <button class="btn secondary" id="imp-modelo">⬇️ Baixar modelo de planilha</button>
+      ${IMP.tipo === 'lanc' ? '<button class="btn" id="imp-pdf" style="background:#0b6b3a;">📄 Importar PDF(s) do posto…</button>' : ''}
     </div>
+    ${IMP.tipo === 'lanc' ? '<p style="font-size:12px;margin:8px 0 0;color:var(--gray);">PDF do posto: aceita o <b>detalhamento de consumo</b>, o <b>extrato de contas a receber</b> e o <b>fechamento por placa</b>. Se mandar junto o <b>Demonstrativo de vendas</b>, a NF mãe de cada cupom é preenchida sozinha. Pode escolher vários PDFs de uma vez.</p>' : ''}
     <input type="file" id="imp-file" accept=".xlsx,.xls,.csv" style="display:none;">
+    <input type="file" id="imp-pdf-file" accept=".pdf,application/pdf" multiple style="display:none;">
     <p style="font-size:12px;color:var(--gray);margin-top:12px;">Depois de escolher o arquivo, abre uma <b>prévia</b> mostrando pra onde cada linha vai — você corrige o que precisar antes de gravar. Nada é gravado antes de você confirmar.</p>`;
   document.getElementById('imp-x').onclick = fecharImportacao;
   document.getElementById('imp-escolher').onclick = ()=>document.getElementById('imp-file').click();
   document.getElementById('imp-file').onchange = impLerArquivo;
+  const _bp = document.getElementById('imp-pdf'); if(_bp){ _bp.onclick = ()=>document.getElementById('imp-pdf-file').click(); document.getElementById('imp-pdf-file').onchange = impLerPdfs; }
   document.getElementById('imp-modelo').onclick = ()=>{
     const ws = XLSX.utils.json_to_sheet(cfg.modelo);
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Modelo');
@@ -10846,6 +10848,125 @@ function impLerArquivo(e){
     e.target.value = '';
   };
   reader.readAsArrayBuffer(file);
+}
+
+/* ---- Importar PDF(s) do posto → lançamento manual -------------------------
+   Lê os relatórios que os postos mandam (Romaneio/Detalhamento de consumo, Extrato de contas a receber,
+   Relatório de fechamento por placa) e o Demonstrativo de vendas (que dá a NF mãe de cada cupom). */
+function _nPdf(s){ const n = parseFloat(String(s||'').replace(/\./g,'').replace(',','.')); return isNaN(n) ? null : n; }
+function _dataPdfIso(d){ const m = String(d||'').match(/^(\d{2})\/(\d{2})\/(\d{2,4})$/); if(!m) return ''; return `${m[3].length===2?'20'+m[3]:m[3]}-${m[2]}-${m[1]}`; }
+function _produtoPdf(desc){
+  const d = _normTxt(desc);
+  if(/ETANOL|ALCOOL/.test(d)) return 'ETANOL';
+  if(/GASOLINA/.test(d)) return 'GASOLINA';
+  if(/DIESEL/.test(d)) return /S ?10/.test(d) ? 'DIESEL S-10' : (/S ?500/.test(d) ? 'DIESEL S-500' : 'DIESEL');
+  if(/ARLA/.test(d)) return 'ARLA 32';
+  if(/OLEO|LUBR|CASTROL|SHELL|HELIX|LUBRAX/.test(d)) return 'LUBRIFICANTE';
+  return 'OUTRO';
+}
+function _kmPdf(v){ const n = _nPdf(v); return (n == null || n <= 999 || n >= 9999999) ? '' : n; } // 123 / 999999999 / 0 = "sem km" nos sistemas dos postos
+function parsePostoPdf(texto, nomeArquivo){
+  const linhas = String(texto||'').replace(/\r/g,'').split('\n').map(l=>l.replace(/\s+/g,' ').trim()).filter(Boolean);
+  const plano = linhas.join('\n');
+  const out = { formato:null, posto:'', cnpj:'', nf:'', registros:[], naoLidas:[], demonstrativo:null };
+  const nomeNf = (String(nomeArquivo||'').match(/(?:nfe|danfe|nf)[ _\-]*(\d{2,})/i)||[])[1] || '';
+  const PLACA = '[A-Z0-9]{3}-?[A-Z0-9]{4}';
+  if(ehDemonstrativoVendas(plano)){ out.formato = 'demonstrativo'; out.demonstrativo = parseDemonstrativoVendas(plano); out.nf = out.demonstrativo.nf || ''; out.posto = out.demonstrativo.posto || ''; return out; }
+  // 1) Detalhamento de consumo (romaneio do posto)
+  if(/Detalhamento de Consumo/i.test(plano)){
+    out.formato = 'romaneio'; out.posto = (linhas[0]||'').replace(/\s*P[aá]gina.*$/i,'').trim();
+    const re = new RegExp(`^(\\d{2}/\\d{2}/\\d{2}) (\\d{2}:\\d{2}) (\\S+) (${PLACA}) (\\d+)(?: ([A-Z][A-Z ]*?))? (\\d+)(?: /)? \\d+ (\\d+,\\d{3}) (.+?) (\\d+,\\d{3}) ([\\d.]+,\\d{2}) [\\d.,]+ [\\d.,]+ ([\\d.]+,\\d{2})$`);
+    linhas.forEach(l=>{
+      if(!/^\d{2}\/\d{2}\/\d{2} \d{2}:\d{2}/.test(l)) return;
+      const m = l.match(re);
+      if(!m){ out.naoLidas.push(l); return; }
+      out.registros.push({ data:_dataPdfIso(m[1]), cupom:m[7], placa:m[4], km:_kmPdf(m[5]), apelido:m[6]||'', motorista:'', produto:_produtoPdf(m[9]), descricao:m[9], quantidade:_nPdf(m[8]), precoUnit:_nPdf(m[10]), precoTotal:_nPdf(m[12]), nf:'' });
+    });
+    return out;
+  }
+  // 2) Extrato de contas a receber (cada documento = 1 abastecimento)
+  if(/EXTRATO DE CONTAS/i.test(plano) && /Documento Fatura/i.test(plano)){
+    out.formato = 'extrato'; out.posto = (linhas.find(l=>/^POSTO |^AUTO POSTO /i.test(l))||'').trim();
+    const cj = plano.match(/CNPJ\.?:?\s*([\d.\/\-]{14,18})/i); if(cj) out.cnpj = cj[1];
+    const reDoc = new RegExp(`^PR-NC\\.(\\d+)\\S* (\\d+) (\\d{2}/\\d{2}/\\d{4}) \\S+ \\S+ ([A-Z0-9]{3}-?[A-Z0-9]{3,4}) (\\d+) [\\d,]+(?: MOTORISTA: ?(.*))?$`);
+    const reProd = /^\d+ (.+?) \S+ \S+ L (\d+,\d{3}) (\d+,\d{3}) ([\d.]+,\d{2})$/;
+    let atual = null;
+    linhas.forEach(l=>{
+      const d = l.match(reDoc);
+      if(d){ if(atual) out.naoLidas.push('documento sem produto: '+atual.cupom); atual = { data:_dataPdfIso(d[3]), cupom:d[1], fatura:d[2], placa:d[4], km:_kmPdf(d[5]), motorista:(d[6]||'').trim() }; return; }
+      const p = atual && l.match(reProd);
+      if(p){ out.registros.push({ data:atual.data, cupom:atual.cupom, placa:atual.placa, km:atual.km, motorista:atual.motorista, produto:_produtoPdf(p[1]), descricao:p[1], quantidade:_nPdf(p[2]), precoUnit:_nPdf(p[3]), precoTotal:_nPdf(p[4]), nf: nomeNf || atual.fatura, fatura:atual.fatura }); atual = null; }
+    });
+    if(atual) out.naoLidas.push('documento sem produto: '+atual.cupom);
+    return out;
+  }
+  // 3) Relatório de fechamento por placa (sem litros — só valor)
+  if(/Total do Fechamento/i.test(plano) && /N01 \d+ /.test(plano)){
+    out.formato = 'fechamento'; const pn = plano.match(/(POSTO [A-Z ]+?(?: LTDA)?)\s+Telefone/i); out.posto = pn ? pn[1].trim() : '';
+    const cj = plano.match(/CNPJ:\s*([\d.\/\-]{14,18})/i); if(cj) out.cnpj = cj[1];
+    const re = new RegExp(`(\\d{2}/\\d{2}/\\d{2}) N01 (\\d+) (${PLACA}) .*?([\\d.]+,\\d{2})(?= \\d{2}/\\d{2}/\\d{2} N01 |$)`, 'g');
+    linhas.forEach(l=>{ if(!/ N01 \d+ /.test(l)) return; let m; while((m = re.exec(l))){ out.registros.push({ data:_dataPdfIso(m[1]), cupom:m[2], placa:m[3], km:'', motorista:'', produto:'', descricao:'', quantidade:null, precoUnit:null, precoTotal:_nPdf(m[4]), nf:nomeNf }); } re.lastIndex = 0; });
+    return out;
+  }
+  out.formato = 'desconhecido';
+  return out;
+}
+
+function _placaNorm(p){ return String(p||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+function impLinhasDePdfs(resultados){
+  const nfPorCupom = new Map();
+  resultados.filter(r=>r.formato==='demonstrativo').forEach(r=>(r.demonstrativo.cupons||[]).forEach(c=>nfPorCupom.set(normReqNum(c.numero), r.nf)));
+  const linhas = []; let n = 0;
+  resultados.filter(r=>r.formato!=='demonstrativo' && r.formato!=='desconhecido').forEach(r=>{
+    const rp = resolverPosto(r.posto, r.cnpj); const postoNome = rp ? rp.posto.nome : String(r.posto||'').toUpperCase();
+    r.registros.forEach(g=>{
+      n++;
+      const pl = _placaNorm(g.placa);
+      const veic = (VEICULOS||[]).find(x=>_placaNorm(x.placa) === pl);
+      const eq = veic ? String(veic.equipamento).toUpperCase() : String(g.placa||'').toUpperCase();
+      const fixa = veic ? empresaFixaDoEquip(veic.equipamento) : null;
+      const nf = g.nf || nfPorCupom.get(normReqNum(g.cupom)) || '';
+      const v = { data:g.data, requisicao:'', equipamento:eq, motorista:String(g.motorista||'').toUpperCase(), posto:postoNome,
+        produto:g.produto, quantidade:numParaInput(g.quantidade), precoUnit:numParaInput(g.precoUnit), precoTotal:numParaInput(g.precoTotal),
+        kmHor:numParaInput(g.km), nf:String(nf||''), empresa:fixa || 'TRIPOLONI', cupom:String(g.cupom||'') };
+      linhas.push({ v, inc:true, st:'ok', msg:'', linhaPlanilha:n });
+    });
+  });
+  return linhas;
+}
+async function impLerPdfs(e){
+  const files = [...(e.target.files||[])]; e.target.value = '';
+  if(!files.length) return;
+  toast('Lendo ' + files.length + ' PDF(s)…');
+  const resultados = []; const resumo = [];
+  for(const f of files){
+    try{
+      const r = parsePostoPdf(await textoDoPdf(f), f.name);
+      resultados.push(r);
+      const rot = { romaneio:'detalhamento de consumo', extrato:'extrato de contas', fechamento:'fechamento por placa (sem litros)', demonstrativo:'demonstrativo de vendas (dá a NF mãe)', desconhecido:'formato não reconhecido' }[r.formato];
+      resumo.push(`${f.name}: ${rot}${r.registros.length ? ' — ' + r.registros.length + ' abastecimento(s)' : ''}${r.naoLidas.length ? ' — ⚠️ ' + r.naoLidas.length + ' linha(s) não lida(s)' : ''}`);
+    }catch(err){ console.error(err); resumo.push(`${f.name}: erro ao ler (${err.message})`); }
+  }
+  const linhas = impLinhasDePdfs(resultados);
+  // relatório sem litros (só valor): calcula litros = valor ÷ preço por litro, com o preço informado pelo usuário
+  const semLitros = linhas.filter(l=>!(numBR(l.v.quantidade) > 0) && numBR(l.v.precoTotal) > 0);
+  if(semLitros.length){
+    const pp = window.prompt(`${semLitros.length} lançamento(s) vieram só com o VALOR (sem litros).\nPra calcular os litros, informe o preço por litro (ex.: 4,19). Deixe em branco pra preencher na mão depois:`, '');
+    const pu = pp ? numBR(String(pp).replace(',', '.')) : NaN;
+    if(pu > 0){
+      const pr = (window.prompt('Combustível desses lançamentos (ETANOL, GASOLINA, DIESEL, DIESEL S-10):', 'ETANOL') || 'ETANOL').trim().toUpperCase();
+      semLitros.forEach(l=>{
+        const q = Math.round(numBR(l.v.precoTotal) / pu * 1000) / 1000;
+        l.v.quantidade = numParaInput(q); l.v.precoUnit = numParaInput(pu); if(!l.v.produto) l.v.produto = pr;
+        l.calculado = true;
+      });
+      resumo.push(`↪ Litros calculados em ${semLitros.length} lançamento(s): valor ÷ R$ ${String(pp).trim()}/L (${pr}). Confira o preço real da nota.`);
+    }
+  }
+  if(!linhas.length){ alert('Não achei abastecimentos nesses PDFs.\n\n' + resumo.join('\n') + '\n\nSe for só o Demonstrativo de vendas, mande junto o relatório com os litros do posto.'); return; }
+  IMP.linhas = linhas; IMP.arquivo = files.map(f=>f.name).join(' + ');
+  impValidarTodas(); impRenderPrevia();
+  alert('PDF(s) lidos:\n\n' + resumo.join('\n') + '\n\nConfira tudo na prévia antes de gravar. Equipamento é achado pela PLACA do cadastro da Frota; o que não achar fica marcado.');
 }
 
 function impChave(tipo, v){
@@ -10956,6 +11077,7 @@ function impValidarLanc(l){
   } else if(PRODUTOS_COMBUSTIVEL.has(prod)){ avisos.push('Sem Km/Hor. — a média km/L não será calculada.'); }
   if(v.posto && POSTOS.length && !POSTOS.some(x=>String(x.nome||'').trim().toUpperCase() === String(v.posto).trim().toUpperCase())) avisos.push('Posto não cadastrado (não exige NF mãe).');
   const dup = DB.concat(PENDENTES||[]).some(r=>String(r.equipamento||'').toUpperCase()===eq && String(r.data||'').slice(0,10)===v.data && Math.abs((Number(r.quantidade)||0)-q) < 0.01);
+  if(v.cupom && DB.concat(PENDENTES||[]).some(r=>String(r.cupom||'').trim() === String(v.cupom).trim() && String(r.posto||'').trim().toUpperCase() === String(v.posto||'').trim().toUpperCase())) avisos.push('⚠️ Cupom '+v.cupom+' do posto já lançado.');
   if(dup) avisos.push('⚠️ Possível DUPLICADO: já existe lançamento/pendente igual (mesmo equipamento, data e litros).');
   if(avisos.length){ l.st='aviso'; l.msg = avisos.join(' '); }
 }
