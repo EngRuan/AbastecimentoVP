@@ -18,11 +18,12 @@ self.addEventListener('activate', e => {
 // só usa o que tem guardado no celular se estiver sem internet.
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
+  if (new URL(e.request.url).origin !== self.location.origin) return;   // Apps Script/CDN vão direto pra rede, sem passar pelo cache
+  if (e.request.url.includes('build.json')) return;
   e.respondWith(
     fetch(e.request)
       .then(resp => {
-        const copy = resp.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(e.request, copy));
+        if (resp.ok) { const copy = resp.clone(); caches.open(CACHE_NAME).then(cache => cache.put(e.request, copy)); }
         return resp;
       })
       .catch(() => caches.match(e.request).then(cached => cached || caches.match('./index.html')))
