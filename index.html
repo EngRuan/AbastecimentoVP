@@ -5980,6 +5980,11 @@ function cartaoVisualPendente(p, np, rasc){
   </div>`;
 }
 
+function limparFiltrosReqPend(){
+  ['req-busca','req-data-ini','req-data-fim'].forEach(id=>{ const el = document.getElementById(id); if(el) el.value = ''; });
+  renderListaPendentes();
+  try{ renderListaRequisicoesAdmin(); }catch(_){}
+}
 function renderListaPendentes(){
   const box = document.getElementById('lista-pendentes');
   if(!box) return;
@@ -5999,14 +6004,18 @@ function renderListaPendentes(){
     if(!busca) return true;
     return [p.requisicao, p.motorista, p.email, p.equipamento, p.produto, p.posto, p.nfSugerido, p.empresa, d ? fmtDate(d) : ''].join(' ').toUpperCase().includes(busca);
   });
+  const filtroAtivo = !!(busca || dIni || dFim);
+  const descFiltro = [busca ? `busca "${busca}"` : '', dIni ? `de ${fmtDate(dIni)}` : '', dFim ? `até ${fmtDate(dFim)}` : ''].filter(Boolean).join(' · ');
   if(!visiveis.length){
-    box.innerHTML = `<p class="helper">Nenhum lançamento pendente corresponde à busca (${PENDENTES.length} no total).</p>`;
+    box.innerHTML = `<div class="helper" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">Nenhum lançamento pendente corresponde ao filtro (${PENDENTES.length} no total).${filtroAtivo ? ` <span>Filtro ativo: <b>${escapeHtml(descFiltro)}</b></span> <button type="button" class="btn" id="btn-limpar-filtro-pend">Limpar busca e datas</button>` : ''}</div>`;
+    const bl = document.getElementById('btn-limpar-filtro-pend'); if(bl) bl.onclick = limparFiltrosReqPend;
     return;
   }
   capturarRascunhoPendentes();
   PEND_SEL.forEach(id=>{ if(!PENDENTES.some(p=>String(p.id)===id)) PEND_SEL.delete(id); });
-  const barraLote = `<div id="barra-lote-pend" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:#eef3fc;border:1px solid #cdd8f0;border-radius:12px;padding:10px 12px;margin-bottom:10px;"><label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer;"><input type="checkbox" id="pend-sel-todos" style="width:auto;"> Selecionar todos (${visiveis.length})</label><button type="button" class="btn" id="btn-aprovar-lote" style="background:#0b6b3a;">⚡ Aprovar selecionados e gerar requisição</button><span id="pend-sel-info" class="helper" style="margin:0;"></span></div>`;
-  box.innerHTML = barraLote + visiveis.map(p=>{
+  const barraLote = `<div id="barra-lote-pend" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:#eef3fc;border:1px solid #cdd8f0;border-radius:12px;padding:10px 12px;margin-bottom:10px;"><label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer;"><input type="checkbox" id="pend-sel-todos" style="width:auto;"> Selecionar todos (${visiveis.length})</label><button type="button" class="btn" id="btn-aprovar-lote" style="background:#0b6b3a;">⚡ Aprovar selecionados e gerar requisição</button><button type="button" class="btn ghost" id="btn-rejeitar-lote">🗑️ Rejeitar selecionados</button><span id="pend-sel-info" class="helper" style="margin:0;"></span></div>`;
+  const avisoFiltro = filtroAtivo ? `<div class="helper" style="margin:0 0 8px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;">Filtro ativo (${escapeHtml(descFiltro)}): mostrando ${visiveis.length} de ${PENDENTES.length}. <button type="button" class="btn secondary" id="btn-limpar-filtro-pend">Limpar busca e datas</button></div>` : '';
+  box.innerHTML = avisoFiltro + barraLote + visiveis.map(p=>{
     const np = NOTA_PREENCHIDA[p.id] || {};
     const rasc = PEND_RASCUNHO[p.id] || {};
     const visualPend = `<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin:0 0 6px;cursor:pointer;"><input type="checkbox" data-pend-sel="${escapeHtml(p.id)}" style="width:auto;" ${PEND_SEL.has(String(p.id)) ? 'checked' : ''}> Incluir na aprovação em lote</label>` + cartaoVisualPendente(p, np, rasc);
@@ -6072,9 +6081,11 @@ function renderListaPendentes(){
 
   const _infoLote = ()=>{ const el = document.getElementById('pend-sel-info'); if(el) el.textContent = PEND_SEL.size ? `${PEND_SEL.size} selecionado(s)` : 'Marque os cartões (ou todos) e aprove de uma vez: gera o nº da requisição e confirma.'; const t = document.getElementById('pend-sel-todos'); if(t) t.checked = box.querySelectorAll('[data-pend-sel]').length > 0 && [...box.querySelectorAll('[data-pend-sel]')].every(c=>c.checked); };
   box.querySelectorAll('[data-pend-sel]').forEach(cb=>cb.addEventListener('change', ()=>{ if(cb.checked) PEND_SEL.add(cb.dataset.pendSel); else PEND_SEL.delete(cb.dataset.pendSel); _infoLote(); }));
+  const _blf = document.getElementById('btn-limpar-filtro-pend'); if(_blf) _blf.onclick = limparFiltrosReqPend;
   const _todos = document.getElementById('pend-sel-todos');
   if(_todos) _todos.addEventListener('change', ()=>{ box.querySelectorAll('[data-pend-sel]').forEach(cb=>{ cb.checked = _todos.checked; if(_todos.checked) PEND_SEL.add(cb.dataset.pendSel); else PEND_SEL.delete(cb.dataset.pendSel); }); _infoLote(); });
   const _bl = document.getElementById('btn-aprovar-lote'); if(_bl) _bl.addEventListener('click', aprovarPendentesEmLote);
+  const _brl = document.getElementById('btn-rejeitar-lote'); if(_brl) _brl.onclick = rejeitarPendentesEmLote;
   _infoLote();
   box.querySelectorAll('[data-gerar-req]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
@@ -6976,6 +6987,22 @@ async function aprovarPendentesEmLote(){
   if(falhas.length) alert('Ficaram na lista (resolva e aprove de novo):\n\n' + falhas.join('\n'));
 }
 
+async function rejeitarPendentesEmLote(){
+  const alvo = PENDENTES.filter(p=>PEND_SEL.has(String(p.id)));
+  if(!alvo.length){ toast('Marque os lançamentos que quer rejeitar (ou "Selecionar todos").'); return; }
+  const ok = await confirmModal('Rejeitar em lote', `Vai APAGAR ${alvo.length} lançamento(s) pendente(s) sem mandar pra planilha. Não dá pra desfazer. Continuar?`);
+  if(!ok) return;
+  let feitos = 0, falhas = 0;
+  for(const p of alvo){
+    try{
+      const json = await postarAcao({ action:'rejeitarPendente', id:p.id });
+      if(json.status === 'ok'){ feitos++; PEND_SEL.delete(String(p.id)); delete PEND_RASCUNHO[p.id]; delete NOTA_PREENCHIDA[p.id]; if(json.pendentes) PENDENTES = json.pendentes; else PENDENTES = PENDENTES.filter(x=>x.id!==p.id); }
+      else falhas++;
+    }catch(_){ falhas++; }
+  }
+  renderListaPendentes();
+  toast(`${feitos} rejeitado(s)${falhas ? ', '+falhas+' com falha' : ''}.`);
+}
 async function rejeitarPendenteUI(id){
   const ok = await confirmModal('Rejeitar lançamento', 'Isso apaga o lançamento pendente sem mandar pra planilha (o motorista NÃO é avisado). Continuar?');
   if(!ok) return;
@@ -11003,7 +11030,7 @@ function impLinhasDePdfs(resultados){
       const nf = g.nf || nfPorCupom.get(normReqNum(g.cupom)) || '';
       const v = { data:g.data, requisicao:'', equipamento:eq, motorista:String(g.motorista||'').toUpperCase(), posto:postoNome,
         produto:g.produto, quantidade:numParaInput(g.quantidade), precoUnit:numParaInput(g.precoUnit), precoTotal:numParaInput(g.precoTotal),
-        kmHor:numParaInput(g.km), nf:String(nf||''), empresa:fixa || 'TRIPOLONI', cupom:String(g.cupom||'') };
+        kmHor:numParaInput(g.km), nf:String(nf||''), empresa:fixa || ((EMPRESAS||[]).find(x=>x.tipo==='propria') || {}).nome || 'TRIPOLONI', cupom:String(g.cupom||'') };
       const l = { v, inc:true, st:'ok', msg:'', linhaPlanilha:n };
       if(!(numBR(v.quantidade) > 0) && numBR(v.precoTotal) > 0){
         // relatório só com valor: sugere combustível (do cadastro do equipamento) e o último preço do posto; litros = valor ÷ preço. Tudo editável na prévia.
