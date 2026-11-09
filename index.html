@@ -2577,7 +2577,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
 const APP_VERSION = 'v1.0.1';
-const BUILD_ID = '1794253420';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
+const BUILD_ID = '1794253733';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -10777,7 +10777,7 @@ const IMP_CFG = {
   },
   veic: {
     titulo: 'Cadastrar veículos/equipamentos em lote', perm: 'cadastro_frota_postos',
-    explica: 'Só o <b>Equipamento</b> é obrigatório. Equipamento que já existe na Frota é <b>pulado</b> (não duplica nem sobrescreve).',
+    explica: 'Só o <b>Equipamento</b> é obrigatório. Equipamento (ou placa) que já existe em <b>outra obra</b> é <b>transferido</b> pra obra escolhida; se já está nela, é pulado (não duplica nem sobrescreve).',
     campos: [
       {k:'equipamento', rot:'Equipamento', alias:['equipamento','eqp','prefixo','codigo','veiculo'], obrig:true, larg:110, up:true},
       {k:'tipo', rot:'Tipo', alias:['tipo','propriedade'], larg:110},
@@ -11145,9 +11145,16 @@ function impValidarLinha(i){
     return;
   }
   if(tipo === 'veic'){
-    if(VEICULOS.some(x=>String(x.equipamento||'').trim().toUpperCase() === val)){ l.st='pula'; l.msg='Já cadastrado na Frota — será pulado.'; return; }
-    const pl = String(v.placa||'').trim().toUpperCase();
-    if(pl && VEICULOS.some(x=>String(x.placa||'').trim().toUpperCase() === pl)){ l.st='aviso'; l.msg='Essa placa já existe em outro equipamento — o servidor pode recusar.'; }
+    const _nP = s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+    const destV = IMP.obra || OBRA_ATIVA || '';
+    const pl = _nP(v.placa);
+    const ex = VEICULOS.find(x=>String(x.equipamento||'').trim().toUpperCase() === val) || (pl ? VEICULOS.find(x=>_nP(x.placa) === pl) : null);
+    if(ex){
+      const obrasEx = listaDeObras(ex.obra || '422');
+      if(obrasEx.includes(destV)){ l.st='pula'; l.msg = `Já está cadastrado na obra ${destV} (${ex.equipamento}) — nada a fazer.`; return; }
+      l.st='aviso'; l.msg = `Já cadastrado na obra ${obrasEx.join(', ')} (${ex.equipamento}) — será TRANSFERIDO para a obra ${destV}.`;
+      return;
+    }
     const t = impNorm(v.tipo);
     if(t && !['proprio','propria','alugado','terceirizado','terceirizada'].includes(t)){ l.st='aviso'; l.msg = (l.msg?l.msg+' ':'') + 'Tipo não reconhecido — vai como "próprio".'; }
     return;
