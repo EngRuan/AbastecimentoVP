@@ -2577,7 +2577,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
 const APP_VERSION = 'v1.0.1';
-const BUILD_ID = '1793881273';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
+const BUILD_ID = '1794253420';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -10903,6 +10903,7 @@ function impRenderInicio(){
     </div>
     <p style="font-size:13px;margin:6px 0 10px;">${cfg.explica}</p>
     <p style="font-size:13px;margin:6px 0 12px;">Colunas aceitas (o nome do cabeçalho pode variar um pouco): <b>${cfg.campos.map(c=>c.rot).join(' · ')}</b>.</p>
+    ${['veic','posto','emp'].includes(IMP.tipo) ? `<div class="field" style="max-width:320px;margin:0 0 12px;"><label>Cadastrar na obra</label><select id="imp-obra">${(ehCentralCli() ? fmtObraLista() : [OBRA_ATIVA || OBRAS_DISPONIVEIS[0] || '422']).map(o=>`<option value="${escapeHtml(o)}" ${o===(IMP.obra || OBRA_ATIVA)?'selected':''}>${o==='CEQ'?'CEQ (Central)':'Obra '+escapeHtml(o)}</option>`).join('')}</select></div>` : ''}
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
       <button class="btn" id="imp-escolher">📂 Escolher planilha Excel…</button>
       <button class="btn secondary" id="imp-modelo">⬇️ Baixar modelo de planilha</button>
@@ -10913,6 +10914,7 @@ function impRenderInicio(){
     <input type="file" id="imp-pdf-file" accept=".pdf,application/pdf" multiple style="display:none;">
     <p style="font-size:12px;color:var(--gray);margin-top:12px;">Depois de escolher o arquivo, abre uma <b>prévia</b> mostrando pra onde cada linha vai — você corrige o que precisar antes de gravar. Nada é gravado antes de você confirmar.</p>`;
   document.getElementById('imp-x').onclick = fecharImportacao;
+  const _so = document.getElementById('imp-obra'); if(_so){ IMP.obra = _so.value; _so.onchange = ()=>{ IMP.obra = _so.value; }; }
   document.getElementById('imp-escolher').onclick = ()=>document.getElementById('imp-file').click();
   document.getElementById('imp-file').onchange = impLerArquivo;
   const _bp = document.getElementById('imp-pdf'); if(_bp){ _bp.onclick = ()=>document.getElementById('imp-pdf-file').click(); document.getElementById('imp-pdf-file').onchange = impLerPdfs; }
@@ -11317,7 +11319,7 @@ async function impPost(body){
   try{
     const resp = await fetch(SYNC_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify(Object.assign({idToken: ID_TOKEN}, body)) });
     const json = await parseJsonResponse(resp);
-    return json.status === 'ok' ? { ok:true, json } : { ok:false, msg: json.mensagem || 'Falha no servidor.' };
+    return json.status === 'ok' ? { ok:true, json } : { ok:false, msg: json.mensagem || 'Falha no servidor.', json };
   }catch(err){ return { ok:false, msg: 'Erro de conexão: ' + (err.message||err) }; }
 }
 async function impEnviarLinha(tipo, l){
@@ -11351,16 +11353,27 @@ async function impEnviarLinha(tipo, l){
   if(tipo === 'veic'){
     const t = impNorm(v.tipo);
     const tipoV = t.startsWith('alug') ? 'alugado' : t.startsWith('terc') ? 'terceirizado' : 'proprio';
-    return impPost({ action:'salvarVeiculo', dados: { novo:true, equipamento:v.equipamento.trim().toUpperCase(), tipo:tipoV,
-      valorAluguel:v.valorAluguel||'', fornecedor:v.fornecedor||'', observacoes:v.observacoes||'', obra:'', marca:v.marca||'', modelo:v.modelo||'',
+    const rSalvar = await impPost({ action:'salvarVeiculo', dados: { novo:true, equipamento:v.equipamento.trim().toUpperCase(), tipo:tipoV,
+      valorAluguel:v.valorAluguel||'', fornecedor:v.fornecedor||'', observacoes:v.observacoes||'', obra: IMP.obra || OBRA_ATIVA || '', marca:v.marca||'', modelo:v.modelo||'',
       placa:(v.placa||'').toUpperCase(), serie:v.serie||'', ano:v.ano||'', setor:v.setor||'', combustivelAutorizado:(v.combustivelAutorizado||'').toUpperCase() } });
+    if(rSalvar.ok) return rSalvar;
+    // já existe (mesmo equipamento ou mesma placa) em OUTRA obra → em vez de falhar, transfere pra obra do cadastro
+    const cf = rSalvar.json && rSalvar.json.conflito;
+    const destino = IMP.obra || OBRA_ATIVA || '';
+    if(cf && cf.equipamento){
+      if(cf.minha || String(cf.obra||'') === destino) return { ok:true, msg:'já estava nessa obra' };
+      const rt = await impPost({ action:'transferirVeiculo', equipamentos:[cf.equipamento], obraDestino: destino, motivo:'Transferido ao cadastrar em lote (já existia na obra ' + (cf.obra||'?') + ')' });
+      if(rt.ok){ try{ aplicarRetornoFrota(rt.json); }catch(_){} return { ok:true, msg:'transferido da obra ' + (cf.obra||'?') }; }
+      return { ok:false, msg: 'Já existe na obra ' + (cf.obra||'?') + ' e a transferência falhou: ' + rt.msg };
+    }
+    return rSalvar;
   }
   if(tipo === 'posto'){
-    return impPost({ action:'salvarPosto', dados: { novo:true, nome:v.nome.trim().toUpperCase(), cnpj:v.cnpj||'', telefone:v.telefone||'', endereco:v.endereco||'', observacoes:v.observacoes||'', obra:'' } });
+    return impPost({ action:'salvarPosto', dados: { novo:true, nome:v.nome.trim().toUpperCase(), cnpj:v.cnpj||'', telefone:v.telefone||'', endereco:v.endereco||'', observacoes:v.observacoes||'', obra: IMP.obra || OBRA_ATIVA || '' } });
   }
   const t = impNorm(v.tipo);
   const tipoE = t.startsWith('prop') ? 'propria' : t.startsWith('loc') ? 'locadora' : 'terceirizada';
-  return impPost({ action:'salvarEmpresa', dados: { novo:true, nome:v.nome.trim().toUpperCase(), tipo:tipoE, cnpj:v.cnpj||'', telefone:v.telefone||'', endereco:v.endereco||'', observacoes:v.observacoes||'', obra:'' } });
+  return impPost({ action:'salvarEmpresa', dados: { novo:true, nome:v.nome.trim().toUpperCase(), tipo:tipoE, cnpj:v.cnpj||'', telefone:v.telefone||'', endereco:v.endereco||'', observacoes:v.observacoes||'', obra: IMP.obra || OBRA_ATIVA || '' } });
 }
 
 
@@ -11990,10 +12003,28 @@ function renderBarraLoteFrota(){
   box.innerHTML = `<span>${FROTA_SEL.size} selecionado(s)</span>
     <button type="button" class="btn ghost" id="fl-todos">Selecionar todos os filtrados (${FROTA_FILTRADOS.length})</button>
     <button type="button" class="btn ghost" id="fl-limpar">Limpar seleção</button>
+    <button type="button" class="btn ghost" id="fl-placas">🔎 Selecionar por placas…</button>
     <button type="button" class="btn" id="fl-transf" ${FROTA_SEL.size?'':'disabled'}>🔀 Transferir selecionados…</button>
     ${sug.length ? `<button type="button" class="btn secondary" id="fl-sisma">💡 Aplicar obra indicada pelo SISMA (${sug.length})</button>` : ''}`;
   box.querySelector('#fl-todos').onclick = ()=>{ FROTA_FILTRADOS.forEach(e=>FROTA_SEL.add(e)); renderListaVeiculos(); };
   box.querySelector('#fl-limpar').onclick = ()=>{ FROTA_SEL.clear(); renderListaVeiculos(); };
+  box.querySelector('#fl-placas').onclick = ()=>{
+    const PLACAS_PLANILHA = 'TXI2B99 UVM0E01 TYQ5H45 TZQ2E16 TXV5C02 TKM2F21 UBP8A90 UAX2D88 TYT7D66 TSG1G78 QSU7B77 SSU9H90 PVR1E74 UAX1I75 TLE7D31 OWR4H82 AAR8388 ARW9219';
+    const ov = abrirModalSimples('🔎 Selecionar veículos por placa', `
+      <p class="helper">Cole as placas (separadas por espaço, vírgula ou linha). Já vem com as 18 da planilha de carros. Os que baterem na Frota ficam marcados — aí é só clicar em <b>Transferir selecionados</b>.</p>
+      <div class="field"><textarea id="pl-txt" rows="5" style="width:100%;">${PLACAS_PLANILHA}</textarea></div>
+      <div id="pl-res" class="helper"></div>
+      <div class="btn-row"><button type="button" class="btn" id="pl-ok">Selecionar</button></div>`);
+    ov.querySelector('#pl-ok').onclick = ()=>{
+      const norm = s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+      const lista = [...new Set(ov.querySelector('#pl-txt').value.split(/[\s,;]+/).map(norm).filter(Boolean))];
+      const ach = [], falt = [];
+      lista.forEach(p=>{ const v = VEICULOS.find(x=>norm(x.placa)===p || norm(x.equipamento)===p); if(v){ FROTA_SEL.add(v.equipamento); ach.push(v.equipamento); } else falt.push(p); });
+      renderListaVeiculos();
+      if(falt.length){ ov.querySelector('#pl-res').innerHTML = `✅ ${ach.length} marcado(s). ⚠️ Não achei na Frota desta obra: <b>${falt.join(', ')}</b> (podem estar em outra obra — troque o seletor de obra e repita).`; }
+      else { toast(`${ach.length} veículo(s) marcado(s). Agora use "Transferir selecionados".`); ov.remove(); }
+    };
+  };
   box.querySelector('#fl-transf').onclick = ()=>abrirTransferencia([...FROTA_SEL]);
   const b = box.querySelector('#fl-sisma'); if(b) b.onclick = ()=>transferirPorSisma(sug);
 }
