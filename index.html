@@ -2576,8 +2576,8 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v1.0.1';
-const BUILD_ID = '1794253733';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
+const APP_VERSION = 'v1.0.2';
+const BUILD_ID = '1794339065';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -3433,6 +3433,19 @@ function travarCampoObra(){
     el.style.background = el.readOnly ? '#eef0f4' : '';
   });
 }
+/* O campo "Obra" dos cadastros usa uma lista (datalist) que só mostra as opções
+   que combinam com o texto já digitado — com "426" preenchido, nunca aparece a
+   422 pra escolher. Ao clicar no campo, limpa o texto (guardado) pra mostrar todas
+   as obras; se sair sem escolher nada, volta o que estava. */
+function destravarListaObras(){
+  ['u-obra','v-obra','p-obra','e-obra'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(!el || el.dataset.listaLivre) return;
+    el.dataset.listaLivre = '1';
+    el.addEventListener('focus', ()=>{ if(el.readOnly) return; el.dataset.antes = el.value; el.value = ''; });
+    el.addEventListener('blur', ()=>{ if(el.readOnly) return; if(!el.value.trim() && el.dataset.antes) el.value = el.dataset.antes; el.dataset.antes = ''; });
+  });
+}
 function renderSeletorObra(){
   const wrap = document.getElementById('obra-select-wrap');
   const sel = document.getElementById('obra-select');
@@ -3446,6 +3459,7 @@ function renderSeletorObra(){
   sel.value = OBRA_ATIVA;
 }
 function initSeletorObra(){
+  destravarListaObras();
   const sel = document.getElementById('obra-select');
   if(!sel) return;
   sel.addEventListener('change', async ()=>{
@@ -11464,8 +11478,16 @@ function renderTerceiros(){
     el.innerHTML = `<option value="">${rot}</option>` + valores.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
     el.value = valores.includes(atual) ? atual : '';
   };
-  preencher('t-empresa', [...new Set(base.map(empresaTerceiroDe))].sort((a,b)=>a.localeCompare(b,'pt-BR')), 'Todas as empresas');
-  preencher('t-equip', [...new Set(base.map(r=>r.equipamento).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR')), 'Todos os veículos');
+  // empresas e veículos vêm dos lançamentos E do cadastro da Frota (terceirizados),
+  // e o filtro de veículo só mostra os da empresa escolhida
+  const empSel = document.getElementById('t-empresa')?.value || '';
+  const frotaTerc = (VEICULOS||[]).filter(v=>String(v.tipo||'').toLowerCase().startsWith('terceir'));
+  const empDoVeic = v=> v.empresaVinculada || '(sem empresa)';
+  const ordenar = l=>[...new Set(l.filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  preencher('t-empresa', ordenar(base.map(empresaTerceiroDe).concat(frotaTerc.map(empDoVeic))), 'Todas as empresas');
+  const eqBase = base.filter(r=>!empSel || empresaTerceiroDe(r) === empSel).map(r=>r.equipamento)
+    .concat(frotaTerc.filter(v=>!empSel || empDoVeic(v) === empSel).map(v=>v.equipamento));
+  preencher('t-equip', ordenar(eqBase), 'Todos os veículos');
 
   const soma = (arr)=>arr.reduce((s,r)=>s+(r.precoTotal||0),0);
   const porSt = {aberta:[], fechada:[], descontado:[]};
@@ -11724,6 +11746,7 @@ function initTerceirosTab(){
   view.addEventListener('input', e=>{ if(e.target.classList.contains('flt-terc')) renderTerceiros(); });
   view.addEventListener('change', e=>{
     const t = e.target;
+    if(t.id === 't-empresa'){ const se = document.getElementById('t-equip'); if(se) se.value = ''; }   // trocou a empresa: zera o veículo (a lista dele muda)
     if(t.classList.contains('flt-terc')) { renderTerceiros(); return; }
     if(t.id === 't-sel-todos'){ view.querySelectorAll('[data-t-sel]').forEach(cb=>{ cb.checked = t.checked; if(t.checked) TERC_SEL.add(cb.dataset.tSel); else TERC_SEL.delete(cb.dataset.tSel); }); renderTerceiros(); return; }
     if(t.dataset && t.dataset.tSel !== undefined){ if(t.checked) TERC_SEL.add(t.dataset.tSel); else TERC_SEL.delete(t.dataset.tSel); const info = document.getElementById('t-sel-info'); if(info) info.textContent = TERC_SEL.size + ' selecionado(s)'; }
