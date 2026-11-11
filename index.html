@@ -2577,7 +2577,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
 const APP_VERSION = 'v1.0.2';
-const BUILD_ID = '1794339065';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
+const BUILD_ID = '1794417092';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -4006,10 +4006,10 @@ function renderCruzamentoFrota(){
   const card = document.getElementById('card-cruzamento-frota');
   const box = document.getElementById('lista-cruzamento-frota');
   if(!card || !box) return;
-  const cadastrados = new Set(VEICULOS.map(v=>v.equipamento));
   const contagem = {};
   DB.forEach(r=>{ if(r.equipamento) contagem[r.equipamento] = (contagem[r.equipamento]||0)+1; });
-  const faltando = Object.keys(contagem).filter(e=>!cadastrados.has(e)).sort((a,b)=>contagem[b]-contagem[a]);
+  // bate pelo código OU pela placa, ignorando hífen/espaço/maiúscula
+  const faltando = Object.keys(contagem).filter(e=>!veiculoDoEquip(e)).sort((a,b)=>contagem[b]-contagem[a]);
   if(faltando.length===0){ card.style.display = 'none'; return; }
   card.style.display = 'block';
   box.innerHTML = faltando.map(e=>`
@@ -4239,7 +4239,7 @@ function renderListaVeiculos(){
 }
 
 function editarVeiculo(equipamento){
-  const v = VEICULOS.find(x=>x.equipamento===equipamento);
+  const v = veiculoDoEquip(equipamento);
   if(!v) return;
   editandoVeiculoEquip = equipamento;
   document.getElementById('v-equipamento').value = v.equipamento;
@@ -5504,9 +5504,26 @@ function aplicarTravaEmpresa(eq){
     el.readOnly = false; el.style.background = ''; el.style.cursor = ''; el.title = '';
   }
 }
+/* Chave sem hífen/espaço/pontuação: "FQW-8388", "fqw 8388" e "FQW8388" são o mesmo veículo. */
+function chaveEquip(s){ return String(s == null ? '' : s).toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+let _idxVeic = { ref:null, n:-1, exato:new Map(), norm:new Map() };
+function _indexarVeiculos(){
+  const L = VEICULOS || [];
+  if(_idxVeic.ref === L && _idxVeic.n === L.length) return _idxVeic;
+  const exato = new Map(), norm = new Map();
+  L.forEach(v=>{
+    const e = String(v.equipamento || '').trim().toUpperCase(); if(e && !exato.has(e)) exato.set(e, v);
+    const ce = chaveEquip(v.equipamento); if(ce && !norm.has(ce)) norm.set(ce, v);
+  });
+  L.forEach(v=>{ const cp = chaveEquip(v.placa); if(cp && !norm.has(cp)) norm.set(cp, v); });   // equipamento vale mais que placa
+  _idxVeic = { ref:L, n:L.length, exato, norm };
+  return _idxVeic;
+}
 function veiculoDoEquip(eq){
   const k = String(eq || '').trim().toUpperCase();
-  return k ? (VEICULOS || []).find(x=>String(x.equipamento || '').trim().toUpperCase() === k) : null;
+  if(!k) return null;
+  const ix = _indexarVeiculos();
+  return ix.exato.get(k) || ix.norm.get(chaveEquip(k)) || null;
 }
 /* 'km' ou 'hora'. Vale o que está no cadastro da Frota (campo Medidor);
    em "Automático": veículo com placa = km, máquina sem placa = horímetro. */
@@ -8119,7 +8136,7 @@ function renderComparativos(rows){
 }
 
 function custoAluguelEquip(equip, dias){
-  const v = VEICULOS.find(x=>x.equipamento===equip);
+  const v = veiculoDoEquip(equip);
   if(!v || !v.valorAluguel || Number(v.valorAluguel)<=0) return 0;
   const base = v.periodoAluguel === 'semanal' ? 7 : (v.periodoAluguel === 'diario' ? 1 : 30);
   return (Number(v.valorAluguel)/base) * dias;
@@ -8538,7 +8555,7 @@ function calcPioresMediasPorEquipamento(rows, limit=10){
    cadastrado com esse dado; senão volta null e o gráfico não desenha
    linha nenhuma pra esse equipamento. */
 function referenciaConsumo(equip, produto){
-  const v = VEICULOS.find(x=>x.equipamento===equip);
+  const v = veiculoDoEquip(equip);
   if(!v) return null;
   if(produto === 'ETANOL' && v.consumoRefEtanol) return Number(v.consumoRefEtanol);
   if(produto === 'GASOLINA' && v.consumoRefGasolina) return Number(v.consumoRefGasolina);
@@ -9986,7 +10003,7 @@ function renderReportPreview(){
   const equipRows = [...byEquip.entries()].map(([k,v])=>{
     const kmEquip = distancias[k] ? distancias[k].distancia : 0;
     const gastoEquip = v.reduce((s,r)=>s+(r.precoTotal||0),0);
-    const veiculoInfo = VEICULOS.find(x=>x.equipamento===k);
+    const veiculoInfo = veiculoDoEquip(k);
     const aluguelEquip = custoAluguelEquip(k, diasPeriodo);
     return {
       equip:k,
@@ -10226,7 +10243,7 @@ function gerarPdf(){
   const equipRows = [...byEquip.entries()].map(([k,v])=>{
     const kmEquip = distancias[k] ? distancias[k].distancia : 0;
     const gastoEquip = v.reduce((s,r)=>s+(r.precoTotal||0),0);
-    const veiculoInfo = VEICULOS.find(x=>x.equipamento===k);
+    const veiculoInfo = veiculoDoEquip(k);
     const aluguelEquip = custoAluguelEquip(k, diasPeriodo);
     return [
       k,
