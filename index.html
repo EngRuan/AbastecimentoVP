@@ -2585,7 +2585,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
 const APP_VERSION = 'v1.0.4';
-const BUILD_ID = '1794573059';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
+const BUILD_ID = '1794574921';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -4807,9 +4807,9 @@ function gerarPdfRequisicao(r){
   campos.push(['POSTO AUTORIZADO', r.posto || '—']);
   if(r.kmEsperado) campos.push(['KM/HORÍMETRO ESPERADO', r.kmEsperado]);
   // controle: quem emitiu/autorizou e quem imprimiu — pra saber quem cobrar se houver erro
-  const _nomeDe = em => { const e = String(em||'').toLowerCase(); const u = (USUARIOS||[]).find(x=>x.email === e); return u ? `${u.nome} (${e})` : (em || ''); };
+  const _nomeDe = em => { const e = String(em||'').toLowerCase(); const u = (USUARIOS||[]).find(x=>x.email === e); return u ? String(u.nome||'').toUpperCase() : (em || ''); };
   campos.push(['EMITIDA / AUTORIZADA POR', _nomeDe(r.criadoPorEmail) || '—']);
-  campos.push(['IMPRESSA POR', USUARIO_ATUAL ? `${USUARIO_ATUAL.nome || ''} (${USUARIO_ATUAL.email || ''}) em ${new Date().toLocaleString('pt-BR')}` : '—']);
+  campos.push(['IMPRESSA POR', USUARIO_ATUAL ? `${String(USUARIO_ATUAL.nome || '').toUpperCase()} em ${new Date().toLocaleString('pt-BR')}` : '—']);
 
   const colLargura = largura/2;
   campos.forEach(([rotulo, valor], i)=>{
