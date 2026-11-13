@@ -2585,7 +2585,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
 const APP_VERSION = 'v1.0.4';
-const BUILD_ID = '1794574921';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
+const BUILD_ID = '1794577166';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -5601,12 +5601,17 @@ function valorCombSisma(r){
 function exportarSisma(){
   const LANC_VISIVEIS = applyFilters('r'); // usa os filtros da própria aba Relatório
   if(!LANC_VISIVEIS.length){ toast('Nenhum lançamento nos filtros do relatório — nada pra exportar.'); return; }
-  const linhas = ['dataabastecimento;hora;empresa;Especie;Equipe;KM;Hora;Ponto;Bomba;Combustivel;Quantidade;.Valor Comb'];
+  const linhas = ['dataabastecimento;hora;empresa;Especie;Equipe;KM;Hora;Ponto;Bomba;Combustivel;Quantidade;Valor Comb'];
   LANC_VISIVEIS.forEach(r=>{
     if(!r.data) return;
     const [ano,mes,dia] = r.data.split('-');
     const dataFmt = `${dia}/${mes}/${ano}`;
     let horaFmt = '00:00:00';
+    // hora = a da requisição vinculada (quando o abastecimento tem requisição)
+    if(r.requisicao){
+      const rq = (REQUISICOES_EMITIDAS||[]).find(x=>String(x.numero) === String(r.requisicao).trim());
+      if(rq && rq.criadoEm){ const dq = new Date(rq.criadoEm); if(!isNaN(dq)) horaFmt = dq.toLocaleTimeString('pt-BR'); }
+    }
     // a data do arquivo é SEMPRE a do abastecimento (r.data); a hora só entra se o
     // registro tiver horário de verdade (data-só vira 21:00 por fuso, então ignora)
     if(r.dataLancamento && /\d{2}:\d{2}/.test(String(r.dataLancamento))){
