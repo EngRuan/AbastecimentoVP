@@ -1127,6 +1127,8 @@ body.carregando-obra main, body.carregando-obra .view{opacity:.55;transition:opa
 .ap-tab-conf,.ap-guia{width:100%;border-collapse:collapse;font-size:13px;}
 .ap-tab-conf th{position:sticky;top:0;background:#eef2fa;text-align:left;padding:7px 8px;white-space:nowrap;}
 .ap-tab-conf td{padding:6px 8px;border-top:1px solid #e6ebf5;vertical-align:top;}
+.ap-tab-conf th.ord{cursor:pointer;user-select:none;}
+.ap-tab-conf th.ord:hover{background:#dfe7f6;}
 .ap-tab-conf .n{text-align:right;white-space:nowrap;}
 .ap-tab-conf tr.et-usada_sem td{background:#fff5f4;}
 .ap-badge{display:inline-block;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:600;white-space:nowrap;}
@@ -2507,7 +2509,7 @@ body.carregando-obra main, body.carregando-obra .view{opacity:.55;transition:opa
         </div>
         <div class="field">
           <label>Posto</label>
-          <select id="req-posto"><option value="">Todos os postos</option></select>
+          <select id="req-filtro-posto"><option value="">Todos os postos</option></select>
         </div>
         <button type="button" class="btn ghost" id="req-limpar-filtros" style="align-self:flex-end;">Limpar filtros</button>
       </div>
@@ -2615,8 +2617,8 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v1.0.5';
-const BUILD_ID = '1794586112';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
+const APP_VERSION = 'v1.0.6';
+const BUILD_ID = '1794592339';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -4892,7 +4894,7 @@ function renderListaRequisicoesAdmin(){
   const box = document.getElementById('lista-requisicoes-admin');
   if(!box) return;
   const filtro = document.getElementById('req-filtro-status')?.value || 'aberta';
-  const selPosto = document.getElementById('req-posto');
+  const selPosto = document.getElementById('req-filtro-posto');
   if(selPosto){
     const atualP = selPosto.value;
     const postos = [...new Set((REQUISICOES_EMITIDAS||[]).map(r=>String(r.posto||'').trim().toUpperCase()).filter(Boolean))].sort((x,y)=>x.localeCompare(y,'pt-BR'));
@@ -4907,7 +4909,7 @@ function renderListaRequisicoesAdmin(){
   const _diaLocal = r => { if(!r.criadoEm) return ''; const d = new Date(r.criadoEm); return isNaN(d) ? String(r.criadoEm).slice(0,10) : dataLocalIso(d); };
   if(dataIni) lista = lista.filter(r => { const d = _diaLocal(r); return d && d >= dataIni; });
   if(dataFim) lista = lista.filter(r => { const d = _diaLocal(r); return d && d <= dataFim; });
-  const postoSel = document.getElementById('req-posto')?.value || '';
+  const postoSel = document.getElementById('req-filtro-posto')?.value || '';
   if(postoSel) lista = lista.filter(r => String(r.posto||'').trim().toUpperCase() === postoSel);
   if(busca){
     lista = lista.filter(r => {
@@ -4927,12 +4929,12 @@ function renderListaRequisicoesAdmin(){
     const ehTerceiro = r.terceiro === 'sim';
     const identificador = ehTerceiro ? `${escapeHtml(r.placa)} · ${escapeHtml(r.empresa)} 🏗️terceiro` : escapeHtml(r.equipamento);
     const dataEmitida = r.criadoEm ? (() => { const d = new Date(r.criadoEm); return d.toLocaleDateString('pt-BR') + ' às ' + d.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}); })() : '—';
-    const quemEmitiu = r.criadoPorEmail ? ((USUARIOS||[]).find(u=>u.email === String(r.criadoPorEmail).toLowerCase()) || {}).nome || r.criadoPorEmail : '';
+    const quemEmitiu = nomePadrao(r.criadoPorEmail ? ((USUARIOS||[]).find(u=>u.email === String(r.criadoPorEmail).toLowerCase()) || {}).nome || r.criadoPorEmail : '');
     return `
     <div class="aprov-item" data-id="${escapeHtml(r.id)}" style="flex-direction:column;align-items:stretch;">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
         <div class="info">
-          ${r.status==='aberta' ? `<input type="checkbox" data-req-sel="${escapeHtml(r.id)}" ${REQ_SEL.has(r.id)?'checked':''} title="Selecionar pra marcar como usada em lote" style="margin-right:6px;">` : ''}<b>Nº ${escapeHtml(String(r.numero))}</b>${rc.quantidade?' <span class="tag" title="Dados preenchidos (planilha/lote)">📥 preenchida</span>':''} — ${escapeHtml(r.motoristaNome||r.motoristaEmail)} · ${identificador}${r.posto?' · '+escapeHtml(r.posto):''}
+          ${r.status==='aberta' ? `<input type="checkbox" data-req-sel="${escapeHtml(r.id)}" ${REQ_SEL.has(r.id)?'checked':''} title="Selecionar pra marcar como usada em lote" style="margin-right:6px;">` : ''}<b>Nº ${escapeHtml(String(r.numero))}</b>${rc.quantidade?' <span class="tag" title="Dados preenchidos (planilha/lote)">📥 preenchida</span>':''} — ${escapeHtml(nomePadrao(r.motoristaNome||r.motoristaEmail))} · ${identificador}${r.posto?' · '+escapeHtml(r.posto):''}
           <br><span style="color:var(--gray);">📅 ${dataEmitida}${quemEmitiu ? ' · emitida por ' + escapeHtml(quemEmitiu) : ''} · ${escapeHtml(r.produto||'ETANOL')}${r.kmEsperado?' · km '+escapeHtml(String(r.kmEsperado)):''} · ${NOMES_STATUS[r.status]||r.status}${r.usadaEm?' em '+new Date(r.usadaEm).toLocaleString('pt-BR'):''}</span>
           ${textoItensReq(r) ? `<br><span style="color:var(--gray);">➕ ${escapeHtml(textoItensReq(r))}</span>` : ''}
         </div>
@@ -5022,8 +5024,8 @@ function initRequisicoesTab(){
   if(dlItens) dlItens.innerHTML = ITENS_SUGESTOES.map(i=>`<option value="${escapeHtml(i)}">`).join('');
   document.getElementById('btn-req-add-item')?.addEventListener('click', ()=>addLinhaItem('req-itens'));
   document.getElementById('req-filtro-status').addEventListener('change', renderListaRequisicoesAdmin);
-  document.getElementById('req-posto').addEventListener('change', ()=>{ document.getElementById('req-filtro-status').value = 'todas'; renderListaRequisicoesAdmin(); });
-  document.getElementById('req-limpar-filtros').addEventListener('click', ()=>{ ['req-busca','req-data-ini','req-data-fim','req-posto'].forEach(id=>{ const el = document.getElementById(id); if(el) el.value = ''; }); document.getElementById('req-filtro-status').value = 'aberta'; renderListaRequisicoesAdmin(); });
+  document.getElementById('req-filtro-posto').addEventListener('change', ()=>{ document.getElementById('req-filtro-status').value = 'todas'; renderListaRequisicoesAdmin(); });
+  document.getElementById('req-limpar-filtros').addEventListener('click', ()=>{ ['req-busca','req-data-ini','req-data-fim','req-filtro-posto'].forEach(id=>{ const el = document.getElementById(id); if(el) el.value = ''; }); document.getElementById('req-filtro-status').value = 'aberta'; renderListaRequisicoesAdmin(); });
   document.getElementById('req-busca').addEventListener('input', (e)=>{
     // ao buscar, já muda pra "Todas" sozinho — senão uma requisição
     // cancelada nunca aparece na busca (o filtro "Só abertas" escondia
@@ -6105,7 +6107,7 @@ function cartaoVisualPendente(p, np, rasc){
       </div>
       <div style="text-align:right;">
         <div style="font-size:17px;font-weight:800;">⛽ ${E(String(p.posto||'—'))}</div>
-        <div style="font-size:12px;opacity:.85;">${E(String(p.motorista||p.email||''))}</div>
+        <div style="font-size:12px;opacity:.85;">${E(nomePadrao(String(p.motorista||p.email||'')))}</div>
       </div>
     </div>
     <div style="${caixa}display:flex;flex-wrap:wrap;gap:10px 14px;">
@@ -8866,7 +8868,7 @@ function renderListaPerfis(){
     <div class="perfil-item" data-id="${p.id}">
       <div>
         <div class="nome">${escapeHtml(p.nome)}</div>
-        <div class="detalhe">${escapeHtml(p.motorista||'—')} · ${escapeHtml(p.equipamento||'—')}${p.posto?' · '+escapeHtml(p.posto):''}</div>
+        <div class="detalhe">${escapeHtml(nomePadrao(p.motorista)||'—')} · ${escapeHtml(p.equipamento||'—')}${p.posto?' · '+escapeHtml(p.posto):''}</div>
       </div>
       <div class="btn-row" style="gap:2px;">
         <button class="del-perfil" data-share="${p.id}" title="Gerar link pra esse motorista">🔗</button>
@@ -12407,10 +12409,27 @@ if('serviceWorker' in navigator){
     aberta:    {rot:'🎫 Emitida, ainda não lançou', cor:'#8a6d00', bg:'#fff6d6'},
     pendente:  {rot:'📥 Aguardando revisão',       cor:'#7a3d00', bg:'#ffe9d2'},
     lancado:   {rot:'✅ Lançado',                   cor:'#14532d', bg:'#dcf5e4'},
+    lanc_aberta:{rot:'⚠️ Lançado, requisição ainda aberta', cor:'#7a1c14', bg:'#fde2df'},
     usada_sem: {rot:'⚠️ Usada, sem lançamento',     cor:'#7a1c14', bg:'#fde2df'},
     cancelada: {rot:'🚫 Cancelada',                 cor:'#555',    bg:'#ececec'}
   };
-  let sub = 'conf', etapaSel = '', limite = 200, rodando = false;
+  let sub = 'conf', etapaSel = '', limite = 200, rodando = false, ordCol = 'data', ordDir = -1;
+  /* Nome de pessoa padronizado: MAIÚSCULAS, sem espaços sobrando, sem e-mail entre parênteses. */
+  window.nomePadrao = function(s){
+    let t = String(s == null ? '' : s).replace(/\s*\([^)]*@[^)]*\)\s*/g,' ').replace(/\s+/g,' ').trim();
+    if(t.indexOf('@') > 0 && t.indexOf(' ') < 0){ const u = (typeof USUARIOS !== 'undefined' ? USUARIOS : []).find(x=>String(x.email||'').toLowerCase() === t.toLowerCase()); t = u && u.nome ? String(u.nome).replace(/\s+/g,' ').trim() : t.split('@')[0]; }
+    return t.toLocaleUpperCase('pt-BR');
+  };
+  /* Empresa padronizada: terceiro = empresa vinculada no cadastro da Frota; próprio = empresa Própria cadastrada. */
+  window.empresaPadrao = function(reg){
+    const v = veiculoDoEquip(reg && reg.equipamento);
+    let e = '';
+    if(v && (v.tipo === 'terceirizado' || v.tipo === 'alugado') && v.empresaVinculada) e = String(v.empresaVinculada);
+    else if(v && !(v.tipo === 'terceirizado' || v.tipo === 'alugado')) e = empresaPropriaNome();
+    else e = String((reg && reg.empresa) || '');
+    e = e.replace(/\s+/g,' ').trim().toUpperCase();
+    return (e && ehEmpresaPropria(e)) ? empresaPropriaNome() : e;
+  };
   const $ = id => document.getElementById(id);
   const esc = s => escapeHtml(String(s == null ? '' : s));
 
@@ -12465,7 +12484,7 @@ if('serviceWorker' in navigator){
     if(guia && barra && guia.nextSibling !== barra) view.insertBefore(guia, barra);
     const h = $('card-nota-pdf') && $('card-nota-pdf').querySelector('h2'); if(h && !h.dataset.ap){ h.dataset.ap='1'; h.innerHTML = '🧾 Cupom fiscal <span style="font-weight:400;font-size:12px;color:var(--gray);">(PDF de 1 abastecimento)</span>'; }
     const h2 = $('card-demonstrativo') && $('card-demonstrativo').querySelector('h2'); if(h2 && !h2.dataset.ap){ h2.dataset.ap='1'; h2.innerHTML = '📑 Romaneio / NF mãe do posto <span style="font-weight:400;font-size:12px;color:var(--gray);">(demonstrativo de vendas)</span>'; }
-    ['req-busca','req-data-ini','req-data-fim','req-posto'].forEach(id=>{ const el=$(id); if(el && el.closest('.field')) el.closest('.field').classList.add('ap-oculto'); });
+    ['req-busca','req-data-ini','req-data-fim','req-filtro-posto'].forEach(id=>{ const el=$(id); if(el && el.closest('.field')) el.closest('.field').classList.add('ap-oculto'); });
     const lp = $('req-limpar-filtros'); if(lp) lp.classList.add('ap-oculto');
     ['bl-data-ini','bl-data-fim'].forEach(id=>{ const el=$(id); if(el && el.closest('.field')) el.closest('.field').classList.add('ap-oculto'); });
   }
@@ -12484,7 +12503,8 @@ if('serviceWorker' in navigator){
     const set = (id, v)=>{ const el = $(id); if(el && el.value !== v){ el.value = v; el.dispatchEvent(new Event('input',{bubbles:true})); el.dispatchEvent(new Event('change',{bubbles:true})); } };
     window.AP_POSTO = f.posto;
     set('req-busca', ($('ap-busca')||{}).value||''); set('req-data-ini', f.ini); set('req-data-fim', f.fim);
-    const rp = $('req-posto'); if(rp){ const ok = [...rp.options].some(o=>o.value.toUpperCase()===f.posto); set('req-posto', ok ? f.posto : ''); }
+    try{ renderListaRequisicoesAdmin(); }catch(_e){}
+    const rp = $('req-filtro-posto'); if(rp){ const ok = [...rp.options].some(o=>o.value.toUpperCase()===f.posto); set('req-filtro-posto', ok ? f.posto : ''); }
     set('pend-busca', ($('ap-busca')||{}).value||''); set('pend-data-ini', f.ini); set('pend-data-fim', f.fim);
     set('bl-data-ini', f.ini); set('bl-data-fim', f.fim);
     try{ renderListaPendentes(); }catch(_e){}
@@ -12492,39 +12512,53 @@ if('serviceWorker' in navigator){
     atualizar();
   }
 
+  function mediaDe(r, ehPend){
+    try{
+      if(!ehPend) return (typeof r.mediaKmL === 'number' && r.mediaKmL > 0) ? r.mediaKmL : null;
+      const km = Number(r.kmHor), q = Number(r.quantidade);
+      if(!r.equipamento || !(km > 0) || !(q > 0)) return null;
+      const c = calcMediaKmL(r.equipamento, r.data, km, q, r.produto, r.id);
+      return (c && c.media > 0) ? c.media : null;
+    }catch(_e){ return null; }
+  }
   function montarLinhas(){
-    const grupos = new Map(); const soltas = [];
-    const g = k => { if(!grupos.has(k)) grupos.set(k, {num:k, req:null, pend:[], lanc:[]}); return grupos.get(k); };
-    (REQUISICOES_EMITIDAS||[]).forEach(r=>{ g(String(r.numero).trim()).req = r; });
-    (PENDENTES||[]).forEach(p=>{ const k = String(p.requisicao||'').trim(); if(k) g(k).pend.push(p); else soltas.push({num:'', req:null, pend:[p], lanc:[]}); });
-    (DB||[]).forEach(r=>{ const k = String(r.requisicao||'').trim(); if(k) g(k).lanc.push(r); else soltas.push({num:'', req:null, pend:[], lanc:[r]}); });
+    const reqPorNum = new Map();
+    (REQUISICOES_EMITIDAS||[]).forEach(r=>reqPorNum.set(String(r.numero).trim(), r));
+    const usadasComRegistro = new Set();
     const out = [];
-    [...grupos.values(), ...soltas].forEach(x=>{
-      const L = x.lanc[0], P = x.pend[0], R = x.req;
-      let etapa;
-      if(x.lanc.length) etapa = 'lancado';
-      else if(x.pend.length) etapa = 'pendente';
-      else if(R && R.status === 'usada') etapa = 'usada_sem';
-      else if(R && R.status === 'cancelada') etapa = 'cancelada';
-      else etapa = 'aberta';
-      const base = L || P || R || {};
-      const todos = [].concat(x.lanc, x.pend);
-      const data = L ? String(L.data||'').slice(0,10) : P ? String(P.data||'').slice(0,10) : (R ? diaDe(R.criadoEm) : '');
-      const litros = todos.reduce((s,r)=>s + (Number(r.quantidade)||0), 0);
-      const valor = todos.reduce((s,r)=>s + (Number(r.precoTotal)||0), 0);
-      out.push({
-        etapa, num:x.num, data,
-        equip: (L||P||{}).equipamento || (R && (R.equipamento || R.placa)) || '',
-        mot: (L||P||{}).motorista || (R && R.motoristaNome) || '',
-        emp: (L||P||{}).empresa || (R && R.empresa) || '',
-        posto: (L||P||{}).posto || (R && R.posto) || '',
-        prod: (L||P||{}).produto || (R && R.produto) || '',
-        litros, valor, nf: (L && L.nf) || (P && P.nfSugerido) || '',
-        obra: L ? obraDoReg(L) : '', qtd: (x.lanc.length + x.pend.length) || 0, emit: R ? (R.criadoPorEmail||'') : ''
-      });
+    const nova = (etapa, r, R, ehPend)=>({
+      etapa, num: String(r.requisicao||'').trim(), data: String(r.data||'').slice(0,10),
+      equip: r.equipamento || (R && (R.equipamento || R.placa)) || '',
+      mot: nomePadrao(r.motorista || (R && (R.motoristaNome || R.motoristaEmail)) || ''),
+      emp: empresaPadrao({equipamento: r.equipamento || (R && R.equipamento), empresa: r.empresa || (R && R.empresa)}),
+      posto: String(r.posto || (R && R.posto) || '').toUpperCase(), prod: r.produto || (R && R.produto) || '',
+      litros: Number(r.quantidade)||0, media: mediaDe(r, ehPend), valor: Number(r.precoTotal)||0,
+      nf: r.nf || r.nfSugerido || '', obra: ehPend ? '' : obraDoReg(r)
     });
-    out.sort((a,b)=> (b.data||'').localeCompare(a.data||'') || String(b.num).localeCompare(String(a.num), undefined, {numeric:true}));
+    (PENDENTES||[]).forEach(p=>{ const k = String(p.requisicao||'').trim(); if(k) usadasComRegistro.add(k); out.push(nova('pendente', p, reqPorNum.get(k), true)); });
+    (DB||[]).forEach(r=>{
+      const k = String(r.requisicao||'').trim(); if(k) usadasComRegistro.add(k);
+      const R = k ? reqPorNum.get(k) : null;
+      out.push(nova(R && R.status === 'aberta' ? 'lanc_aberta' : 'lancado', r, R, false));
+    });
+    (REQUISICOES_EMITIDAS||[]).forEach(R=>{
+      const k = String(R.numero).trim();
+      if(usadasComRegistro.has(k)) return;
+      const etapa = R.status === 'usada' ? 'usada_sem' : R.status === 'cancelada' ? 'cancelada' : 'aberta';
+      const l = nova(etapa, {requisicao:k, data:diaDe(R.criadoEm), equipamento:R.equipamento || R.placa, motorista:R.motoristaNome || R.motoristaEmail, empresa:R.empresa, posto:R.posto, produto:R.produto}, R, false);
+      out.push(l);
+    });
     return out;
+  }
+  function ordenar(lista){
+    const num = new Set(['litros','media','valor','num']);
+    const get = l => ordCol === 'etapa' ? ETAPAS[l.etapa].rot : l[ordCol];
+    lista.sort((a,b)=>{
+      let x = get(a), y = get(b);
+      if(num.has(ordCol)){ const nx = parseFloat(String(x).replace(',','.')), ny = parseFloat(String(y).replace(',','.')); const vx = isNaN(nx) ? -Infinity : nx, vy = isNaN(ny) ? -Infinity : ny; return (vx - vy) * ordDir || String(b.num).localeCompare(String(a.num), undefined, {numeric:true}); }
+      return String(x == null ? '' : x).localeCompare(String(y == null ? '' : y), 'pt-BR', {numeric:true}) * ordDir || String(b.num).localeCompare(String(a.num), undefined, {numeric:true});
+    });
+    return lista;
   }
   function filtrar(linhas, comEtapa){
     const f = filtro();
@@ -12543,7 +12577,7 @@ if('serviceWorker' in navigator){
     if(sub !== 'conf'){ return; }
     const todas = montarLinhas();
     const baseF = filtrar(todas, false);
-    const lista = etapaSel ? baseF.filter(l=>l.etapa === etapaSel) : baseF;
+    const lista = ordenar(etapaSel ? baseF.filter(l=>l.etapa === etapaSel) : baseF.slice());
     const cont = {}; baseF.forEach(l=>{ cont[l.etapa] = (cont[l.etapa]||0) + 1; });
     const chips = Object.keys(ETAPAS).map(k=>`<button type="button" class="ap-chip ${etapaSel===k?'on':''}" data-etapa="${k}" style="--c:${ETAPAS[k].cor};--b:${ETAPAS[k].bg};">${ETAPAS[k].rot} <b>${cont[k]||0}</b></button>`).join('');
     const vis = lista.slice(0, limite);
@@ -12553,18 +12587,19 @@ if('serviceWorker' in navigator){
         <div class="ap-chips"><button type="button" class="ap-chip ${etapaSel===''?'on':''}" data-etapa="" style="--c:#002674;--b:#e3ecff;">Tudo <b>${baseF.length}</b></button>${chips}</div>
         <button type="button" class="btn secondary" id="ap-export">⬇️ Exportar CSV</button>
       </div>
-      <div class="helper" style="margin:0 0 8px;">Cada linha é uma requisição seguindo o caminho <b>emitida → aguardando revisão → lançada</b>. Linhas sem número são lançamentos feitos sem requisição. Mostrando ${vis.length} de ${lista.length} · ${fmtNum(somaL,2)} L · ${fmtMoney(somaV)} (do que já foi lançado/pendente). Obra: <b>${esc(OBRA_ATIVA || 'todas as carregadas')}</b>.</div>
-      <div style="overflow:auto;max-height:70vh;"><table class="ap-tab-conf"><thead><tr><th>Etapa</th><th>Req Nº</th><th>Data</th><th>Equip.</th><th>Motorista</th><th>Empresa</th><th>Posto</th><th>Produto</th><th class="n">Litros</th><th class="n">Valor</th><th>NF</th><th></th></tr></thead><tbody>
-      ${vis.map(l=>`<tr class="et-${l.etapa}"><td><span class="ap-badge" style="color:${ETAPAS[l.etapa].cor};background:${ETAPAS[l.etapa].bg};">${ETAPAS[l.etapa].rot}${l.qtd>1?' ×'+l.qtd:''}</span></td><td>${esc(l.num||'—')}</td><td>${l.data?fmtDate(l.data):'—'}</td><td>${esc(l.equip)}</td><td>${esc(l.mot)}</td><td>${esc(l.emp)}</td><td>${esc(l.posto)}</td><td>${esc(l.prod)}</td><td class="n">${l.litros?fmtNum(l.litros,2):'—'}</td><td class="n">${l.valor?fmtMoney(l.valor):'—'}</td><td>${esc(l.nf)}</td><td>${l.etapa==='pendente'?`<button type="button" class="btn ghost" data-ir="pend" data-num="${esc(l.num)}">Abrir</button>`:l.etapa==='lancado'?`<button type="button" class="btn ghost" data-ir="base" data-num="${esc(l.num)}">Ver</button>`:l.num?`<button type="button" class="btn ghost" data-ir="req" data-num="${esc(l.num)}">Abrir</button>`:''}</td></tr>`).join('') || `<tr><td colspan="12" class="helper">Nada encontrado com esse filtro.</td></tr>`}
+      <div class="helper" style="margin:0 0 8px;">Cada linha é um registro: requisição ainda sem lançar, lançamento aguardando revisão ou lançamento já gravado. ⚠️ em vermelho = algo inconsistente (requisição usada sem lançamento, ou lançamento com a requisição ainda aberta). Clique no título da coluna para ordenar. Mostrando ${vis.length} de ${lista.length} · ${fmtNum(somaL,2)} L · ${fmtMoney(somaV)} (do que já foi lançado/pendente). Obra: <b>${esc(OBRA_ATIVA || 'todas as carregadas')}</b>.</div>
+      <div style="overflow:auto;max-height:70vh;"><table class="ap-tab-conf"><thead><tr>${[['etapa','Etapa'],['num','Req Nº'],['data','Data'],['equip','Equip.'],['mot','Motorista'],['emp','Empresa'],['posto','Posto'],['prod','Produto'],['litros','Litros','n'],['media','Média km/L','n'],['valor','Valor','n'],['nf','NF']].map(c=>`<th class="ord ${c[2]||''}" data-ord="${c[0]}" title="Clique para ordenar">${c[1]}${ordCol===c[0] ? (ordDir>0?' ▲':' ▼') : ''}</th>`).join('')}<th></th></tr></thead><tbody>
+      ${vis.map(l=>`<tr class="et-${l.etapa}"><td><span class="ap-badge" style="color:${ETAPAS[l.etapa].cor};background:${ETAPAS[l.etapa].bg};">${ETAPAS[l.etapa].rot}</span></td><td>${esc(l.num||'—')}</td><td>${l.data?fmtDate(l.data):'—'}</td><td>${esc(l.equip)}</td><td>${esc(l.mot)}</td><td>${esc(l.emp)}</td><td>${esc(l.posto)}</td><td>${esc(l.prod)}</td><td class="n">${l.litros?fmtNum(l.litros,2):'—'}</td><td class="n">${l.media?fmtNum(l.media,2):'—'}</td><td class="n">${l.valor?fmtMoney(l.valor):'—'}</td><td>${esc(l.nf)}</td><td>${l.etapa==='pendente'?`<button type="button" class="btn ghost" data-ir="pend" data-num="${esc(l.num)}">Abrir</button>`:(l.etapa==='lancado'||l.etapa==='lanc_aberta')?`<button type="button" class="btn ghost" data-ir="${l.etapa==='lanc_aberta'?'req':'base'}" data-num="${esc(l.num)}">${l.etapa==='lanc_aberta'?'Abrir':'Ver'}</button>`:l.num?`<button type="button" class="btn ghost" data-ir="req" data-num="${esc(l.num)}">Abrir</button>`:''}</td></tr>`).join('') || `<tr><td colspan="13" class="helper">Nada encontrado com esse filtro.</td></tr>`}
       </tbody></table></div>
       ${lista.length > vis.length ? `<div style="text-align:center;margin-top:10px;"><button type="button" class="btn secondary" id="ap-mais">Mostrar mais 200 (faltam ${lista.length - vis.length})</button></div>` : ''}`;
     box.querySelectorAll('[data-etapa]').forEach(b=>b.addEventListener('click', ()=>{ etapaSel = b.dataset.etapa; limite = 200; renderConf(); }));
+    box.querySelectorAll('th[data-ord]').forEach(th=>th.addEventListener('click', ()=>{ const c = th.dataset.ord; if(ordCol === c) ordDir = -ordDir; else { ordCol = c; ordDir = (c==='data'||c==='litros'||c==='valor'||c==='media'||c==='num') ? -1 : 1; } renderConf(); }));
     const mais = $('ap-mais'); if(mais) mais.addEventListener('click', ()=>{ limite += 200; renderConf(); });
     box.querySelectorAll('[data-ir]').forEach(b=>b.addEventListener('click', ()=>{ if(b.dataset.num){ $('ap-busca').value = b.dataset.num; aplicarFiltro(); } irSub(b.dataset.ir); }));
     $('ap-export').addEventListener('click', ()=>{
-      const cab = ['Etapa','Req','Data','Equipamento','Motorista','Empresa','Posto','Produto','Litros','Valor','NF'];
+      const cab = ['Etapa','Req','Data','Equipamento','Motorista','Empresa','Posto','Produto','Litros','Média km/L','Valor','NF'];
       const q = v => '"' + String(v == null ? '' : v).replace(/"/g,'""') + '"';
-      const csv = [cab.map(q).join(';')].concat(lista.map(l=>[ETAPAS[l.etapa].rot,l.num,l.data?fmtDate(l.data):'',l.equip,l.mot,l.emp,l.posto,l.prod,l.litros||'',l.valor||'',l.nf].map(q).join(';'))).join('\r\n');
+      const csv = [cab.map(q).join(';')].concat(lista.map(l=>[ETAPAS[l.etapa].rot,l.num,l.data?fmtDate(l.data):'',l.equip,l.mot,l.emp,l.posto,l.prod,l.litros||'',l.media ? String(Math.round(l.media*100)/100).replace('.',',') : '',l.valor||'',l.nf].map(q).join(';'))).join('\r\n');
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8;'})); a.download = 'conferencia_'+todayStr()+'.csv'; document.body.appendChild(a); a.click(); a.remove();
     });
   }
