@@ -1104,6 +1104,37 @@ body.preview-motorista #view-lancamentos::before{
 body.carregando-obra::before{content:'';position:fixed;left:0;top:0;height:4px;width:100%;z-index:99999;background:linear-gradient(90deg,#0b2a6f,#4b7be5,#0b2a6f);background-size:200% 100%;animation:carregaObra 1s linear infinite;}
 body.carregando-obra main, body.carregando-obra .view{opacity:.55;transition:opacity .15s;pointer-events:none;}
 @keyframes carregaObra{from{background-position:200% 0}to{background-position:-200% 0}}
+/* --- Aprovações: menu + filtro único + conferência --- */
+#aprov-topo{position:sticky;top:0;z-index:30;background:var(--bg,#f1f3f8);padding-bottom:6px;}
+.ap-menu{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px;}
+.ap-tab{border:1px solid #c9d6ea;background:#fff;color:var(--navy-dark,#002674);border-radius:10px;padding:9px 14px;font-weight:600;font-size:14px;cursor:pointer;display:inline-flex;gap:6px;align-items:center;}
+.ap-tab.on{background:var(--navy-dark,#002674);color:#fff;border-color:var(--navy-dark,#002674);}
+.ap-n{background:#e3ecff;color:#002674;border-radius:999px;font-size:12px;padding:0 7px;min-width:18px;text-align:center;}
+.ap-n:empty{display:none;}
+.ap-n.alerta{background:#c0392b;color:#fff;}
+.ap-filtro{padding:10px 14px;margin:0;}
+#view-aprovacoes[data-sub] > [data-g]{display:none !important;}
+#view-aprovacoes[data-sub="req"] > [data-g="req"],
+#view-aprovacoes[data-sub="pend"] > [data-g="pend"],
+#view-aprovacoes[data-sub="notas"] > [data-g="notas"],
+#view-aprovacoes[data-sub="base"] > [data-g="base"]{display:block !important;}
+#view-aprovacoes[data-sub="notas"] > #barra-pdf-posto[style*="display: none"]{display:none !important;}
+#view-aprovacoes:not([data-sub="conf"]) > #aprov-conf{display:none;}
+.ap-oculto, #pend-filtros{display:none !important;}
+.ap-chips{display:flex;gap:6px;flex-wrap:wrap;}
+.ap-chip{border:1px solid var(--c);background:var(--b);color:var(--c);border-radius:999px;padding:4px 12px;font-size:13px;cursor:pointer;}
+.ap-chip.on{outline:2px solid var(--c);}
+.ap-tab-conf,.ap-guia{width:100%;border-collapse:collapse;font-size:13px;}
+.ap-tab-conf th{position:sticky;top:0;background:#eef2fa;text-align:left;padding:7px 8px;white-space:nowrap;}
+.ap-tab-conf td{padding:6px 8px;border-top:1px solid #e6ebf5;vertical-align:top;}
+.ap-tab-conf .n{text-align:right;white-space:nowrap;}
+.ap-tab-conf tr.et-usada_sem td{background:#fff5f4;}
+.ap-badge{display:inline-block;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:600;white-space:nowrap;}
+.ap-guia th,.ap-guia td{padding:7px 8px;border-top:1px solid #e6ebf5;text-align:left;vertical-align:top;}
+.ap-guia th{background:#eef2fa;border-top:0;}
+.ap-guia td span{color:var(--gray,#666);font-size:12px;}
+@media(max-width:700px){.ap-tab{padding:8px 10px;font-size:13px;}}
+
 </style>
 </head>
 <body>
@@ -2584,8 +2615,8 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v1.0.4';
-const BUILD_ID = '1794577166';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
+const APP_VERSION = 'v1.0.5';
+const BUILD_ID = '1794586112';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -4073,7 +4104,7 @@ function renderCruzamentoEmpresas(){
   const cadastradas = new Set(EMPRESAS.map(e=>e.nome));
   const contagem = {};
   DB.forEach(r=>{ if(r.empresa) contagem[r.empresa] = (contagem[r.empresa]||0)+1; });
-  const faltando = Object.keys(contagem).filter(e=>!cadastradas.has(e)).sort((a,b)=>contagem[b]-contagem[a]);
+  const faltando = Object.keys(contagem).filter(e=>!cadastradas.has(e) && !(ehEmpresaPropria(e) && (EMPRESAS||[]).some(x=>x.tipo==='propria'))).sort((a,b)=>contagem[b]-contagem[a]);
   if(faltando.length===0){ card.style.display = 'none'; return; }
   card.style.display = 'block';
   box.innerHTML = faltando.map(e=>`
@@ -5545,11 +5576,23 @@ function formatarEquipeSisma(equip){
 /* Empresa que o cadastro da Frota manda para esse equipamento (ou null se
    o veículo não está cadastrado). Terceirizado/alugado = empresa vinculada;
    próprio = TRIPOLONI. Usada para TRAVAR o campo Empresa no lançamento. */
+/* Empresa PRÓPRIA: o nome cadastrado como "Própria" (ex.: CONSTRUTORA TRIPOLONI LTDA); sem cadastro, 'TRIPOLONI'.
+   'TRIPOLONI' e 'TRIPOLONI CONSTRUTORA' são tratados como apelidos dela — assim, depois de unificar, não voltam. */
+function empresaPropriaNome(){
+  const p = (EMPRESAS||[]).find(x=>x.tipo === 'propria' && x.nome);
+  return p ? String(p.nome).trim().toUpperCase() : 'TRIPOLONI';
+}
+function ehEmpresaPropria(n){
+  const u = String(n||'').trim().toUpperCase();
+  if(!u) return false;
+  if(u === 'TRIPOLONI' || u === 'TRIPOLONI CONSTRUTORA') return true;
+  return (EMPRESAS||[]).some(x=>x.tipo === 'propria' && String(x.nome||'').trim().toUpperCase() === u);
+}
 function empresaFixaDoEquip(eq){
   const v = veiculoDoEquip(eq);
   if(!v) return null;
   if(v.tipo === 'terceirizado' || v.tipo === 'alugado') return v.empresaVinculada ? String(v.empresaVinculada).trim().toUpperCase() : null;
-  return 'TRIPOLONI';
+  return empresaPropriaNome();
 }
 function aplicarTravaEmpresa(eq){
   const el = document.getElementById('l-empresa'); if(!el) return;
@@ -6102,6 +6145,7 @@ function renderListaPendentes(){
     const d = String(p.data || '').slice(0,10);
     if(dIni && (!d || d < dIni)) return false;
     if(dFim && (!d || d > dFim)) return false;
+    if(window.AP_POSTO && String(p.posto||'').trim().toUpperCase() !== window.AP_POSTO) return false;
     if(!busca) return true;
     return [p.requisicao, p.motorista, p.email, p.equipamento, p.produto, p.posto, p.nfSugerido, p.empresa, d ? fmtDate(d) : ''].join(' ').toUpperCase().includes(busca);
   });
@@ -8295,7 +8339,7 @@ function tipoOuEmpresaEquip(veiculoInfo, registros){
   if(veiculoInfo?.tipo === 'terceirizado') return veiculoInfo.empresaVinculada || 'Terceirizado';
   if(veiculoInfo?.tipo === 'alugado') return 'Alugado';
   if(!veiculoInfo){
-    const empresas = [...new Set((registros||[]).map(r=>r.empresa).filter(e=>e && e.toUpperCase()!=='TRIPOLONI'))];
+    const empresas = [...new Set((registros||[]).map(r=>r.empresa).filter(e=>e && !ehEmpresaPropria(e)))];
     if(empresas.length) return empresas.join(', ');
   }
   return 'Próprio';
@@ -9073,7 +9117,7 @@ function initFormLancamento(){
       precoUnit: numBR(punit.value) || null,
       precoTotal: numBR(ptotal.value) || null,
       motorista: document.getElementById('l-motorista').value.trim().toUpperCase() || null,
-      empresa: empresaFixaDoEquip(equip.value) || document.getElementById('l-empresa').value.trim().toUpperCase() || 'TRIPOLONI',
+      empresa: empresaFixaDoEquip(equip.value) || document.getElementById('l-empresa').value.trim().toUpperCase() || empresaPropriaNome(),
       equipamento: equip.value.trim().toUpperCase() || null,
       kmHor: isNaN(km) ? null : km,
       obsKm: null,
@@ -9209,7 +9253,7 @@ function resetForm(manterRepetidos){
     document.getElementById('ocr-raw-wrap-'+t).style.display = 'none';
   });
   document.getElementById('l-unidade').value = 'LT';
-  document.getElementById('l-empresa').value = manter ? (manter.empresa || 'TRIPOLONI') : 'TRIPOLONI';
+  document.getElementById('l-empresa').value = manter ? (manter.empresa || empresaPropriaNome()) : empresaPropriaNome();
   aplicarTravaEmpresa('');
 
   if(manter){
@@ -9934,7 +9978,7 @@ function normalizeImportedRow(row){
     precoUnit: numBRouNumero(get('Preço Unit.','PREÇ.UNIT.','precoUnit')),
     precoTotal: numBRouNumero(get('Preço Total','PREÇ.TOTAL.','precoTotal')),
     motorista: get('Motorista','QUEM PEGOU','motorista') ? String(get('Motorista','QUEM PEGOU','motorista')).trim().toUpperCase() : null,
-    empresa: get('Empresa','EMPRESA','empresa') || 'TRIPOLONI',
+    empresa: get('Empresa','EMPRESA','empresa') || empresaPropriaNome(),
     equipamento: String(equip).trim().toUpperCase(),
     kmHor: numBRouNumero(get('Km/Hor.','km/Hor.','kmHor')),
     obsKm: null,
@@ -11508,7 +11552,7 @@ function ehTerceiroReg(r){
   const v = veiculoDoEquip(r.equipamento);
   if(v) return v.tipo === 'terceirizado';
   const e = String(r.empresa || '').trim().toUpperCase();
-  return !!e && e !== 'TRIPOLONI';
+  return !!e && !ehEmpresaPropria(e);
 }
 /* Empresa "de verdade" do lançamento: p/ terceiro vale o cadastro da Frota
    (igual à aba Terceiros), senão o campo empresa do lançamento. */
@@ -11520,7 +11564,7 @@ function empresaTerceiroDe(r){
   const v = veiculoDoEquip(r.equipamento);
   if(v && v.empresaVinculada) return v.empresaVinculada;
   const e = String(r.empresa || '').trim();
-  return (e && e.toUpperCase() !== 'TRIPOLONI') ? e : '(sem empresa)';
+  return (e && !ehEmpresaPropria(e)) ? e : '(sem empresa)';
 }
 function statusTerceiro(r, mapa){
   if(mapa.has(String(r.id))) return 'descontado';
@@ -11600,7 +11644,7 @@ function renderTerceiros(){
     const dashTerc = dash.filter(ehTerceiroReg).length;
     const obras = new Set(base.map(obraDoReg));
     const semData = base.filter(r=>!r.data).length;
-    const diverg = base.filter(r=>{ const v = veiculoDoEquip(r.equipamento); return v && String(r.empresa||'').trim().toUpperCase()==='TRIPOLONI'; }).length;
+    const diverg = base.filter(r=>{ const v = veiculoDoEquip(r.equipamento); return v && ehEmpresaPropria(r.empresa); }).length;
     el.innerHTML = `🔎 <b>Conferência:</b> aqui ${rows.length} de ${base.length} lançamento(s) de terceiros (todas as obras${obras.size>1?' – '+obras.size+' obras':''} e todo o período, se não filtrar). `
       + `O Dashboard, com os filtros dele, tem ${dash.length} lançamento(s) no total, dos quais ${dashTerc} de terceiros. `
       + `Para bater, use o mesmo período/obra nos dois.`
@@ -12346,6 +12390,238 @@ function initTransferencias(){
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('sw.js').catch(err=>console.warn('SW falhou:', err));
 }
+
+</script>
+<script>
+/* ===== APROVAÇÕES: menu por abas + filtro único + Conferência geral ===== */
+(function(){
+  const SUBS = [
+    {id:'conf', rot:'🔎 Conferência', dica:'Tudo junto: requisição → pendente → lançado'},
+    {id:'req',  rot:'🎫 Requisições', dica:'Emitir e acompanhar requisições'},
+    {id:'pend', rot:'📥 Aprovar', dica:'Lançamentos aguardando revisão'},
+    {id:'notas',rot:'🧾 Notas fiscais', dica:'PDFs do posto: cupom, romaneio/demonstrativo'},
+    {id:'base', rot:'📚 Base lançada', dica:'Base de lançamentos + lançamento manual'}
+  ];
+  const GRUPO = { 'card-emitir-requisicao':'req', 'card-nota-pdf':'notas', 'card-demonstrativo':'notas', 'barra-pdf-posto':'notas', 'card-guia-notas':'notas', 'card-pendentes':'pend', 'card-base-lanc':'base', 'card-lanc-manual':'base' };
+  const ETAPAS = {
+    aberta:    {rot:'🎫 Emitida, ainda não lançou', cor:'#8a6d00', bg:'#fff6d6'},
+    pendente:  {rot:'📥 Aguardando revisão',       cor:'#7a3d00', bg:'#ffe9d2'},
+    lancado:   {rot:'✅ Lançado',                   cor:'#14532d', bg:'#dcf5e4'},
+    usada_sem: {rot:'⚠️ Usada, sem lançamento',     cor:'#7a1c14', bg:'#fde2df'},
+    cancelada: {rot:'🚫 Cancelada',                 cor:'#555',    bg:'#ececec'}
+  };
+  let sub = 'conf', etapaSel = '', limite = 200, rodando = false;
+  const $ = id => document.getElementById(id);
+  const esc = s => escapeHtml(String(s == null ? '' : s));
+
+  function filtro(){
+    return { busca:(($('ap-busca')||{}).value||'').trim().toUpperCase(), ini:($('ap-ini')||{}).value||'', fim:($('ap-fim')||{}).value||'', posto:(($('ap-posto')||{}).value||'').toUpperCase() };
+  }
+  function diaDe(iso){ if(!iso) return ''; const s = String(iso); if(/^\d{4}-\d{2}-\d{2}$/.test(s.slice(0,10)) && s.length <= 10) return s; const d = new Date(s); return isNaN(d) ? s.slice(0,10) : dataLocalIso(d); }
+
+  function montarTopo(){
+    const view = $('view-aprovacoes'); if(!view) return null;
+    let topo = $('aprov-topo');
+    if(!topo){
+      topo = document.createElement('div'); topo.id = 'aprov-topo';
+      topo.innerHTML = `
+        <div class="ap-menu" id="ap-menu">${SUBS.map(s=>`<button type="button" class="ap-tab" data-sub="${s.id}" title="${esc(s.dica)}">${s.rot} <span class="ap-n" id="ap-n-${s.id}"></span></button>`).join('')}</div>
+        <div class="ap-filtro card">
+          <div class="filters" style="margin:0;">
+            <div class="field" style="min-width:240px;flex:2;"><label>Buscar (vale pra todas as abas)</label><input type="text" id="ap-busca" placeholder="Nº requisição, nome, equipamento, posto, NF..."></div>
+            <div class="field"><label>De</label><input type="date" id="ap-ini"></div>
+            <div class="field"><label>Até</label><input type="date" id="ap-fim"></div>
+            <div class="field"><label>Posto</label><select id="ap-posto"><option value="">Todos</option></select></div>
+            <button type="button" class="btn ghost" id="ap-limpar" style="align-self:flex-end;">Limpar filtro</button>
+          </div>
+          <div class="helper" id="ap-filtro-info" style="margin:6px 0 0;"></div>
+        </div>`;
+      view.insertBefore(topo, view.firstChild);
+      topo.querySelectorAll('.ap-tab').forEach(b=>b.addEventListener('click', ()=>irSub(b.dataset.sub)));
+      ['ap-busca','ap-ini','ap-fim','ap-posto'].forEach(id=>{ $(id).addEventListener('input', ()=>{ limite = 200; aplicarFiltro(); }); $(id).addEventListener('change', ()=>{ limite = 200; aplicarFiltro(); }); });
+      $('ap-limpar').addEventListener('click', ()=>{ ['ap-busca','ap-ini','ap-fim','ap-posto'].forEach(id=>$(id).value=''); etapaSel=''; limite=200; aplicarFiltro(); });
+    }
+    if(view.firstChild !== topo) view.insertBefore(topo, view.firstChild);
+    let conf = $('aprov-conf');
+    if(!conf){ conf = document.createElement('div'); conf.id = 'aprov-conf'; conf.className = 'card'; topo.after(conf); }
+    let guia = $('card-guia-notas');
+    if(!guia){
+      guia = document.createElement('div'); guia.id = 'card-guia-notas'; guia.className = 'card';
+      guia.innerHTML = `<h3 style="margin:0 0 8px;color:var(--navy-dark);font-size:15px;">Qual PDF vai em qual caixa?</h3>
+        <table class="ap-guia"><thead><tr><th>Documento do posto</th><th>O que é</th><th>Onde jogar</th></tr></thead><tbody>
+        <tr><td><b>Relatório do posto</b><br><span>detalhamento / extrato / fechamento</span></td><td>Lista de vários abastecimentos do período. O sistema descobre o tipo sozinho.</td><td>Botão verde <b>Escolher PDF(s)…</b> (Importar PDF do posto)</td></tr>
+        <tr><td><b>Cupom fiscal</b><br><span>1 abastecimento por PDF</span></td><td>Traz o nº da requisição; acha o pendente e já preenche litros, valor e NF.</td><td>Caixa <b>Cupom fiscal</b></td></tr>
+        <tr><td><b>Romaneio / NF mãe</b><br><span>“Demonstrativo de vendas realizada no período”</span></td><td>Lista de todos os cupons da NF mãe; cruza cada cupom pelo número.</td><td>Caixa <b>Romaneio / NF mãe</b></td></tr>
+        </tbody></table>`;
+      conf.after(guia);
+    }
+    return topo;
+  }
+
+  function classificar(){
+    const view = $('view-aprovacoes'); if(!view) return;
+    Object.keys(GRUPO).forEach(id=>{ const el = $(id); if(el) el.setAttribute('data-g', GRUPO[id]); });
+    const guia = $('card-guia-notas'), barra = $('barra-pdf-posto');
+    if(guia && barra && guia.nextSibling !== barra) view.insertBefore(guia, barra);
+    const h = $('card-nota-pdf') && $('card-nota-pdf').querySelector('h2'); if(h && !h.dataset.ap){ h.dataset.ap='1'; h.innerHTML = '🧾 Cupom fiscal <span style="font-weight:400;font-size:12px;color:var(--gray);">(PDF de 1 abastecimento)</span>'; }
+    const h2 = $('card-demonstrativo') && $('card-demonstrativo').querySelector('h2'); if(h2 && !h2.dataset.ap){ h2.dataset.ap='1'; h2.innerHTML = '📑 Romaneio / NF mãe do posto <span style="font-weight:400;font-size:12px;color:var(--gray);">(demonstrativo de vendas)</span>'; }
+    ['req-busca','req-data-ini','req-data-fim','req-posto'].forEach(id=>{ const el=$(id); if(el && el.closest('.field')) el.closest('.field').classList.add('ap-oculto'); });
+    const lp = $('req-limpar-filtros'); if(lp) lp.classList.add('ap-oculto');
+    ['bl-data-ini','bl-data-fim'].forEach(id=>{ const el=$(id); if(el && el.closest('.field')) el.closest('.field').classList.add('ap-oculto'); });
+  }
+
+  function irSub(id){
+    sub = id;
+    const view = $('view-aprovacoes'); if(!view) return;
+    view.setAttribute('data-sub', id);
+    document.querySelectorAll('#ap-menu .ap-tab').forEach(b=>b.classList.toggle('on', b.dataset.sub === id));
+    if(id !== 'conf'){ view.querySelectorAll(':scope > [data-g="'+id+'"]').forEach(c=>{ if(c.id !== 'card-lanc-manual') c.classList.remove('colapsado'); }); }
+    atualizar();
+  }
+
+  function aplicarFiltro(){
+    const f = filtro();
+    const set = (id, v)=>{ const el = $(id); if(el && el.value !== v){ el.value = v; el.dispatchEvent(new Event('input',{bubbles:true})); el.dispatchEvent(new Event('change',{bubbles:true})); } };
+    window.AP_POSTO = f.posto;
+    set('req-busca', ($('ap-busca')||{}).value||''); set('req-data-ini', f.ini); set('req-data-fim', f.fim);
+    const rp = $('req-posto'); if(rp){ const ok = [...rp.options].some(o=>o.value.toUpperCase()===f.posto); set('req-posto', ok ? f.posto : ''); }
+    set('pend-busca', ($('ap-busca')||{}).value||''); set('pend-data-ini', f.ini); set('pend-data-fim', f.fim);
+    set('bl-data-ini', f.ini); set('bl-data-fim', f.fim);
+    try{ renderListaPendentes(); }catch(_e){}
+    try{ renderListaRequisicoesAdmin(); }catch(_e){}
+    atualizar();
+  }
+
+  function montarLinhas(){
+    const grupos = new Map(); const soltas = [];
+    const g = k => { if(!grupos.has(k)) grupos.set(k, {num:k, req:null, pend:[], lanc:[]}); return grupos.get(k); };
+    (REQUISICOES_EMITIDAS||[]).forEach(r=>{ g(String(r.numero).trim()).req = r; });
+    (PENDENTES||[]).forEach(p=>{ const k = String(p.requisicao||'').trim(); if(k) g(k).pend.push(p); else soltas.push({num:'', req:null, pend:[p], lanc:[]}); });
+    (DB||[]).forEach(r=>{ const k = String(r.requisicao||'').trim(); if(k) g(k).lanc.push(r); else soltas.push({num:'', req:null, pend:[], lanc:[r]}); });
+    const out = [];
+    [...grupos.values(), ...soltas].forEach(x=>{
+      const L = x.lanc[0], P = x.pend[0], R = x.req;
+      let etapa;
+      if(x.lanc.length) etapa = 'lancado';
+      else if(x.pend.length) etapa = 'pendente';
+      else if(R && R.status === 'usada') etapa = 'usada_sem';
+      else if(R && R.status === 'cancelada') etapa = 'cancelada';
+      else etapa = 'aberta';
+      const base = L || P || R || {};
+      const todos = [].concat(x.lanc, x.pend);
+      const data = L ? String(L.data||'').slice(0,10) : P ? String(P.data||'').slice(0,10) : (R ? diaDe(R.criadoEm) : '');
+      const litros = todos.reduce((s,r)=>s + (Number(r.quantidade)||0), 0);
+      const valor = todos.reduce((s,r)=>s + (Number(r.precoTotal)||0), 0);
+      out.push({
+        etapa, num:x.num, data,
+        equip: (L||P||{}).equipamento || (R && (R.equipamento || R.placa)) || '',
+        mot: (L||P||{}).motorista || (R && R.motoristaNome) || '',
+        emp: (L||P||{}).empresa || (R && R.empresa) || '',
+        posto: (L||P||{}).posto || (R && R.posto) || '',
+        prod: (L||P||{}).produto || (R && R.produto) || '',
+        litros, valor, nf: (L && L.nf) || (P && P.nfSugerido) || '',
+        obra: L ? obraDoReg(L) : '', qtd: (x.lanc.length + x.pend.length) || 0, emit: R ? (R.criadoPorEmail||'') : ''
+      });
+    });
+    out.sort((a,b)=> (b.data||'').localeCompare(a.data||'') || String(b.num).localeCompare(String(a.num), undefined, {numeric:true}));
+    return out;
+  }
+  function filtrar(linhas, comEtapa){
+    const f = filtro();
+    return linhas.filter(l=>{
+      if(f.ini && (!l.data || l.data < f.ini)) return false;
+      if(f.fim && (!l.data || l.data > f.fim)) return false;
+      if(f.posto && String(l.posto||'').toUpperCase() !== f.posto) return false;
+      if(comEtapa && etapaSel && l.etapa !== etapaSel) return false;
+      if(f.busca && ![l.num,l.equip,l.mot,l.emp,l.posto,l.prod,l.nf,l.data ? fmtDate(l.data) : '', ETAPAS[l.etapa].rot].join(' ').toUpperCase().includes(f.busca)) return false;
+      return true;
+    });
+  }
+
+  function renderConf(){
+    const box = $('aprov-conf'); if(!box) return;
+    if(sub !== 'conf'){ return; }
+    const todas = montarLinhas();
+    const baseF = filtrar(todas, false);
+    const lista = etapaSel ? baseF.filter(l=>l.etapa === etapaSel) : baseF;
+    const cont = {}; baseF.forEach(l=>{ cont[l.etapa] = (cont[l.etapa]||0) + 1; });
+    const chips = Object.keys(ETAPAS).map(k=>`<button type="button" class="ap-chip ${etapaSel===k?'on':''}" data-etapa="${k}" style="--c:${ETAPAS[k].cor};--b:${ETAPAS[k].bg};">${ETAPAS[k].rot} <b>${cont[k]||0}</b></button>`).join('');
+    const vis = lista.slice(0, limite);
+    const somaL = lista.reduce((s,l)=>s+l.litros,0), somaV = lista.reduce((s,l)=>s+l.valor,0);
+    box.innerHTML = `
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <div class="ap-chips"><button type="button" class="ap-chip ${etapaSel===''?'on':''}" data-etapa="" style="--c:#002674;--b:#e3ecff;">Tudo <b>${baseF.length}</b></button>${chips}</div>
+        <button type="button" class="btn secondary" id="ap-export">⬇️ Exportar CSV</button>
+      </div>
+      <div class="helper" style="margin:0 0 8px;">Cada linha é uma requisição seguindo o caminho <b>emitida → aguardando revisão → lançada</b>. Linhas sem número são lançamentos feitos sem requisição. Mostrando ${vis.length} de ${lista.length} · ${fmtNum(somaL,2)} L · ${fmtMoney(somaV)} (do que já foi lançado/pendente). Obra: <b>${esc(OBRA_ATIVA || 'todas as carregadas')}</b>.</div>
+      <div style="overflow:auto;max-height:70vh;"><table class="ap-tab-conf"><thead><tr><th>Etapa</th><th>Req Nº</th><th>Data</th><th>Equip.</th><th>Motorista</th><th>Empresa</th><th>Posto</th><th>Produto</th><th class="n">Litros</th><th class="n">Valor</th><th>NF</th><th></th></tr></thead><tbody>
+      ${vis.map(l=>`<tr class="et-${l.etapa}"><td><span class="ap-badge" style="color:${ETAPAS[l.etapa].cor};background:${ETAPAS[l.etapa].bg};">${ETAPAS[l.etapa].rot}${l.qtd>1?' ×'+l.qtd:''}</span></td><td>${esc(l.num||'—')}</td><td>${l.data?fmtDate(l.data):'—'}</td><td>${esc(l.equip)}</td><td>${esc(l.mot)}</td><td>${esc(l.emp)}</td><td>${esc(l.posto)}</td><td>${esc(l.prod)}</td><td class="n">${l.litros?fmtNum(l.litros,2):'—'}</td><td class="n">${l.valor?fmtMoney(l.valor):'—'}</td><td>${esc(l.nf)}</td><td>${l.etapa==='pendente'?`<button type="button" class="btn ghost" data-ir="pend" data-num="${esc(l.num)}">Abrir</button>`:l.etapa==='lancado'?`<button type="button" class="btn ghost" data-ir="base" data-num="${esc(l.num)}">Ver</button>`:l.num?`<button type="button" class="btn ghost" data-ir="req" data-num="${esc(l.num)}">Abrir</button>`:''}</td></tr>`).join('') || `<tr><td colspan="12" class="helper">Nada encontrado com esse filtro.</td></tr>`}
+      </tbody></table></div>
+      ${lista.length > vis.length ? `<div style="text-align:center;margin-top:10px;"><button type="button" class="btn secondary" id="ap-mais">Mostrar mais 200 (faltam ${lista.length - vis.length})</button></div>` : ''}`;
+    box.querySelectorAll('[data-etapa]').forEach(b=>b.addEventListener('click', ()=>{ etapaSel = b.dataset.etapa; limite = 200; renderConf(); }));
+    const mais = $('ap-mais'); if(mais) mais.addEventListener('click', ()=>{ limite += 200; renderConf(); });
+    box.querySelectorAll('[data-ir]').forEach(b=>b.addEventListener('click', ()=>{ if(b.dataset.num){ $('ap-busca').value = b.dataset.num; aplicarFiltro(); } irSub(b.dataset.ir); }));
+    $('ap-export').addEventListener('click', ()=>{
+      const cab = ['Etapa','Req','Data','Equipamento','Motorista','Empresa','Posto','Produto','Litros','Valor','NF'];
+      const q = v => '"' + String(v == null ? '' : v).replace(/"/g,'""') + '"';
+      const csv = [cab.map(q).join(';')].concat(lista.map(l=>[ETAPAS[l.etapa].rot,l.num,l.data?fmtDate(l.data):'',l.equip,l.mot,l.emp,l.posto,l.prod,l.litros||'',l.valor||'',l.nf].map(q).join(';'))).join('\r\n');
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8;'})); a.download = 'conferencia_'+todayStr()+'.csv'; document.body.appendChild(a); a.click(); a.remove();
+    });
+  }
+
+  function atualizar(){
+    if(rodando) return; rodando = true;
+    try{
+      if(!$('aprov-topo')) montarTopo();
+      classificar();
+      const view = $('view-aprovacoes'); if(view) view.setAttribute('data-sub', sub);
+      document.querySelectorAll('#ap-menu .ap-tab').forEach(b=>b.classList.toggle('on', b.dataset.sub === sub));
+      // contadores do menu
+      const nReq = (REQUISICOES_EMITIDAS||[]).filter(r=>r.status==='aberta').length;
+      const nPend = (PENDENTES||[]).length;
+      const set = (id,v)=>{ const e=$(id); if(e) e.textContent = v ? String(v) : ''; };
+      set('ap-n-req', nReq); set('ap-n-pend', nPend);
+      const pn = $('ap-n-pend'); if(pn) pn.classList.toggle('alerta', nPend > 0);
+      // lista de postos do filtro (união das 3 fontes)
+      const sp = $('ap-posto');
+      if(sp){
+        const atual = sp.value;
+        const ps = new Set(); [].concat(REQUISICOES_EMITIDAS||[], PENDENTES||[], DB||[]).forEach(r=>{ const p = String(r.posto||'').trim().toUpperCase(); if(p) ps.add(p); });
+        const ord = [...ps].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+        const sig = ord.join('|');
+        if(sp.dataset.sig !== sig){ sp.dataset.sig = sig; sp.innerHTML = '<option value="">Todos</option>' + ord.map(p=>`<option value="${esc(p)}">${esc(p)}</option>`).join(''); sp.value = ord.includes(atual) ? atual : ''; }
+      }
+      const f = filtro();
+      const ativo = [f.busca && `busca “${f.busca}”`, f.ini && `de ${fmtDate(f.ini)}`, f.fim && `até ${fmtDate(f.fim)}`, f.posto && `posto ${f.posto}`].filter(Boolean);
+      const info = $('ap-filtro-info'); if(info) info.innerHTML = ativo.length ? `Filtro ativo em todas as abas: <b>${esc(ativo.join(' · '))}</b>` : 'Sem filtro — mostrando tudo.';
+      renderConf();
+    } finally { rodando = false; }
+  }
+
+  // ganchos: re-renderiza quando os dados mudam
+  function envolver(nome){
+    const orig = window[nome]; if(typeof orig !== 'function' || orig.__ap) return;
+    const novo = function(){ const r = orig.apply(this, arguments); setTimeout(()=>{ if($('view-aprovacoes') && $('view-aprovacoes').classList.contains('active')) atualizar(); }, 0); return r; };
+    novo.__ap = true; window[nome] = novo;
+  }
+  function iniciar(){
+    if(!$('view-aprovacoes')) return;
+    ['renderListaPendentes','renderListaRequisicoesAdmin','renderBaseLancamentos','renderTudo'].forEach(envolver);
+    const origAt = window.ativarTab;
+    if(typeof origAt === 'function' && !origAt.__ap){
+      const n = function(nome){ const r = origAt.apply(this, arguments); if(nome === 'aprovacoes'){ try{ montarTopo(); classificar(); atualizar(); }catch(e){ console.error(e); } } return r; };
+      n.__ap = true; window.ativarTab = n;
+    }
+    const origPos = window.posicionarFormLancamento;
+    if(typeof origPos === 'function' && !origPos.__ap){
+      const n2 = function(){ const r = origPos.apply(this, arguments); try{ classificar(); }catch(_e){} return r; };
+      n2.__ap = true; window.posicionarFormLancamento = n2;
+    }
+    montarTopo(); classificar();
+  }
+  window.aprovAtualizar = atualizar;
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar); else iniciar();
+})();
 
 </script>
 </body>
