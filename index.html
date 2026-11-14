@@ -2644,7 +2644,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
 const APP_VERSION = 'v1.0.8';
-const BUILD_ID = '1794663651';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
+const BUILD_ID = '1794678917';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -6118,17 +6118,20 @@ function cartaoVisualPendente(p, np, rasc){
   const reqDiffEq = rq && rq.equipamento && eq && String(rq.equipamento).toUpperCase() !== eq;
   const reqPlaca = rq ? (rq.placa || (veiculoDoEquip(rq.equipamento||eq)||{}).placa || '—') : '—';
   const reqDiffPlaca = !!(rq && reqPlaca !== '—' && placa !== '—' && normPlaca(reqPlaca) !== normPlaca(placa));
+  const empReq = rq ? (empresaPadrao({ equipamento: rq.terceiro === 'sim' ? '' : (rq.equipamento || eq), empresa: rq.empresa }) || '') : '';
+  const empNota = empresaPadrao({ equipamento: eq || (rq && rq.placa) || placa, empresa: p.empresa || (rq && rq.empresa) }) || '';
+  const reqDiffEmp = !!(empReq && empNota && empReq !== empNota);
   const kmReq = rq && rq.kmEsperado ? fmtNum(Number(String(rq.kmEsperado).replace(',','.')),0) : '—';
   const painel = (titulo, icone, corpo, aviso)=>`<div style="flex:1 1 260px;border:1px solid #cdd8f0;border-radius:12px;overflow:hidden;background:#eef3fc;">
       <div style="${navy}padding:7px 12px;font-weight:700;font-size:14px;">${icone} ${titulo}</div>
       <div style="padding:6px 12px;font-size:12.5px;">${corpo}${aviso||''}</div></div>`;
   const linha = (rot, val, ruim)=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:1px 0;border-bottom:1px dashed #d6deef;"><span style="color:#6b7a99;">${rot}</span><b style="${ruim?bad:'color:#0b2a6f;'}">${ruim?'⚠️ ':''}${val}</b></div>`;
   const corpoReq = rq ? (
-      linha('Placa', E(fmtPlaca(String(reqPlaca))), reqDiffPlaca) + linha('Prefixo', E(reqEq||'—'), reqDiffEq) + linha('Combustível', E(String(rq.produto||'—')), reqDiffProd) +
+      linha('Empresa', E(empReq||'—'), reqDiffEmp) + linha('Placa', E(fmtPlaca(String(reqPlaca))), reqDiffPlaca) + linha('Prefixo', E(reqEq||'—'), reqDiffEq) + linha('Combustível', E(String(rq.produto||'—')), reqDiffProd) +
       linha('Km esperado', kmReq) + (rq.posto ? linha('Posto', E(String(rq.posto))) : '') +
       (textoItensReq(rq) ? `<div style="margin-top:4px;font-size:12px;color:#33415f;">${E(textoItensReq(rq))}</div>` : '')
     ) : `<div style="color:#6b7a99;">Ainda não tem requisição — gere a requisição abaixo.</div>`;
-  const corpoNota = linha('Placa', E(fmtPlaca(String(placa))), reqDiffPlaca) + linha('Prefixo', E(eq||'—'), reqDiffEq) + linha('Combustível', E(produto), reqDiffProd) +
+  const corpoNota = linha('Empresa', E(empNota||'—'), reqDiffEmp) + linha('Placa', E(fmtPlaca(String(placa))), reqDiffPlaca) + linha('Prefixo', E(eq||'—'), reqDiffEq) + linha('Combustível', E(produto), reqDiffProd) +
       linha('Quantidade', `${qtd!=null?fmtNum(qtd,2):'—'} L`) + linha('Valor total', `${ptot!=null?fmtMoney(ptot):'—'}${punit!=null?` <span style="font-weight:600;">(${fmtMoney(punit)}/L)</span>`:''}`) +
       (cupom ? linha('Cupom do posto', E(String(cupom))) : '');
   return `<div class="pend-visual" style="display:flex;flex-direction:column;gap:8px;">
@@ -6146,11 +6149,12 @@ function cartaoVisualPendente(p, np, rasc){
     <div style="${caixa}display:flex;flex-wrap:wrap;gap:10px 14px;">
       ${par(E(produto), (ptot!=null?fmtMoney(ptot):'—') + `<div style="font-size:12px;font-weight:600;color:#6b7a99;">${qtd!=null?fmtNum(qtd,2):'—'} L${punit!=null?' · '+fmtMoney(punit)+'/L':''}</div>`)}
       ${par('Placa do veículo', E(fmtPlaca(String(placa))) + `<div style="font-size:12px;font-weight:600;color:#6b7a99;">${E(eq||'—')}</div>`)}
+      ${par('Empresa', E(empNota||'—'))}
       ${par('Km / Hor.', km!=null?fmtNum(km,0):'—')}
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;">
       ${painel('Requisição', '📋', corpoReq)}
-      ${painel('Lida na nota / lançada', np.arquivo ? '📄' : '✏️', corpoNota, (reqDiffProd||reqDiffEq||reqDiffPlaca) ? `<div style="${bad}font-weight:700;margin-top:4px;">⚠️ Diverge da requisição</div>` : (rq ? `<div style="color:#1a8f3c;font-weight:700;margin-top:4px;">✅ Confere com a requisição</div>` : ''))}
+      ${painel('Lida na nota / lançada', np.arquivo ? '📄' : '✏️', corpoNota, (reqDiffProd||reqDiffEq||reqDiffPlaca||reqDiffEmp) ? `<div style="${bad}font-weight:700;margin-top:4px;">⚠️ Diverge da requisição</div>` : (rq ? `<div style="color:#1a8f3c;font-weight:700;margin-top:4px;">✅ Confere com a requisição</div>` : ''))}
     </div>
   </div>`;
 }
