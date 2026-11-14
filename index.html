@@ -1157,6 +1157,12 @@ body.carregando-obra main, body.carregando-obra .view{opacity:.55;transition:opa
 #ac-box .ac-it span{font-size:12px;color:#6b7a99;}
 #ac-box .ac-it:hover,#ac-box .ac-it.on{background:#e8f0ff;}
 
+.ap-ordpanel{display:none;flex-wrap:wrap;gap:6px;margin:0 0 10px;padding:8px;background:#f1f5fd;border:1px solid #d5e0f3;border-radius:10px;}
+.ap-ordit{display:inline-flex;align-items:center;gap:4px;background:#fff;border:1px solid #c9d6ea;border-radius:8px;padding:2px 4px 2px 6px;font-size:13px;}
+.ap-ordit button{border:0;background:#e8f0ff;border-radius:6px;cursor:pointer;padding:2px 7px;color:#002674;}
+.ap-ordit button:disabled{opacity:.3;cursor:default;}
+.ap-tab-conf th.ap-over{box-shadow:inset 3px 0 0 #002674;background:#dfe7f6;}
+
 </style>
 </head>
 <body>
@@ -2638,7 +2644,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
 const APP_VERSION = 'v1.0.7';
-const BUILD_ID = '1794656634';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
+const BUILD_ID = '1794662912';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -12602,11 +12608,43 @@ if('serviceWorker' in navigator){
   /* ---- larguras de coluna (arrastar a borda do título) ---- */
   const COLS = [['etapa','Etapa',200],['num','Req Nº',80],['data','Data',100],['equip','Equip.',95],['mot','Motorista',230],['emp','Empresa',220],['posto','Posto',150],['prod','Produto',100],['km','Km / Hor',95,'n'],['litros','Litros',85,'n'],['media','Média km/L',100,'n'],['valor','Valor',105,'n'],['nf','NF',80]];
   const LS_COLW = 'ap_colw_v1';
+  const LS_ORD = 'ap_colord_v1';
+  function ordemColunas(){
+    let salva = []; try{ salva = JSON.parse(localStorage.getItem(LS_ORD)||'[]'); }catch(_e){}
+    const ids = COLS.map(c=>c[0]);
+    const ord = (Array.isArray(salva) ? salva : []).filter(i=>ids.indexOf(i) > -1);
+    ids.forEach(i=>{ if(ord.indexOf(i) < 0){ const pos = ids.indexOf(i); const ant = ids[pos-1]; const at = ant ? ord.indexOf(ant) : -1; ord.splice(at + 1, 0, i); } });
+    return ord.map(i=>COLS.find(c=>c[0] === i));
+  }
+  function gravarOrdem(ids){ try{ localStorage.setItem(LS_ORD, JSON.stringify(ids)); }catch(_e){} }
+  function moverColuna(id, alvo, depois){
+    const ids = ordemColunas().map(c=>c[0]).filter(i=>i !== id);
+    let p = ids.indexOf(alvo); if(p < 0) return; if(depois) p++;
+    ids.splice(p, 0, id); gravarOrdem(ids);
+  }
+  function celula(id, l){
+    switch(id){
+      case 'etapa': return `<td><span class="ap-badge" style="color:${ETAPAS[l.etapa].cor};background:${ETAPAS[l.etapa].bg};">${ETAPAS[l.etapa].rot}</span></td>`;
+      case 'num': return `<td>${esc(l.num||'—')}</td>`;
+      case 'data': return `<td>${l.data?fmtDate(l.data):'—'}</td>`;
+      case 'equip': return `<td>${esc(l.equip)}</td>`;
+      case 'mot': return `<td>${esc(l.mot)}</td>`;
+      case 'emp': return `<td>${esc(l.emp)}</td>`;
+      case 'posto': return `<td>${esc(l.posto)}</td>`;
+      case 'prod': return `<td>${esc(l.prod)}</td>`;
+      case 'km': return `<td class="n">${l.km?fmtNum(l.km,0):'—'}</td>`;
+      case 'litros': return `<td class="n">${l.litros?fmtNum(l.litros,2):'—'}</td>`;
+      case 'media': return `<td class="n">${l.media?fmtNum(l.media,2):'—'}</td>`;
+      case 'valor': return `<td class="n">${l.valor?fmtMoney(l.valor):'—'}</td>`;
+      case 'nf': return `<td>${esc(l.nf)}</td>`;
+    }
+    return '<td></td>';
+  }
   function lerLarguras(){ try{ const j = JSON.parse(localStorage.getItem(LS_COLW)||'{}'); return (j && typeof j === 'object') ? j : {}; }catch(_e){ return {}; } }
   function gravarLarguras(o){ try{ localStorage.setItem(LS_COLW, JSON.stringify(o)); }catch(_e){} }
   function largura(id, padrao){ const w = Number(lerLarguras()[id]); return (w >= 40 && w <= 700) ? w : padrao; }
 
-  let expandido = '', editandoPainel = false;
+  let expandido = '', editandoPainel = false, ordPainelAberto = false;
   const chaveDe = l => l.tipo + ':' + l.id;
 
   function campo(id, rot, val, larg){
@@ -12688,6 +12726,7 @@ if('serviceWorker' in navigator){
     const box = $('aprov-conf'); if(!box) return;
     if(sub !== 'conf'){ return; }
     if(editandoPainel && forcar !== true) return; // não apaga o que a pessoa está digitando
+    const COLS_ORD = ordemColunas();
     const larg = {}; COLS.forEach(c=>{ larg[c[0]] = largura(c[0], c[2]); });
     const wAcao = 90, wTotal = COLS.reduce((s,c)=>s+larg[c[0]],0) + wAcao;
     const todas = montarLinhas();
@@ -12699,16 +12738,17 @@ if('serviceWorker' in navigator){
     const somaL = lista.reduce((s,l)=>s+l.litros,0), somaV = lista.reduce((s,l)=>s+l.valor,0);
     const linhas = vis.map(l=>{
       const k = chaveDe(l), aberta = k === expandido;
-      const tr = `<tr class="ap-lin et-${l.etapa} ${aberta?'sel':''}" data-k="${esc(k)}"><td><span class="ap-badge" style="color:${ETAPAS[l.etapa].cor};background:${ETAPAS[l.etapa].bg};">${ETAPAS[l.etapa].rot}</span></td><td>${esc(l.num||'—')}</td><td>${l.data?fmtDate(l.data):'—'}</td><td>${esc(l.equip)}</td><td>${esc(l.mot)}</td><td>${esc(l.emp)}</td><td>${esc(l.posto)}</td><td>${esc(l.prod)}</td><td class="n">${l.km?fmtNum(l.km,0):'—'}</td><td class="n">${l.litros?fmtNum(l.litros,2):'—'}</td><td class="n">${l.media?fmtNum(l.media,2):'—'}</td><td class="n">${l.valor?fmtMoney(l.valor):'—'}</td><td>${esc(l.nf)}</td><td><button type="button" class="btn ghost ap-exp" data-exp="${esc(k)}">${aberta?'▲ Fechar':'✏️ Editar'}</button></td></tr>`;
+      const tr = `<tr class="ap-lin et-${l.etapa} ${aberta?'sel':''}" data-k="${esc(k)}">${COLS_ORD.map(c=>celula(c[0], l)).join('')}<td><button type="button" class="btn ghost ap-exp" data-exp="${esc(k)}">${aberta?'▲ Fechar':'✏️ Editar'}</button></td></tr>`;
       return aberta ? tr + `<tr class="ap-det" data-kd="${esc(k)}"><td colspan="14">${painel(l)}</td></tr>` : tr;
     }).join('') || `<tr><td colspan="14" class="helper">Nada encontrado com esse filtro.</td></tr>`;
     box.innerHTML = `
       <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:8px;">
         <div class="ap-chips"><button type="button" class="ap-chip ${etapaSel===''?'on':''}" data-etapa="" style="--c:#002674;--b:#e3ecff;">Tudo <b>${baseF.length}</b></button>${chips}</div>
-        <div style="display:flex;gap:6px;"><button type="button" class="btn ghost" id="ap-colreset" title="Voltar as colunas ao tamanho padrão">↔ Larguras padrão</button><button type="button" class="btn secondary" id="ap-export">⬇️ Exportar CSV</button></div>
+        <div style="display:flex;gap:6px;"><button type="button" class="btn ghost" id="ap-colordem" title="Mudar a ordem das colunas">↕ Ordem das colunas</button><button type="button" class="btn ghost" id="ap-colreset" title="Voltar as colunas ao tamanho e à ordem padrão">↔ Padrão</button><button type="button" class="btn secondary" id="ap-export">⬇️ Exportar CSV</button></div>
       </div>
+      <div id="ap-ordpanel" class="ap-ordpanel" style="display:${ordPainelAberto?'flex':'none'};">${COLS_ORD.map((c,i)=>`<span class="ap-ordit"><button type="button" data-mv="${c[0]}" data-dir="-1" ${i===0?'disabled':''}>◀</button>${c[1]}<button type="button" data-mv="${c[0]}" data-dir="1" ${i===COLS_ORD.length-1?'disabled':''}>▶</button></span>`).join('')}</div>
       <div class="helper" style="margin:0 0 8px;">Cada linha é um registro: requisição ainda sem lançar, lançamento aguardando revisão ou lançamento já gravado. ⚠️ em vermelho = algo inconsistente. <b>Clique na linha</b> (ou em ✏️ Editar) para abrir os dados embaixo e corrigir km, litros, valor, NF, data ou posto. <b>Arraste a borda do título</b> para ajustar a largura; clique no título para ordenar. Mostrando ${vis.length} de ${lista.length} · ${fmtNum(somaL,2)} L · ${fmtMoney(somaV)}. Obra: <b>${esc(OBRA_ATIVA || 'todas as carregadas')}</b>.</div>
-      <div style="overflow:auto;max-height:72vh;"><table class="ap-tab-conf" style="table-layout:fixed;width:${wTotal}px;"><colgroup>${COLS.map(c=>`<col data-col="${c[0]}" style="width:${larg[c[0]]}px">`).join('')}<col style="width:${wAcao}px"></colgroup><thead><tr>${COLS.map(c=>`<th class="ord ${c[3]||''}" data-ord="${c[0]}" title="Clique para ordenar · arraste a borda para mudar a largura">${c[1]}${ordCol===c[0] ? (ordDir>0?' ▲':' ▼') : ''}<span class="ap-rz" data-rz="${c[0]}"></span></th>`).join('')}<th></th></tr></thead><tbody>
+      <div style="overflow:auto;max-height:72vh;"><table class="ap-tab-conf" style="table-layout:fixed;width:${wTotal}px;"><colgroup>${COLS_ORD.map(c=>`<col data-col="${c[0]}" style="width:${larg[c[0]]}px">`).join('')}<col style="width:${wAcao}px"></colgroup><thead><tr>${COLS_ORD.map(c=>`<th class="ord ${c[3]||''}" data-ord="${c[0]}" draggable="true" title="Clique para ordenar · arraste o título para mudar a posição · arraste a borda para mudar a largura">${c[1]}${ordCol===c[0] ? (ordDir>0?' ▲':' ▼') : ''}<span class="ap-rz" data-rz="${c[0]}"></span></th>`).join('')}<th></th></tr></thead><tbody>
       ${linhas}
       </tbody></table></div>
       ${lista.length > vis.length ? `<div style="text-align:center;margin-top:10px;"><button type="button" class="btn secondary" id="ap-mais">Mostrar mais 200 (faltam ${lista.length - vis.length})</button></div>` : ''}`;
@@ -12717,6 +12757,7 @@ if('serviceWorker' in navigator){
     // redimensionar colunas
     box.querySelectorAll('.ap-rz').forEach(h=>{
       h.addEventListener('click', ev=>ev.stopPropagation());
+      h.draggable = false; h.addEventListener('mousedown', ev=>{ ev.preventDefault(); ev.stopPropagation(); });
       h.addEventListener('pointerdown', ev=>{
         ev.preventDefault(); ev.stopPropagation();
         const id = h.dataset.rz, col = box.querySelector(`col[data-col="${id}"]`), tab = box.querySelector('table');
@@ -12727,7 +12768,24 @@ if('serviceWorker' in navigator){
         h.addEventListener('pointermove', mv); h.addEventListener('pointerup', up);
       });
     });
-    const rs = $('ap-colreset'); if(rs) rs.addEventListener('click', ()=>{ gravarLarguras({}); renderConf(true); });
+    const rs = $('ap-colreset'); if(rs) rs.addEventListener('click', ()=>{ gravarLarguras({}); gravarOrdem(COLS.map(c=>c[0])); renderConf(true); });
+    const bo = $('ap-colordem'); if(bo) bo.addEventListener('click', ()=>{ ordPainelAberto = !ordPainelAberto; $('ap-ordpanel').style.display = ordPainelAberto ? 'flex' : 'none'; });
+    box.querySelectorAll('[data-mv]').forEach(b=>b.addEventListener('click', ()=>{
+      const ids = ordemColunas().map(c=>c[0]); const i = ids.indexOf(b.dataset.mv), d = Number(b.dataset.dir), j = i + d; if(j < 0 || j >= ids.length) return;
+      ids.splice(j, 0, ids.splice(i, 1)[0]); gravarOrdem(ids); renderConf(true);
+    }));
+    let arrastando = '';
+    box.querySelectorAll('th[data-ord]').forEach(th=>{
+      th.addEventListener('dragstart', ev=>{ arrastando = th.dataset.ord; try{ ev.dataTransfer.setData('text/plain', arrastando); ev.dataTransfer.effectAllowed = 'move'; }catch(_e){} });
+      th.addEventListener('dragover', ev=>{ if(!arrastando || arrastando === th.dataset.ord) return; ev.preventDefault(); th.classList.add('ap-over'); });
+      th.addEventListener('dragleave', ()=>th.classList.remove('ap-over'));
+      th.addEventListener('dragend', ()=>{ arrastando = ''; box.querySelectorAll('.ap-over').forEach(x=>x.classList.remove('ap-over')); });
+      th.addEventListener('drop', ev=>{
+        ev.preventDefault(); th.classList.remove('ap-over'); const de = arrastando; arrastando = ''; if(!de || de === th.dataset.ord) return;
+        const ids = ordemColunas().map(c=>c[0]); const depois = ids.indexOf(de) < ids.indexOf(th.dataset.ord);
+        moverColuna(de, th.dataset.ord, depois); renderConf(true);
+      });
+    });
     // abrir / fechar painel de edição embaixo da linha
     const alternar = k=>{ editandoPainel = false; expandido = (expandido === k) ? '' : k; renderConf(true); const d = box.querySelector('.ap-det input[data-f]'); if(d) d.focus(); };
     box.querySelectorAll('tr.ap-lin').forEach(tr=>tr.addEventListener('click', ev=>{ if(ev.target.closest('button')) return; alternar(tr.dataset.k); }));
