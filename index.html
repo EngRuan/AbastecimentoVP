@@ -2643,8 +2643,8 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v1.0.7';
-const BUILD_ID = '1794662912';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
+const APP_VERSION = 'v1.0.8';
+const BUILD_ID = '1794663651';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -6117,17 +6117,18 @@ function cartaoVisualPendente(p, np, rasc){
   const reqEq = rq ? String(rq.equipamento || eq || '').toUpperCase() : '';
   const reqDiffEq = rq && rq.equipamento && eq && String(rq.equipamento).toUpperCase() !== eq;
   const reqPlaca = rq ? (rq.placa || (veiculoDoEquip(rq.equipamento||eq)||{}).placa || '—') : '—';
+  const reqDiffPlaca = !!(rq && reqPlaca !== '—' && placa !== '—' && normPlaca(reqPlaca) !== normPlaca(placa));
   const kmReq = rq && rq.kmEsperado ? fmtNum(Number(String(rq.kmEsperado).replace(',','.')),0) : '—';
   const painel = (titulo, icone, corpo, aviso)=>`<div style="flex:1 1 260px;border:1px solid #cdd8f0;border-radius:12px;overflow:hidden;background:#eef3fc;">
       <div style="${navy}padding:7px 12px;font-weight:700;font-size:14px;">${icone} ${titulo}</div>
       <div style="padding:6px 12px;font-size:12.5px;">${corpo}${aviso||''}</div></div>`;
   const linha = (rot, val, ruim)=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:1px 0;border-bottom:1px dashed #d6deef;"><span style="color:#6b7a99;">${rot}</span><b style="${ruim?bad:'color:#0b2a6f;'}">${ruim?'⚠️ ':''}${val}</b></div>`;
   const corpoReq = rq ? (
-      linha('Placa', E(String(reqPlaca))) + linha('Prefixo', E(reqEq||'—'), reqDiffEq) + linha('Combustível', E(String(rq.produto||'—')), reqDiffProd) +
+      linha('Placa', E(fmtPlaca(String(reqPlaca))), reqDiffPlaca) + linha('Prefixo', E(reqEq||'—'), reqDiffEq) + linha('Combustível', E(String(rq.produto||'—')), reqDiffProd) +
       linha('Km esperado', kmReq) + (rq.posto ? linha('Posto', E(String(rq.posto))) : '') +
       (textoItensReq(rq) ? `<div style="margin-top:4px;font-size:12px;color:#33415f;">${E(textoItensReq(rq))}</div>` : '')
     ) : `<div style="color:#6b7a99;">Ainda não tem requisição — gere a requisição abaixo.</div>`;
-  const corpoNota = linha('Placa', E(String(placa))) + linha('Prefixo', E(eq||'—'), reqDiffEq) + linha('Combustível', E(produto), reqDiffProd) +
+  const corpoNota = linha('Placa', E(fmtPlaca(String(placa))), reqDiffPlaca) + linha('Prefixo', E(eq||'—'), reqDiffEq) + linha('Combustível', E(produto), reqDiffProd) +
       linha('Quantidade', `${qtd!=null?fmtNum(qtd,2):'—'} L`) + linha('Valor total', `${ptot!=null?fmtMoney(ptot):'—'}${punit!=null?` <span style="font-weight:600;">(${fmtMoney(punit)}/L)</span>`:''}`) +
       (cupom ? linha('Cupom do posto', E(String(cupom))) : '');
   return `<div class="pend-visual" style="display:flex;flex-direction:column;gap:8px;">
@@ -6144,12 +6145,12 @@ function cartaoVisualPendente(p, np, rasc){
     </div>
     <div style="${caixa}display:flex;flex-wrap:wrap;gap:10px 14px;">
       ${par(E(produto), (ptot!=null?fmtMoney(ptot):'—') + `<div style="font-size:12px;font-weight:600;color:#6b7a99;">${qtd!=null?fmtNum(qtd,2):'—'} L${punit!=null?' · '+fmtMoney(punit)+'/L':''}</div>`)}
-      ${par('Placa do veículo', E(String(placa)) + `<div style="font-size:12px;font-weight:600;color:#6b7a99;">${E(eq||'—')}</div>`)}
+      ${par('Placa do veículo', E(fmtPlaca(String(placa))) + `<div style="font-size:12px;font-weight:600;color:#6b7a99;">${E(eq||'—')}</div>`)}
       ${par('Km / Hor.', km!=null?fmtNum(km,0):'—')}
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;">
       ${painel('Requisição', '📋', corpoReq)}
-      ${painel('Lida na nota / lançada', np.arquivo ? '📄' : '✏️', corpoNota, (reqDiffProd||reqDiffEq) ? `<div style="${bad}font-weight:700;margin-top:4px;">⚠️ Diverge da requisição</div>` : '')}
+      ${painel('Lida na nota / lançada', np.arquivo ? '📄' : '✏️', corpoNota, (reqDiffProd||reqDiffEq||reqDiffPlaca) ? `<div style="${bad}font-weight:700;margin-top:4px;">⚠️ Diverge da requisição</div>` : (rq ? `<div style="color:#1a8f3c;font-weight:700;margin-top:4px;">✅ Confere com a requisição</div>` : ''))}
     </div>
   </div>`;
 }
@@ -6574,6 +6575,29 @@ function cruzarNotaComSistema(d){
   return { numReq, origem, reqEmitida, jaLancado, candidatos, avisos };
 }
 
+let NOTAS_PDF_REJEITADAS = [];
+/* Cupom de requisição que JÁ foi lançada (ou cancelada, ou já lida aqui) não é aceito. */
+function motivoRecusaNota(d, c){
+  if(!c || !c.numReq) return '';
+  if(c.jaLancado){
+    const j = c.jaLancado;
+    return `A requisição ${c.numReq} JÁ FOI LANÇADA em ${fmtDate(j.data)} (${j.equipamento||'—'}, ${fmtNum(j.quantidade,2)} L${j.nf ? ', NF '+j.nf : ''}). Cupom não aceito. Se for só corrigir km, data ou valor, use Conferência → ✏️ Editar.`;
+  }
+  if(c.reqEmitida && c.reqEmitida.status === 'cancelada') return `A requisição ${c.numReq} foi CANCELADA. Cupom não aceito.`;
+  const rep_ = NOTAS_PDF_LIDAS.find(n=>n.cruz && n.cruz.numReq === c.numReq);
+  if(rep_) return `A requisição ${c.numReq} já foi lida agora há pouco (${rep_.arquivo}). Cupom repetido, não aceito.`;
+  return '';
+}
+function cartaoDaNota(n){
+  const d = n.dados, c = n.cruz, rq = c.reqEmitida, cand = c.candidatos[0] && c.candidatos[0].p;
+  if(!rq && !cand) return '';
+  const p = { requisicao: c.numReq || '', equipamento: equipamentoDaNota(d) || (cand && cand.equipamento) || (rq && rq.terceiro !== 'sim' ? rq.equipamento : '') || '', placa: d.placa || '',
+    produto: d.produto || (rq && rq.produto) || '', posto: d.posto || (rq && rq.posto) || '', motorista: (cand && cand.motorista) || (rq && (rq.motoristaNome || rq.motoristaEmail)) || d.motorista || '',
+    nfSugerido: d.nf || '', data: d.data || '', kmHor: d.km };
+  const np = { arquivo: n.arquivo, quantidade: d.quantidade, precoTotal: d.precoTotal, precoUnit: d.precoUnit, kmHor: d.km, data: d.data, docPosto: '' };
+  return `<div style="margin-top:8px;flex:0 0 auto;min-height:0;">${cartaoVisualPendente(p, np, null)}</div>`;
+}
+
 async function lerNotasPdfUI(arquivos){
   const lista = [...arquivos].filter(f=>/\.pdf$/i.test(f.name) || f.type === 'application/pdf');
   if(!lista.length){ toast('Escolhe um arquivo PDF.'); return; }
@@ -6585,7 +6609,10 @@ async function lerNotasPdfUI(arquivos){
       if(!texto.trim()){ toast(`${f.name}: o PDF não tem texto (parece escaneado) — tira print/foto e usa a leitura de foto.`); continue; }
       if(ehDemonstrativoVendas(texto)){ const dem = parseDemonstrativoVendas(texto); if(dem.cupons.length){ DEMONSTRATIVOS_LIDOS = DEMONSTRATIVOS_LIDOS.filter(d=>!(d.dem.nf === dem.nf && d.dem.posto === dem.posto)); DEMONSTRATIVOS_LIDOS.unshift({ arquivo: f.name, dem }); renderDemonstrativos(); toast(`${f.name}: é a nota completa (demonstrativo) — conferência na zona "Nota fiscal completa" logo abaixo.`); continue; } }
       const dados = extrairDadosNotaPdf(texto);
-      NOTAS_PDF_LIDAS.unshift({ arquivo: f.name, dados, cruz: cruzarNotaComSistema(dados), aplicada: false });
+      const cruzN = cruzarNotaComSistema(dados);
+      const recusa = motivoRecusaNota(dados, cruzN);
+      if(recusa){ NOTAS_PDF_REJEITADAS.unshift({ arquivo: f.name, motivo: recusa }); toast('❌ ' + recusa.split('. ')[0]); continue; }
+      NOTAS_PDF_LIDAS.unshift({ arquivo: f.name, dados, cruz: cruzN, aplicada: false });
     }catch(err){
       console.error(err);
       toast(`Falha ao ler ${f.name}: ${err.message}`);
@@ -6662,10 +6689,11 @@ async function corrigirDatasPelasNotas(indices){
 function renderNotasPdf(){
   const box = document.getElementById('nota-pdf-resultado');
   if(!box) return;
-  if(!NOTAS_PDF_LIDAS.length){ box.innerHTML = ''; return; }
+  const rejeitadasHtml = NOTAS_PDF_REJEITADAS.map((x,i)=>`<div class="aprov-item" style="border-color:var(--bad);background:#fff5f4;"><div class="info">❌ <b>${escapeHtml(x.arquivo)}</b><br><span style="color:var(--bad);">${escapeHtml(x.motivo)}</span></div><button type="button" class="btn ghost" data-nota-rej="${i}" title="Dispensar o aviso" style="align-self:flex-start;padding:2px 8px;">✕</button></div>`).join('');
+  if(!NOTAS_PDF_LIDAS.length){ box.innerHTML = rejeitadasHtml; box.querySelectorAll('[data-nota-rej]').forEach(b=>b.addEventListener('click', ()=>{ NOTAS_PDF_REJEITADAS.splice(parseInt(b.dataset.notaRej,10),1); renderNotasPdf(); })); return; }
   const idxDiverg = NOTAS_PDF_LIDAS.map((n,i)=>registroComDataDivergente(n) ? i : -1).filter(i=>i>=0);
   const barraDatas = idxDiverg.length ? `<div class="aprov-item" style="border-color:var(--bad);"><div class="info">📅 <b>${idxDiverg.length}</b> lançamento(s) já gravado(s) estão com a data diferente da do cupom.</div><button type="button" class="btn" data-nota-datafix-todas="1">Corrigir todas as datas pelas notas</button></div>` : '';
-  box.innerHTML = barraDatas + NOTAS_PDF_LIDAS.map((n, i)=>{
+  box.innerHTML = rejeitadasHtml + barraDatas + NOTAS_PDF_LIDAS.map((n, i)=>{
     const d = n.dados, c = n.cruz;
     const resumo = `<b>${escapeHtml(d.posto || 'Nota')}</b>${d.postoPor && d.postoLido && _normTxt(d.postoLido) !== _normTxt(d.posto) ? ` <span class="helper">(na nota: ${escapeHtml(d.postoLido)} — vinculado por ${escapeHtml(d.postoPor)})</span>` : ''} · Cupom/Doc do posto <b>${escapeHtml(d.nf || '—')}</b> · ${d.data ? fmtDate(d.data) : '—'}<br>
       <span style="color:var(--gray);">${escapeHtml(d.produto || '—')} · ${d.quantidade != null ? fmtNum(d.quantidade,3) + ' L' : '—'} · ${d.precoUnit != null ? fmtMoney(d.precoUnit) + '/L' : ''} · total <b>${d.precoTotal != null ? fmtMoney(d.precoTotal) : '—'}</b> · placa na nota: ${escapeHtml(d.placa || '—')} · km: ${d.km != null ? fmtNum(d.km,0) : '—'} · requisição: <b>${escapeHtml(c.numReq || '—')}</b>${c.origem ? ' ('+c.origem+')' : ''}</span>`;
@@ -6693,9 +6721,10 @@ function renderNotasPdf(){
     }
     const rDiv = registroComDataDivergente(n);
     if(rDiv) acao += `<div class="btn-row" style="margin-top:8px;"><button type="button" class="btn secondary" data-nota-datafix="${i}">📅 Corrigir data do lançamento gravado (${escapeHtml(rDiv.equipamento||'—')}): ${fmtDate(rDiv.data)} → ${fmtDate(d.data)}</button></div>`;
-    return `<div class="aprov-item" style="flex-direction:column;align-items:stretch;gap:2px;">
+    return `<div class="aprov-item" style="flex-direction:column;align-items:stretch;flex-wrap:nowrap;gap:2px;">
       <div style="display:flex;justify-content:space-between;gap:10px;"><div class="info">📄 <span style="color:var(--gray);">${escapeHtml(n.arquivo)}</span><br>${resumo}${avisos}</div>
       <button type="button" class="btn ghost" data-nota-remover="${i}" title="Tirar da lista" style="align-self:flex-start;padding:2px 8px;">✕</button></div>
+      ${cartaoDaNota(n)}
       <div class="btn-row" style="margin-top:8px;align-items:flex-end;">
         <div class="field" style="margin:0;width:170px;"><label style="font-size:11px;">Nº da requisição (corrigir)</label>
         <input type="text" inputmode="numeric" id="nota-req-${i}" value="${escapeHtml(c.numReq || '')}"></div>
@@ -6705,6 +6734,7 @@ function renderNotasPdf(){
       <details style="margin-top:6px;"><summary style="font-size:11.5px;color:var(--gray);cursor:pointer;">ver texto lido do PDF</summary><pre style="white-space:pre-wrap;font-size:11px;max-height:180px;overflow:auto;">${escapeHtml(d.texto || '')}</pre></details>
     </div>`;
   }).join('');
+  box.querySelectorAll('[data-nota-rej]').forEach(b=>b.addEventListener('click', ()=>{ NOTAS_PDF_REJEITADAS.splice(parseInt(b.dataset.notaRej,10),1); renderNotasPdf(); }));
   box.querySelectorAll('[data-nota-refazer]').forEach(b=>b.addEventListener('click', ()=>{
     const i = parseInt(b.dataset.notaRefazer,10), n = NOTAS_PDF_LIDAS[i];
     const v = (document.getElementById('nota-req-' + i).value || '').replace(/\D/g,'');
