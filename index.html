@@ -1125,7 +1125,7 @@ body.carregando-obra main, body.carregando-obra .view{opacity:.55;transition:opa
 .ap-chip{border:1px solid var(--c);background:var(--b);color:var(--c);border-radius:999px;padding:4px 12px;font-size:13px;cursor:pointer;}
 .ap-chip.on{outline:2px solid var(--c);}
 .ap-tab-conf,.ap-guia{width:100%;border-collapse:collapse;font-size:13px;}
-.ap-tab-conf th{position:sticky;top:0;background:#eef2fa;text-align:left;padding:7px 8px;white-space:nowrap;}
+.ap-tab-conf th{top:0;background:#eef2fa;text-align:left;padding:7px 8px;white-space:nowrap;}
 .ap-tab-conf td{padding:6px 8px;border-top:1px solid #e6ebf5;vertical-align:top;}
 .ap-tab-conf th.ord{cursor:pointer;user-select:none;}
 .ap-tab-conf th.ord:hover{background:#dfe7f6;}
@@ -1136,6 +1136,26 @@ body.carregando-obra main, body.carregando-obra .view{opacity:.55;transition:opa
 .ap-guia th{background:#eef2fa;border-top:0;}
 .ap-guia td span{color:var(--gray,#666);font-size:12px;}
 @media(max-width:700px){.ap-tab{padding:8px 10px;font-size:13px;}}
+
+.ap-tab-conf th{position:sticky;top:0;z-index:2;overflow:hidden;text-overflow:ellipsis;}
+.ap-tab-conf td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ap-tab-conf tr.ap-lin{cursor:pointer;}
+.ap-tab-conf tr.ap-lin:hover td{background:#f4f7fd;}
+.ap-tab-conf tr.ap-lin.sel td{background:#e8f0ff;}
+.ap-tab-conf tr.ap-det td{white-space:normal;background:#f7faff;border-top:0;padding:10px 12px;}
+.ap-rz{position:absolute;right:0;top:0;bottom:0;width:8px;cursor:col-resize;touch-action:none;}
+.ap-rz:hover,.ap-rz.on{background:rgba(0,38,116,.35);}
+.ap-tab-conf th{position:sticky;}
+.ap-det-info{font-size:13px;color:#2b3a55;margin-bottom:8px;}
+.ap-det-form{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;}
+.ap-f{display:flex;flex-direction:column;font-size:12px;color:#556;}
+.ap-f input{border:1px solid #c9d6ea;border-radius:8px;padding:7px 9px;font-size:14px;background:#fff;}
+.ap-det-btns{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+
+#ac-box{position:fixed;z-index:9999;background:#fff;border:1px solid #c9d6ea;border-radius:10px;box-shadow:0 8px 24px rgba(0,38,116,.18);overflow:auto;padding:4px;font-size:14px;color:#1b2a47;}
+#ac-box .ac-it{padding:7px 10px;border-radius:7px;cursor:pointer;display:flex;flex-direction:column;gap:1px;}
+#ac-box .ac-it span{font-size:12px;color:#6b7a99;}
+#ac-box .ac-it:hover,#ac-box .ac-it.on{background:#e8f0ff;}
 
 </style>
 </head>
@@ -2617,8 +2637,8 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v1.0.6';
-const BUILD_ID = '1794592339';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
+const APP_VERSION = 'v1.0.7';
+const BUILD_ID = '1794656634';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -4611,7 +4631,7 @@ async function emitirRequisicaoUIInterno(){
     const empresa = empresaReq;
     const placa = document.getElementById('req-placa').value.trim();
     if(!motoristaNomeLivre || !empresa || !placa){ toast('Pra terceiro, preenche nome, empresa e placa.'); return; }
-    dados = { terceiro:true, motoristaNomeLivre, empresa, placa, produto, posto, kmEsperado, obra: OBRA_ATIVA || '' };
+    dados = { terceiro:true, motoristaNomeLivre, empresa, placa: fmtPlaca(placa), produto, posto, kmEsperado, obra: OBRA_ATIVA || '' };
   } else if(document.getElementById('req-motorista-livre').dataset.modo === 'sem-cadastro'){
     const motoristaNomeLivre = document.getElementById('req-motorista-livre').value.trim();
     if(!motoristaNomeLivre || !equipamentoEscolhido){ toast('Escolhe o nome e o equipamento.'); return; }
@@ -4927,7 +4947,7 @@ function renderListaRequisicoesAdmin(){
   box.innerHTML = barraLote + lista.map(r=>{
     const rc = REQ_RASC[r.id] || {};
     const ehTerceiro = r.terceiro === 'sim';
-    const identificador = ehTerceiro ? `${escapeHtml(r.placa)} · ${escapeHtml(r.empresa)} 🏗️terceiro` : escapeHtml(r.equipamento);
+    const identificador = ehTerceiro ? `${escapeHtml(fmtPlaca(r.placa))} · ${escapeHtml(r.empresa)} 🏗️terceiro` : escapeHtml(fmtPlaca(r.equipamento));
     const dataEmitida = r.criadoEm ? (() => { const d = new Date(r.criadoEm); return d.toLocaleDateString('pt-BR') + ' às ' + d.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}); })() : '—';
     const quemEmitiu = nomePadrao(r.criadoPorEmail ? ((USUARIOS||[]).find(u=>u.email === String(r.criadoPorEmail).toLowerCase()) || {}).nome || r.criadoPorEmail : '');
     return `
@@ -5109,6 +5129,12 @@ function popularEscolhaEmpresa(selecionar){
   if(s.value !== atual) s.value = '';
   reqAplicarEmpresa();
 }
+/* Placa no padrão AAA-0000 / AAA-0A00 (antiga e Mercosul). Outros códigos de equipamento (VP0643, MN0102...) ficam como estão. */
+function fmtPlaca(p){
+  const s = String(p == null ? '' : p).trim().toUpperCase();
+  const c = s.replace(/[^A-Z0-9]/g,'');
+  return /^[A-Z]{3}\d[A-Z0-9]\d{2}$/.test(c) ? c.slice(0,3)+'-'+c.slice(3) : s;
+}
 function _datalistDe(inputId, listaId, opcoes){
   const inp = document.getElementById(inputId); if(!inp) return;
   let dl = document.getElementById(listaId);
@@ -5138,7 +5164,7 @@ function reqAplicarEmpresa(){
   const pessoas = (USUARIOS||[]).filter(u=>String(u.empresa||'').trim().toUpperCase() === emp)
     .map(u=>({ valor: String(u.nome||u.email||'').toUpperCase(), rotulo: u.equipamento ? 'vinculado: '+u.equipamento : '' })).filter(o=>o.valor);
   const veic = (VEICULOS||[]).filter(v=>(v.tipo==='terceirizado'||v.tipo==='alugado') && String(v.empresaVinculada||'').trim().toUpperCase() === emp)
-    .map(v=>({ valor: String(v.placa || v.equipamento), rotulo: [v.equipamento, v.modelo].filter(Boolean).join(' · ') }));
+    .map(v=>({ valor: fmtPlaca(v.placa || v.equipamento), rotulo: [v.equipamento && fmtPlaca(v.equipamento) !== fmtPlaca(v.placa || v.equipamento) ? fmtPlaca(v.equipamento) : '', v.modelo].filter(Boolean).join(' · ') }));
   _datalistDe('req-motorista-livre','req-motorista-lista', pessoas);
   _datalistDe('req-placa','req-placa-lista', veic);
   livre.placeholder = pessoas.length ? `Escolha (${pessoas.length}) ou digite o nome` : 'Nome completo (nenhum cadastrado nessa empresa)';
@@ -12526,13 +12552,14 @@ if('serviceWorker' in navigator){
     (REQUISICOES_EMITIDAS||[]).forEach(r=>reqPorNum.set(String(r.numero).trim(), r));
     const usadasComRegistro = new Set();
     const out = [];
-    const nova = (etapa, r, R, ehPend)=>({
+    const nova = (etapa, r, R, ehPend, tipoForcado)=>({
+      id: r.id || (R && R.id) || '', tipo: tipoForcado || (ehPend ? 'pend' : 'lanc'), reqId: R ? R.id : '', reqStatus: R ? R.status : '',
       etapa, num: String(r.requisicao||'').trim(), data: String(r.data||'').slice(0,10),
-      equip: r.equipamento || (R && (R.equipamento || R.placa)) || '',
+      equip: fmtPlaca(r.equipamento || (R && (R.equipamento || R.placa)) || ''),
       mot: nomePadrao(r.motorista || (R && (R.motoristaNome || R.motoristaEmail)) || ''),
       emp: empresaPadrao({equipamento: r.equipamento || (R && R.equipamento), empresa: r.empresa || (R && R.empresa)}),
       posto: String(r.posto || (R && R.posto) || '').toUpperCase(), prod: r.produto || (R && R.produto) || '',
-      litros: Number(r.quantidade)||0, media: mediaDe(r, ehPend), valor: Number(r.precoTotal)||0,
+      km: Number(r.kmHor != null && r.kmHor !== '' ? r.kmHor : (R && !ehPend && !r.quantidade ? R.kmEsperado : '')) || 0, litros: Number(r.quantidade)||0, media: mediaDe(r, ehPend), valor: Number(r.precoTotal)||0,
       nf: r.nf || r.nfSugerido || '', obra: ehPend ? '' : obraDoReg(r)
     });
     (PENDENTES||[]).forEach(p=>{ const k = String(p.requisicao||'').trim(); if(k) usadasComRegistro.add(k); out.push(nova('pendente', p, reqPorNum.get(k), true)); });
@@ -12545,13 +12572,13 @@ if('serviceWorker' in navigator){
       const k = String(R.numero).trim();
       if(usadasComRegistro.has(k)) return;
       const etapa = R.status === 'usada' ? 'usada_sem' : R.status === 'cancelada' ? 'cancelada' : 'aberta';
-      const l = nova(etapa, {requisicao:k, data:diaDe(R.criadoEm), equipamento:R.equipamento || R.placa, motorista:R.motoristaNome || R.motoristaEmail, empresa:R.empresa, posto:R.posto, produto:R.produto}, R, false);
+      const l = nova(etapa, {id:R.id, requisicao:k, data:diaDe(R.criadoEm), equipamento:R.equipamento || R.placa, motorista:R.motoristaNome || R.motoristaEmail, empresa:R.empresa, posto:R.posto, produto:R.produto}, R, false, 'req');
       out.push(l);
     });
     return out;
   }
   function ordenar(lista){
-    const num = new Set(['litros','media','valor','num']);
+    const num = new Set(['litros','media','valor','num','km']);
     const get = l => ordCol === 'etapa' ? ETAPAS[l.etapa].rot : l[ordCol];
     lista.sort((a,b)=>{
       let x = get(a), y = get(b);
@@ -12572,9 +12599,97 @@ if('serviceWorker' in navigator){
     });
   }
 
-  function renderConf(){
+  /* ---- larguras de coluna (arrastar a borda do título) ---- */
+  const COLS = [['etapa','Etapa',200],['num','Req Nº',80],['data','Data',100],['equip','Equip.',95],['mot','Motorista',230],['emp','Empresa',220],['posto','Posto',150],['prod','Produto',100],['km','Km / Hor',95,'n'],['litros','Litros',85,'n'],['media','Média km/L',100,'n'],['valor','Valor',105,'n'],['nf','NF',80]];
+  const LS_COLW = 'ap_colw_v1';
+  function lerLarguras(){ try{ const j = JSON.parse(localStorage.getItem(LS_COLW)||'{}'); return (j && typeof j === 'object') ? j : {}; }catch(_e){ return {}; } }
+  function gravarLarguras(o){ try{ localStorage.setItem(LS_COLW, JSON.stringify(o)); }catch(_e){} }
+  function largura(id, padrao){ const w = Number(lerLarguras()[id]); return (w >= 40 && w <= 700) ? w : padrao; }
+
+  let expandido = '', editandoPainel = false;
+  const chaveDe = l => l.tipo + ':' + l.id;
+
+  function campo(id, rot, val, larg){
+    return `<label class="ap-f" style="flex:${larg||1} 1 ${larg?larg*60:110}px;"><span>${rot}</span><input type="text" data-f="${id}" value="${esc(val == null ? '' : val)}" autocomplete="off"></label>`;
+  }
+  function painel(l){
+    const info = `<div class="ap-det-info">${esc(l.mot)||'—'} · ${esc(l.equip)||'—'} · ${esc(l.emp)||'—'} · ${esc(l.prod)||'—'}${l.num ? ' · Req <b>'+esc(l.num)+'</b>' : ''}${l.obra ? ' · Obra '+esc(l.obra) : ''}</div>`;
+    const ir = (aba, txt)=>`<button type="button" class="btn ghost" data-ir="${aba}" data-num="${esc(l.num)}">${txt}</button>`;
+    if(l.tipo === 'req'){
+      const aberta = l.reqStatus === 'aberta';
+      return info + `<div class="ap-det-btns">${aberta ? `<button type="button" class="btn secondary" data-ap-act="editreq">✏️ Editar requisição</button>` : ''}${ir('req','Ir para Requisições')}<button type="button" class="btn ghost" data-ap-act="fechar">Fechar</button></div>`;
+    }
+    const lanc = l.tipo === 'lanc';
+    const r0 = lanc ? DB.find(x=>x.id===l.id) : null;
+    const pode_ = lanc ? (r0 && podeEditarRegistro(r0)) : true;
+    if(!pode_){
+      return info + `<div class="helper" style="margin:6px 0;">${r0 && nfFechadaCli(r0.nf) ? '🔒 NF fechada — reabra a NF para editar.' : 'Seu nível não permite editar este lançamento.'}</div><div class="ap-det-btns">${ir('base','Ver na Base')}<button type="button" class="btn ghost" data-ap-act="fechar">Fechar</button></div>`;
+    }
+    const src = lanc ? r0 : (PENDENTES||[]).find(x=>x.id===l.id) || {};
+    const nr = v => (v === null || v === undefined || v === '' || isNaN(v)) ? '' : String(v).replace('.',',');
+    return info + `<div class="ap-det-form">
+      ${campo('kmHor','Km / Hor', nr(src.kmHor), 1.2)}
+      ${campo('quantidade','Litros', nr(src.quantidade))}
+      ${campo('precoUnit','Preço unit.', nr(src.precoUnit))}
+      ${campo('precoTotal','Valor total', nr(src.precoTotal))}
+      ${campo('data','Data (AAAA-MM-DD)', src.data || '', 1.3)}
+      ${campo('posto','Posto', src.posto || '', 1.4)}
+      ${lanc ? campo('nf','NF', src.nf || '') : ''}
+    </div>
+    <div class="ap-det-btns"><button type="button" class="btn" data-ap-act="salvar">💾 Salvar</button><button type="button" class="btn ghost" data-ap-act="fechar">Cancelar</button>${ir(lanc ? 'base' : 'pend', lanc ? 'Abrir na Base' : 'Abrir em Aprovar')}<span class="ap-det-msg helper" style="margin:0;"></span></div>`;
+  }
+
+  async function salvarPainel(l, det, btn){
+    const msg = det.querySelector('.ap-det-msg');
+    const v = {}; det.querySelectorAll('[data-f]').forEach(i=>{ v[i.dataset.f] = i.value.trim(); });
+    const aviso = t=>{ if(msg){ msg.textContent = t; } toast(t); };
+    btn.disabled = true; const txt = btn.textContent; btn.textContent = 'Salvando…';
+    try{
+      if(l.tipo === 'pend'){
+        const edicoes = { posto: (v.posto||'').toUpperCase(), quantidade: v.quantidade, precoUnit: v.precoUnit, precoTotal: v.precoTotal, kmHor: v.kmHor, data: v.data };
+        const json = await postarAcao({ action:'salvarEdicaoPendente', id:l.id, edicoes });
+        if(json.status !== 'ok'){ aviso(json.mensagem || 'Falha ao salvar.'); return; }
+        PENDENTES = json.pendentes || PENDENTES;
+        try{ delete PEND_RASCUNHO[l.id]; }catch(_e){}
+      } else {
+        const idx = DB.findIndex(x=>x.id === l.id); if(idx < 0){ aviso('Lançamento não encontrado.'); return; }
+        const r0 = DB[idx];
+        if(!podeEditarRegistro(r0)){ aviso('Sem permissão ou NF fechada.'); return; }
+        const q = numBR(v.quantidade), km = numBR(v.kmHor);
+        if(v.data && !/^\d{4}-\d{2}-\d{2}$/.test(v.data)){ aviso('Data no formato AAAA-MM-DD.'); return; }
+        const rec = Object.assign({}, r0, {
+          data: v.data || r0.data, posto: (v.posto||'').toUpperCase() || null, nf: v.nf || null,
+          quantidade: isNaN(q) ? null : q, kmHor: isNaN(km) ? null : km,
+          precoUnit: numBR(v.precoUnit) || null, precoTotal: numBR(v.precoTotal) || null,
+          obsKm: null, alertasAceitos: null
+        });
+        if(USUARIO_ATUAL && USUARIO_ATUAL.papel !== 'motorista' && rec.equipamento && rec.kmHor != null){
+          const msgKm = validarKmManual(rec.equipamento, rec.data, rec.kmHor, rec.id);
+          if(msgKm){
+            if(!pode('lancamento_direto')){ aviso('🚫 ' + msgKm); return; }
+            rec.obsKm = 'Km irregular (sinalizado) — editado por ' + (USUARIO_ATUAL.nome || USUARIO_ATUAL.email) + ' — ' + msgKm;
+          }
+        }
+        DB[idx] = rec;
+        recalcularTodasMedias(); saveDB();
+        const item = USUARIO_ATUAL ? outboxAdd('direto', rec, rec.equipamento) : null;
+        const res = await pushToSheets(false);
+        if(res && res.status === 'ok'){ if(item) outboxRemove(item.oid, true); }
+        else { toast('⚠️ Salvo neste aparelho; ainda não sincronizou com o Sheets (vai tentar de novo).'); }
+      }
+      toast('💾 Salvo.');
+      editandoPainel = false; expandido = '';
+    } catch(err){ console.error(err); aviso('Erro ao salvar.'); }
+    finally{ btn.disabled = false; btn.textContent = txt; }
+    renderConf(true);
+  }
+
+  function renderConf(forcar){
     const box = $('aprov-conf'); if(!box) return;
     if(sub !== 'conf'){ return; }
+    if(editandoPainel && forcar !== true) return; // não apaga o que a pessoa está digitando
+    const larg = {}; COLS.forEach(c=>{ larg[c[0]] = largura(c[0], c[2]); });
+    const wAcao = 90, wTotal = COLS.reduce((s,c)=>s+larg[c[0]],0) + wAcao;
     const todas = montarLinhas();
     const baseF = filtrar(todas, false);
     const lista = ordenar(etapaSel ? baseF.filter(l=>l.etapa === etapaSel) : baseF.slice());
@@ -12582,24 +12697,57 @@ if('serviceWorker' in navigator){
     const chips = Object.keys(ETAPAS).map(k=>`<button type="button" class="ap-chip ${etapaSel===k?'on':''}" data-etapa="${k}" style="--c:${ETAPAS[k].cor};--b:${ETAPAS[k].bg};">${ETAPAS[k].rot} <b>${cont[k]||0}</b></button>`).join('');
     const vis = lista.slice(0, limite);
     const somaL = lista.reduce((s,l)=>s+l.litros,0), somaV = lista.reduce((s,l)=>s+l.valor,0);
+    const linhas = vis.map(l=>{
+      const k = chaveDe(l), aberta = k === expandido;
+      const tr = `<tr class="ap-lin et-${l.etapa} ${aberta?'sel':''}" data-k="${esc(k)}"><td><span class="ap-badge" style="color:${ETAPAS[l.etapa].cor};background:${ETAPAS[l.etapa].bg};">${ETAPAS[l.etapa].rot}</span></td><td>${esc(l.num||'—')}</td><td>${l.data?fmtDate(l.data):'—'}</td><td>${esc(l.equip)}</td><td>${esc(l.mot)}</td><td>${esc(l.emp)}</td><td>${esc(l.posto)}</td><td>${esc(l.prod)}</td><td class="n">${l.km?fmtNum(l.km,0):'—'}</td><td class="n">${l.litros?fmtNum(l.litros,2):'—'}</td><td class="n">${l.media?fmtNum(l.media,2):'—'}</td><td class="n">${l.valor?fmtMoney(l.valor):'—'}</td><td>${esc(l.nf)}</td><td><button type="button" class="btn ghost ap-exp" data-exp="${esc(k)}">${aberta?'▲ Fechar':'✏️ Editar'}</button></td></tr>`;
+      return aberta ? tr + `<tr class="ap-det" data-kd="${esc(k)}"><td colspan="14">${painel(l)}</td></tr>` : tr;
+    }).join('') || `<tr><td colspan="14" class="helper">Nada encontrado com esse filtro.</td></tr>`;
     box.innerHTML = `
       <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:8px;">
         <div class="ap-chips"><button type="button" class="ap-chip ${etapaSel===''?'on':''}" data-etapa="" style="--c:#002674;--b:#e3ecff;">Tudo <b>${baseF.length}</b></button>${chips}</div>
-        <button type="button" class="btn secondary" id="ap-export">⬇️ Exportar CSV</button>
+        <div style="display:flex;gap:6px;"><button type="button" class="btn ghost" id="ap-colreset" title="Voltar as colunas ao tamanho padrão">↔ Larguras padrão</button><button type="button" class="btn secondary" id="ap-export">⬇️ Exportar CSV</button></div>
       </div>
-      <div class="helper" style="margin:0 0 8px;">Cada linha é um registro: requisição ainda sem lançar, lançamento aguardando revisão ou lançamento já gravado. ⚠️ em vermelho = algo inconsistente (requisição usada sem lançamento, ou lançamento com a requisição ainda aberta). Clique no título da coluna para ordenar. Mostrando ${vis.length} de ${lista.length} · ${fmtNum(somaL,2)} L · ${fmtMoney(somaV)} (do que já foi lançado/pendente). Obra: <b>${esc(OBRA_ATIVA || 'todas as carregadas')}</b>.</div>
-      <div style="overflow:auto;max-height:70vh;"><table class="ap-tab-conf"><thead><tr>${[['etapa','Etapa'],['num','Req Nº'],['data','Data'],['equip','Equip.'],['mot','Motorista'],['emp','Empresa'],['posto','Posto'],['prod','Produto'],['litros','Litros','n'],['media','Média km/L','n'],['valor','Valor','n'],['nf','NF']].map(c=>`<th class="ord ${c[2]||''}" data-ord="${c[0]}" title="Clique para ordenar">${c[1]}${ordCol===c[0] ? (ordDir>0?' ▲':' ▼') : ''}</th>`).join('')}<th></th></tr></thead><tbody>
-      ${vis.map(l=>`<tr class="et-${l.etapa}"><td><span class="ap-badge" style="color:${ETAPAS[l.etapa].cor};background:${ETAPAS[l.etapa].bg};">${ETAPAS[l.etapa].rot}</span></td><td>${esc(l.num||'—')}</td><td>${l.data?fmtDate(l.data):'—'}</td><td>${esc(l.equip)}</td><td>${esc(l.mot)}</td><td>${esc(l.emp)}</td><td>${esc(l.posto)}</td><td>${esc(l.prod)}</td><td class="n">${l.litros?fmtNum(l.litros,2):'—'}</td><td class="n">${l.media?fmtNum(l.media,2):'—'}</td><td class="n">${l.valor?fmtMoney(l.valor):'—'}</td><td>${esc(l.nf)}</td><td>${l.etapa==='pendente'?`<button type="button" class="btn ghost" data-ir="pend" data-num="${esc(l.num)}">Abrir</button>`:(l.etapa==='lancado'||l.etapa==='lanc_aberta')?`<button type="button" class="btn ghost" data-ir="${l.etapa==='lanc_aberta'?'req':'base'}" data-num="${esc(l.num)}">${l.etapa==='lanc_aberta'?'Abrir':'Ver'}</button>`:l.num?`<button type="button" class="btn ghost" data-ir="req" data-num="${esc(l.num)}">Abrir</button>`:''}</td></tr>`).join('') || `<tr><td colspan="13" class="helper">Nada encontrado com esse filtro.</td></tr>`}
+      <div class="helper" style="margin:0 0 8px;">Cada linha é um registro: requisição ainda sem lançar, lançamento aguardando revisão ou lançamento já gravado. ⚠️ em vermelho = algo inconsistente. <b>Clique na linha</b> (ou em ✏️ Editar) para abrir os dados embaixo e corrigir km, litros, valor, NF, data ou posto. <b>Arraste a borda do título</b> para ajustar a largura; clique no título para ordenar. Mostrando ${vis.length} de ${lista.length} · ${fmtNum(somaL,2)} L · ${fmtMoney(somaV)}. Obra: <b>${esc(OBRA_ATIVA || 'todas as carregadas')}</b>.</div>
+      <div style="overflow:auto;max-height:72vh;"><table class="ap-tab-conf" style="table-layout:fixed;width:${wTotal}px;"><colgroup>${COLS.map(c=>`<col data-col="${c[0]}" style="width:${larg[c[0]]}px">`).join('')}<col style="width:${wAcao}px"></colgroup><thead><tr>${COLS.map(c=>`<th class="ord ${c[3]||''}" data-ord="${c[0]}" title="Clique para ordenar · arraste a borda para mudar a largura">${c[1]}${ordCol===c[0] ? (ordDir>0?' ▲':' ▼') : ''}<span class="ap-rz" data-rz="${c[0]}"></span></th>`).join('')}<th></th></tr></thead><tbody>
+      ${linhas}
       </tbody></table></div>
       ${lista.length > vis.length ? `<div style="text-align:center;margin-top:10px;"><button type="button" class="btn secondary" id="ap-mais">Mostrar mais 200 (faltam ${lista.length - vis.length})</button></div>` : ''}`;
-    box.querySelectorAll('[data-etapa]').forEach(b=>b.addEventListener('click', ()=>{ etapaSel = b.dataset.etapa; limite = 200; renderConf(); }));
-    box.querySelectorAll('th[data-ord]').forEach(th=>th.addEventListener('click', ()=>{ const c = th.dataset.ord; if(ordCol === c) ordDir = -ordDir; else { ordCol = c; ordDir = (c==='data'||c==='litros'||c==='valor'||c==='media'||c==='num') ? -1 : 1; } renderConf(); }));
-    const mais = $('ap-mais'); if(mais) mais.addEventListener('click', ()=>{ limite += 200; renderConf(); });
+    box.querySelectorAll('[data-etapa]').forEach(b=>b.addEventListener('click', ()=>{ etapaSel = b.dataset.etapa; limite = 200; editandoPainel = false; renderConf(true); }));
+    box.querySelectorAll('th[data-ord]').forEach(th=>th.addEventListener('click', ()=>{ const c = th.dataset.ord; if(ordCol === c) ordDir = -ordDir; else { ordCol = c; ordDir = (c==='data'||c==='litros'||c==='valor'||c==='media'||c==='num'||c==='km') ? -1 : 1; } renderConf(true); }));
+    // redimensionar colunas
+    box.querySelectorAll('.ap-rz').forEach(h=>{
+      h.addEventListener('click', ev=>ev.stopPropagation());
+      h.addEventListener('pointerdown', ev=>{
+        ev.preventDefault(); ev.stopPropagation();
+        const id = h.dataset.rz, col = box.querySelector(`col[data-col="${id}"]`), tab = box.querySelector('table');
+        const x0 = ev.clientX, w0 = col.getBoundingClientRect().width, t0 = tab.getBoundingClientRect().width;
+        h.setPointerCapture(ev.pointerId); h.classList.add('on');
+        const mv = e2=>{ const w = Math.max(40, Math.min(700, w0 + (e2.clientX - x0))); col.style.width = w + 'px'; tab.style.width = (t0 + (w - w0)) + 'px'; };
+        const up = ()=>{ h.removeEventListener('pointermove', mv); h.removeEventListener('pointerup', up); h.classList.remove('on'); const o = lerLarguras(); o[id] = Math.round(col.getBoundingClientRect().width); gravarLarguras(o); };
+        h.addEventListener('pointermove', mv); h.addEventListener('pointerup', up);
+      });
+    });
+    const rs = $('ap-colreset'); if(rs) rs.addEventListener('click', ()=>{ gravarLarguras({}); renderConf(true); });
+    // abrir / fechar painel de edição embaixo da linha
+    const alternar = k=>{ editandoPainel = false; expandido = (expandido === k) ? '' : k; renderConf(true); const d = box.querySelector('.ap-det input[data-f]'); if(d) d.focus(); };
+    box.querySelectorAll('tr.ap-lin').forEach(tr=>tr.addEventListener('click', ev=>{ if(ev.target.closest('button')) return; alternar(tr.dataset.k); }));
+    box.querySelectorAll('[data-exp]').forEach(b=>b.addEventListener('click', ev=>{ ev.stopPropagation(); alternar(b.dataset.exp); }));
+    box.querySelectorAll('tr.ap-det').forEach(tr=>{
+      const l = lista.find(x=>chaveDe(x) === tr.dataset.kd); if(!l) return;
+      tr.querySelectorAll('input[data-f]').forEach(i=>{ i.addEventListener('input', ()=>{ editandoPainel = true; }); i.addEventListener('keydown', ev=>{ if(ev.key === 'Enter'){ const b = tr.querySelector('[data-ap-act="salvar"]'); if(b) b.click(); } else if(ev.key === 'Escape'){ editandoPainel = false; expandido = ''; renderConf(true); } }); });
+      tr.querySelectorAll('[data-ap-act]').forEach(b=>b.addEventListener('click', ()=>{
+        const a = b.dataset.apAct;
+        if(a === 'fechar'){ editandoPainel = false; expandido = ''; renderConf(true); }
+        else if(a === 'salvar') salvarPainel(l, tr, b);
+        else if(a === 'editreq'){ try{ abrirEdicaoRequisicao(l.reqId); }catch(e){ toast('Abra pela aba Requisições.'); } }
+      }));
+    });
+    const mais = $('ap-mais'); if(mais) mais.addEventListener('click', ()=>{ limite += 200; renderConf(true); });
     box.querySelectorAll('[data-ir]').forEach(b=>b.addEventListener('click', ()=>{ if(b.dataset.num){ $('ap-busca').value = b.dataset.num; aplicarFiltro(); } irSub(b.dataset.ir); }));
     $('ap-export').addEventListener('click', ()=>{
-      const cab = ['Etapa','Req','Data','Equipamento','Motorista','Empresa','Posto','Produto','Litros','Média km/L','Valor','NF'];
+      const cab = ['Etapa','Req','Data','Equipamento','Motorista','Empresa','Posto','Produto','Km/Hor','Litros','Média km/L','Valor','NF'];
       const q = v => '"' + String(v == null ? '' : v).replace(/"/g,'""') + '"';
-      const csv = [cab.map(q).join(';')].concat(lista.map(l=>[ETAPAS[l.etapa].rot,l.num,l.data?fmtDate(l.data):'',l.equip,l.mot,l.emp,l.posto,l.prod,l.litros||'',l.media ? String(Math.round(l.media*100)/100).replace('.',',') : '',l.valor||'',l.nf].map(q).join(';'))).join('\r\n');
+      const csv = [cab.map(q).join(';')].concat(lista.map(l=>[ETAPAS[l.etapa].rot,l.num,l.data?fmtDate(l.data):'',l.equip,l.mot,l.emp,l.posto,l.prod,l.km||'',l.litros||'',l.media ? String(Math.round(l.media*100)/100).replace('.',',') : '',l.valor||'',l.nf].map(q).join(';'))).join('\r\n');
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8;'})); a.download = 'conferencia_'+todayStr()+'.csv'; document.body.appendChild(a); a.click(); a.remove();
     });
   }
@@ -12656,6 +12804,56 @@ if('serviceWorker' in navigator){
   }
   window.aprovAtualizar = atualizar;
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar); else iniciar();
+})();
+
+</script>
+<script>
+/* ===== Lista de sugestões no padrão do app (substitui o <datalist> escuro do navegador) ===== */
+(function(){
+  let box = null, alvo = null, itens = [], sel = -1;
+  function garantir(){ if(box) return box; box = document.createElement('div'); box.id = 'ac-box'; box.style.display = 'none'; document.body.appendChild(box); return box; }
+  function opcoesDe(inp){
+    const id = inp.dataset.listx; const dl = id && document.getElementById(id); if(!dl) return [];
+    return [...dl.options].map(o=>({ v:o.value, r:o.label || o.textContent || '' })).filter(o=>o.v);
+  }
+  function trecho(inp){ const v = inp.value; if(inp.id && /-obra$/.test(inp.id) || v.indexOf(',') > -1 && inp.dataset.multi){ const i = v.lastIndexOf(','); return { pre: v.slice(0,i+1) + (i>-1?' ':''), q: v.slice(i+1).trim() }; } return { pre:'', q:v.trim() }; }
+  function norm(s){ return String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+  function mostrar(inp){
+    const t = trecho(inp), q = norm(t.q);
+    const todas = opcoesDe(inp);
+    itens = todas.filter(o=>!q || norm(o.v).includes(q) || norm(o.r).includes(q)).slice(0, 60);
+    const b = garantir();
+    if(!itens.length || (itens.length === 1 && norm(itens[0].v) === q)){ esconder(); return; }
+    alvo = inp; sel = -1;
+    b.innerHTML = itens.map((o,i)=>`<div class="ac-it" data-i="${i}"><b>${escapeHtml(o.v)}</b>${o.r && o.r !== o.v ? `<span>${escapeHtml(o.r)}</span>` : ''}</div>`).join('');
+    const r = inp.getBoundingClientRect();
+    b.style.left = Math.max(4, r.left) + 'px'; b.style.minWidth = Math.max(180, r.width) + 'px';
+    const abaixo = window.innerHeight - r.bottom; b.style.maxHeight = Math.max(140, Math.min(300, abaixo > 180 ? abaixo - 12 : r.top - 12)) + 'px';
+    if(abaixo > 180){ b.style.top = (r.bottom + 2) + 'px'; b.style.bottom = 'auto'; } else { b.style.bottom = (window.innerHeight - r.top + 2) + 'px'; b.style.top = 'auto'; }
+    b.style.display = 'block';
+  }
+  function esconder(){ if(box) box.style.display = 'none'; alvo = null; sel = -1; }
+  function escolher(i){
+    const o = itens[i]; if(!o || !alvo) return; const t = trecho(alvo);
+    alvo.value = t.pre + o.v;
+    const a = alvo; esconder();
+    a.dispatchEvent(new Event('input',{bubbles:true})); a.dispatchEvent(new Event('change',{bubbles:true}));
+  }
+  function marcar(){ if(!box) return; [...box.children].forEach((c,i)=>c.classList.toggle('on', i === sel)); const c = box.children[sel]; if(c && c.scrollIntoView) c.scrollIntoView({block:'nearest'}); }
+  function pegar(inp){ if(inp.hasAttribute && inp.hasAttribute('list')){ inp.dataset.listx = inp.getAttribute('list'); inp.removeAttribute('list'); } }
+  document.addEventListener('focusin', ev=>{ const inp = ev.target; if(inp && inp.tagName === 'INPUT'){ pegar(inp); if(inp.dataset.listx) mostrar(inp); } });
+  document.addEventListener('input', ev=>{ const inp = ev.target; if(inp && inp.tagName === 'INPUT'){ pegar(inp); if(inp.dataset.listx && document.activeElement === inp) mostrar(inp); } });
+  document.addEventListener('click', ev=>{ const inp = ev.target; if(inp && inp.tagName === 'INPUT' && inp.dataset && inp.dataset.listx && document.activeElement === inp && (!box || box.style.display === 'none')) mostrar(inp); });
+  document.addEventListener('keydown', ev=>{
+    if(!alvo || !box || box.style.display === 'none') return;
+    if(ev.key === 'ArrowDown'){ ev.preventDefault(); sel = Math.min(itens.length-1, sel+1); marcar(); }
+    else if(ev.key === 'ArrowUp'){ ev.preventDefault(); sel = Math.max(0, sel-1); marcar(); }
+    else if(ev.key === 'Enter' && sel > -1){ ev.preventDefault(); escolher(sel); }
+    else if(ev.key === 'Escape' || ev.key === 'Tab'){ esconder(); }
+  }, true);
+  document.addEventListener('mousedown', ev=>{ const it = ev.target.closest && ev.target.closest('.ac-it'); if(it){ ev.preventDefault(); escolher(Number(it.dataset.i)); } else if(!(ev.target === alvo)) esconder(); });
+  window.addEventListener('scroll', ev=>{ if(box && ev.target && box.contains(ev.target)) return; esconder(); }, true);
+  window.addEventListener('resize', esconder);
 })();
 
 </script>
