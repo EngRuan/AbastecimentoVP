@@ -2679,7 +2679,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
 const APP_VERSION = 'v1.0.10';
-const BUILD_ID = '1794853415';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
+const BUILD_ID = '1794859235';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -13018,16 +13018,17 @@ if('serviceWorker' in navigator){
     const k = chaveEquip(eq);
     const leituras = (DB||[]).filter(r=>chaveEquip(r.equipamento) === k && Number(r.kmHor) > 0 && r.data).map(r=>({d:String(r.data).slice(0,10), k:Number(r.kmHor)})).sort((a,b)=>a.d.localeCompare(b.d));
     const no = leituras.filter(x=>x.d >= ini && x.d <= fim), antes = leituras.filter(x=>x.d < ini);
-    if(!no.length) return { uso: 0, leitura: antes.length ? antes[antes.length-1].k : null, semLeitura: true };
+    if(!no.length) return { uso: 0, leitura: antes.length ? antes[antes.length-1].k : null, ini: null, fim: null, semLeitura: true };
     const topo = Math.max.apply(null, no.map(x=>x.k));
     const base = antes.length ? antes[antes.length-1].k : Math.min.apply(null, no.map(x=>x.k));
-    return { uso: Math.max(0, topo - base), leitura: topo, semLeitura: false };
+    return { uso: Math.max(0, topo - base), leitura: topo, ini: base, fim: topo, semLeitura: false };
   }
   function periodo(){
     const m = ($('al-mes') && $('al-mes').value) || todayStr().slice(0,7);
     const [a, b] = m.split('-').map(Number);
-    const ult = new Date(a, b, 0).getDate();
-    return { ini: m + '-01', fim: m + '-' + String(ult).padStart(2,'0'), rot: MESES[b-1] + '/' + a, mes: m };
+    const pa = b === 1 ? a - 1 : a, pb = b === 1 ? 12 : b - 1;
+    const ini = pa + '-' + String(pb).padStart(2,'0') + '-21', fim = m + '-20';
+    return { ini, fim, rot: MESES[b-1] + '/' + a + ' (21/' + String(pb).padStart(2,'0') + ' a 20/' + String(b).padStart(2,'0') + ')', mes: m };
   }
   function calcular(){
     const per = periodo();
@@ -13036,7 +13037,7 @@ if('serviceWorker' in navigator){
       const med = medidorDoEquip(v.equipamento), u = usoNoMes(v.equipamento, per.ini, per.fim), val = mensal(v);
       const uso = u.uso || 0;
       return { prefixo: v.equipamento, desc: descricao(v), emp: String(v.fornecedor||'').trim().toUpperCase() || 'A INFORMAR', status: statusDe(v), plano: String(v.observacoes||'').trim(),
-        med, horas: med === 'hora' ? uso : null, km: med === 'km' ? uso : null, valor: val, leitura: u.leitura, semUso: !desmob(v) && uso === 0,
+        med, ini: u.ini, fim: u.fim, horas: med === 'hora' ? uso : null, km: med === 'km' ? uso : null, valor: val, leitura: u.leitura, semUso: !desmob(v) && uso === 0,
         desmobEm: v.dataDesmobilizacao || '', motivo: v.motivoDesmobilizacao || '', obra: v.obra || '' };
     });
     const linhas = todos.filter(l=>(!forn || l.emp === forn) && (!st || l.status === st) && (!q || [l.prefixo,l.desc,l.emp,l.plano].join(' ').toUpperCase().includes(q)));
@@ -13052,15 +13053,15 @@ if('serviceWorker' in navigator){
           <div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap;"><button type="button" class="btn ghost" id="al-print">🖨️ Imprimir / PDF</button><button type="button" class="btn" id="al-xlsx">📥 Exportar Excel</button></div>
         </div>
         <div class="filters no-print" style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-top:12px;">
-          <div class="field"><label>Mês de referência</label><input type="month" id="al-mes"></div>
+          <div class="field"><label>Mês de referência (período 21 a 20)</label><input type="month" id="al-mes"></div>
           <div class="field"><label>Fornecedor</label><select id="al-forn"><option value="">Todos</option></select></div>
           <div class="field"><label>Status</label><select id="al-status"><option value="">Todos</option><option>EQUIPAMENTO CADASTRADO</option><option>PENDENTE DE CADASTRO</option><option>DEVOLVIDO</option></select></div>
           <div class="field" style="min-width:200px;"><label>Buscar</label><input type="text" id="al-busca" placeholder="Prefixo, modelo, empresa..."></div>
         </div>
-        <div class="helper no-print" style="margin:8px 0 0;">Entra aqui todo veículo da Frota com tipo <b>Alugado</b>. Valor mensal, fornecedor, plano/ação (campo Observações) e devolução vêm do cadastro da Frota. <b>Horas / Km</b> = o que o equipamento rodou <b>no mês</b>, pelas leituras dos lançamentos.</div>
+        <div class="helper no-print" style="margin:8px 0 0;">Entra aqui todo veículo da Frota com tipo <b>Alugado</b>. Valor mensal, fornecedor, plano/ação (campo Observações) e devolução vêm do cadastro da Frota. O período vai do dia <b>21 do mês anterior ao dia 20</b> do mês escolhido. <b>Leitura inicial</b> = última leitura antes do período (ou a 1ª dele); <b>final</b> = maior leitura do período; <b>Horas/Km no mês</b> = a diferença entre as duas.</div>
       </div>
       <div id="al-corpo"></div>`;
-    $('al-mes').value = todayStr().slice(0,7);
+    { const h = todayStr(), y = +h.slice(0,4), mo = +h.slice(5,7), d = +h.slice(8,10); const t = d >= 21 ? new Date(y, mo, 1) : new Date(y, mo-1, 1); $('al-mes').value = t.getFullYear() + '-' + String(t.getMonth()+1).padStart(2,'0'); }
     ['al-mes','al-forn','al-status','al-busca'].forEach(id=>{ $(id).addEventListener('input', renderizar); $(id).addEventListener('change', renderizar); });
     $('al-print').addEventListener('click', ()=>window.print());
     $('al-xlsx').addEventListener('click', exportar);
@@ -13109,10 +13110,10 @@ if('serviceWorker' in navigator){
       <div class="card">
         <h3 class="al-h" style="margin-top:0;">Controle de equipamentos alugados</h3>
         <div style="overflow:auto;"><table class="al-tab al-ctl"><thead><tr>
-          <th>Item</th>${th('prefixo','Prefixo')}${th('desc','Equipamento')}${th('emp','Empresa')}${th('status','Status')}${th('plano','Plano / ação')}${th('horas','Horas','n')}${th('km','Km','n')}${th('valor','Valor mensal','n')}<th class="n">Custo / hora</th><th class="n">Custo / km</th>
+          <th>Item</th>${th('prefixo','Prefixo')}${th('desc','Equipamento')}${th('emp','Empresa')}${th('status','Status')}${th('plano','Plano / ação')}${th('ini','Leitura inicial','n')}${th('fim','Leitura final','n')}${th('horas','Horas no mês','n')}${th('km','Km no mês','n')}${th('valor','Valor mensal','n')}<th class="n">Custo / hora</th><th class="n">Custo / km</th>
         </tr></thead><tbody>
-        ${ord.map((l,i)=>`<tr class="${l.semUso?'al-sem':''}"><td>${i+1}</td><td><b>${esc(l.prefixo)}</b></td><td>${esc(l.desc)}</td><td>${esc(l.emp)}</td><td><span class="al-st" style="background:${COR[l.status]}22;color:${COR[l.status]};">${esc(l.status)}</span></td><td>${esc(l.plano)}${l.status==='DEVOLVIDO' && (l.desmobEm||l.motivo) ? ' · devolvido '+esc(l.desmobEm)+' '+esc(l.motivo) : ''}</td><td class="n">${l.horas ? fmtNum(l.horas,0) : '—'}</td><td class="n">${l.km ? fmtNum(l.km,0) : '—'}</td><td class="n">${l.valor ? fmtMoney(l.valor) : '—'}</td><td class="n">${l.horas && l.valor ? fmtMoney(l.valor/l.horas) : ''}</td><td class="n">${l.km && l.valor ? fmtNum(l.valor/l.km,3) : ''}</td></tr>`).join('') || '<tr><td colspan="11" class="helper">Nenhum veículo alugado encontrado.</td></tr>'}
-        </tbody><tfoot><tr><td colspan="8" style="text-align:right;"><b>Total</b></td><td class="n"><b>${fmtMoney(soma(linhas))}</b></td><td></td><td></td></tr></tfoot></table></div>
+        ${ord.map((l,i)=>`<tr class="${l.semUso?'al-sem':''}"><td>${i+1}</td><td><b>${esc(l.prefixo)}</b></td><td>${esc(l.desc)}</td><td>${esc(l.emp)}</td><td><span class="al-st" style="background:${COR[l.status]}22;color:${COR[l.status]};">${esc(l.status)}</span></td><td>${esc(l.plano)}${l.status==='DEVOLVIDO' && (l.desmobEm||l.motivo) ? ' · devolvido '+esc(l.desmobEm)+' '+esc(l.motivo) : ''}</td><td class="n">${l.ini != null ? fmtNum(l.ini,0) : '—'}</td><td class="n">${l.fim != null ? fmtNum(l.fim,0) : '—'}</td><td class="n">${l.horas ? fmtNum(l.horas,0) : '—'}</td><td class="n">${l.km ? fmtNum(l.km,0) : '—'}</td><td class="n">${l.valor ? fmtMoney(l.valor) : '—'}</td><td class="n">${l.horas && l.valor ? fmtMoney(l.valor/l.horas) : ''}</td><td class="n">${l.km && l.valor ? fmtNum(l.valor/l.km,3) : ''}</td></tr>`).join('') || '<tr><td colspan="13" class="helper">Nenhum veículo alugado encontrado.</td></tr>'}
+        </tbody><tfoot><tr><td colspan="10" style="text-align:right;"><b>Total</b></td><td class="n"><b>${fmtMoney(soma(linhas))}</b></td><td></td><td></td></tr></tfoot></table></div>
       </div>`;
     corpo.querySelectorAll('th[data-ord]').forEach(t=>t.addEventListener('click', ()=>{ const c = t.dataset.ord; if(ordC === c) ordD = -ordD; else { ordC = c; ordD = 1; } renderizar(); }));
   }
@@ -13121,11 +13122,11 @@ if('serviceWorker' in navigator){
     if(typeof XLSX === 'undefined'){ toast('Biblioteca de Excel não carregou.'); return; }
     renderizar(); const { per, linhas } = DADOS;
     const n = linhas.length, ultima = 4 + n, fim = Math.max(ultima, 5);
-    const ctl = [['Controle de equipamentos alugados'], [`Obra ${OBRA_ATIVA || '—'} | Data-base: ${fmtDate(todayStr())} | Mês: ${per.rot}`], [], ['Item','Prefixo','Equipamento','Empresa','Status','Plano / ação','Horas','Km','Valor mensal','Custo / hora','Custo / km']];
+    const ctl = [['Controle de equipamentos alugados'], [`Obra ${OBRA_ATIVA || '—'} | Data-base: ${fmtDate(todayStr())} | Mês: ${per.rot}`], [], ['Item','Prefixo','Equipamento','Empresa','Status','Plano / ação','Horas','Km','Valor mensal','Custo / hora','Custo / km','Leitura inicial','Leitura final']];
     linhas.slice().sort((a,b)=>String(a.prefixo).localeCompare(String(b.prefixo),'pt-BR',{numeric:true})).forEach((l,i)=>{
       const r = 5 + i;
       ctl.push([i+1, l.prefixo, l.desc, l.emp, l.status, l.plano, l.horas || 0, l.km || 0, l.valor || null,
-        { t:'n', f:`IF(G${r}>0,I${r}/G${r},"")`, v: l.horas && l.valor ? l.valor/l.horas : '' }, { t:'n', f:`IF(H${r}>0,I${r}/H${r},"")`, v: l.km && l.valor ? l.valor/l.km : '' }]);
+        { t:'n', f:`IF(G${r}>0,I${r}/G${r},"")`, v: l.horas && l.valor ? l.valor/l.horas : '' }, { t:'n', f:`IF(H${r}>0,I${r}/H${r},"")`, v: l.km && l.valor ? l.valor/l.km : '' }, l.ini != null ? l.ini : null, l.fim != null ? l.fim : null]);
     });
     const R = c => `Controle!${c}5:${c}${fim}`;
     const ativos = linhas.filter(l=>l.status!=='DEVOLVIDO'), sum = a=>a.reduce((s,l)=>s+l.valor,0);
@@ -13146,7 +13147,7 @@ if('serviceWorker' in navigator){
     const wb = XLSX.utils.book_new();
     const wsD = XLSX.utils.aoa_to_sheet(dash), wsC = XLSX.utils.aoa_to_sheet(ctl);
     wsD['!cols'] = [{wch:28},{wch:16},{wch:16},{wch:24},{wch:12},{wch:12},{wch:16},{wch:4},{wch:4},{wch:26},{wch:14}];
-    wsC['!cols'] = [{wch:6},{wch:12},{wch:60},{wch:24},{wch:26},{wch:60},{wch:10},{wch:12},{wch:14},{wch:12},{wch:12}];
+    wsC['!cols'] = [{wch:6},{wch:12},{wch:60},{wch:24},{wch:26},{wch:60},{wch:10},{wch:12},{wch:14},{wch:12},{wch:12},{wch:14},{wch:14}];
     for(let r = 5; r <= fim; r++){ ['I','J'].forEach(c=>{ if(wsC[c+r]) wsC[c+r].z = 'R$ #,##0.00'; }); if(wsC['K'+r]) wsC['K'+r].z = '0.000'; }
     ['A6','J6'].forEach(c=>{ if(wsD[c]) wsD[c].z = 'R$ #,##0.00'; });
     XLSX.utils.book_append_sheet(wb, wsD, 'Dashboard'); XLSX.utils.book_append_sheet(wb, wsC, 'Controle');
