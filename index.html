@@ -2503,6 +2503,10 @@ body.carregando-obra main, body.carregando-obra .view{opacity:.55;transition:opa
           <input type="text" inputmode="decimal" id="req-km-esperado" placeholder="Vem sugerido pela última leitura">
         </div>
         <div class="field wide">
+          <label>📝 Observação <span style="font-weight:400;color:var(--gray);">(opcional — aparece na lista, na Conferência e no PDF)</span></label>
+          <input type="text" id="req-observacao" maxlength="300" placeholder="Ex.: abastecer só 30 L · tanque auxiliar · autorizado por fulano">
+        </div>
+        <div class="field wide">
           <label>Itens adicionais <span style="font-weight:400;color:var(--gray);">(2º combustível, óleo, filtro... — opcional)</span></label>
           <div id="req-itens"></div>
           <button type="button" class="btn ghost" id="btn-req-add-item" style="margin-top:4px;">➕ Adicionar item</button>
@@ -2643,8 +2647,8 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // número da versão — muda a cada build novo publicado, pra dar pra
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
-const APP_VERSION = 'v1.0.8';
-const BUILD_ID = '1794678917';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
+const APP_VERSION = 'v1.0.9';
+const BUILD_ID = '1794825357';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -4654,6 +4658,7 @@ async function emitirRequisicaoUIInterno(){
     if(!resolverTravaRequisicao(chk, dados, 'Emitir a requisição')) return;
   }
   dados.itens = lerItensEditor('req-itens');
+  dados.observacao = (document.getElementById('req-observacao').value || '').trim();
 
   try{
     const resp = await fetch(SYNC_URL, {
@@ -4672,6 +4677,7 @@ async function emitirRequisicaoUIInterno(){
     document.getElementById('req-posto-externo').value = '';
     document.getElementById('req-posto-externo-wrap').style.display = 'none';
     document.getElementById('req-km-esperado').value = '';
+    document.getElementById('req-observacao').value = '';
     renderItensEditor('req-itens', []);
     if(ehTerceiro){
       document.getElementById('req-motorista-livre').value = '';
@@ -4717,6 +4723,8 @@ function abrirEdicaoRequisicao(id){
       ${ehTerceiro ? '' : `<div class="field"><label>Equipamento</label><select id="er-equip">${equips.map(e=>`<option ${r.equipamento===e?'selected':''}>${escapeHtml(e)}</option>`).join('')}</select></div>`}
       <div class="field"><label>Km/Hor esperado</label><input type="text" inputmode="decimal" id="er-km" value="${escapeHtml(String(r.kmEsperado||''))}"></div>
     </div>
+    <label style="font-size:12px;font-weight:700;display:block;margin-top:10px;">📝 Observação</label>
+    <input type="text" id="er-obs" maxlength="300" value="${escapeHtml(String(r.observacao||''))}" placeholder="Opcional" style="width:100%;">
     <label style="font-size:12px;font-weight:700;display:block;margin-top:10px;">Itens adicionais (2º combustível, óleo, filtro...)</label>
     <div id="er-itens"></div>
     <button type="button" class="btn ghost" id="er-add-item">➕ Adicionar item</button>
@@ -4735,6 +4743,7 @@ function abrirEdicaoRequisicao(id){
       posto: document.getElementById('er-posto').value,
       kmEsperado: document.getElementById('er-km').value.trim(),
       itens: lerItensEditor('er-itens'),
+      observacao: document.getElementById('er-obs').value.trim(),
     };
     if(!ehTerceiro){
       dados.equipamento = document.getElementById('er-equip').value;
@@ -4865,6 +4874,7 @@ function gerarPdfRequisicao(r){
   campos.push(['PRODUTO', r.produto || 'ETANOL']);
   campos.push(['POSTO AUTORIZADO', r.posto || '—']);
   if(r.kmEsperado) campos.push(['KM/HORÍMETRO ESPERADO', r.kmEsperado]);
+  if(r.observacao) campos.push(['OBSERVAÇÃO', r.observacao]);
   // controle: quem emitiu/autorizou e quem imprimiu — pra saber quem cobrar se houver erro
   const _nomeDe = em => { const e = String(em||'').toLowerCase(); const u = (USUARIOS||[]).find(x=>x.email === e); return u ? String(u.nome||'').toUpperCase() : (em || ''); };
   campos.push(['EMITIDA / AUTORIZADA POR', _nomeDe(r.criadoPorEmail) || '—']);
@@ -4940,7 +4950,7 @@ function renderListaRequisicoesAdmin(){
   if(busca){
     lista = lista.filter(r => {
       const dataFmt = r.criadoEm ? new Date(r.criadoEm).toLocaleDateString('pt-BR') : '';
-      return [r.numero, r.motoristaNome, r.motoristaEmail, r.equipamento, r.placa, r.empresa, r.posto, dataFmt].join(' ').toUpperCase().includes(busca);
+      return [r.numero, r.motoristaNome, r.motoristaEmail, r.equipamento, r.placa, r.empresa, r.posto, r.observacao, dataFmt].join(' ').toUpperCase().includes(busca);
     });
   }
   if(lista.length===0){ box.innerHTML = `<p class="helper">Nenhuma requisição encontrada.</p>`; return; }
@@ -4963,6 +4973,7 @@ function renderListaRequisicoesAdmin(){
           ${r.status==='aberta' ? `<input type="checkbox" data-req-sel="${escapeHtml(r.id)}" ${REQ_SEL.has(r.id)?'checked':''} title="Selecionar pra marcar como usada em lote" style="margin-right:6px;">` : ''}<b>Nº ${escapeHtml(String(r.numero))}</b>${rc.quantidade?' <span class="tag" title="Dados preenchidos (planilha/lote)">📥 preenchida</span>':''} — ${escapeHtml(nomePadrao(r.motoristaNome||r.motoristaEmail))} · ${identificador}${r.posto?' · '+escapeHtml(r.posto):''}
           <br><span style="color:var(--gray);">📅 ${dataEmitida}${quemEmitiu ? ' · emitida por ' + escapeHtml(quemEmitiu) : ''} · ${escapeHtml(r.produto||'ETANOL')}${r.kmEsperado?' · km '+escapeHtml(String(r.kmEsperado)):''} · ${NOMES_STATUS[r.status]||r.status}${r.usadaEm?' em '+new Date(r.usadaEm).toLocaleString('pt-BR'):''}</span>
           ${textoItensReq(r) ? `<br><span style="color:var(--gray);">➕ ${escapeHtml(textoItensReq(r))}</span>` : ''}
+          ${r.observacao ? `<br><span style="color:#7a4b00;">📝 ${escapeHtml(r.observacao)}</span>` : ''}
         </div>
         <div class="btn-row">
           ${r.status==='aberta' ? `<button class="btn secondary" data-editar-req="${escapeHtml(r.id)}">✏️ Editar</button>` : ''}
@@ -6129,7 +6140,8 @@ function cartaoVisualPendente(p, np, rasc){
   const corpoReq = rq ? (
       linha('Empresa', E(empReq||'—'), reqDiffEmp) + linha('Placa', E(fmtPlaca(String(reqPlaca))), reqDiffPlaca) + linha('Prefixo', E(reqEq||'—'), reqDiffEq) + linha('Combustível', E(String(rq.produto||'—')), reqDiffProd) +
       linha('Km esperado', kmReq) + (rq.posto ? linha('Posto', E(String(rq.posto))) : '') +
-      (textoItensReq(rq) ? `<div style="margin-top:4px;font-size:12px;color:#33415f;">${E(textoItensReq(rq))}</div>` : '')
+      (textoItensReq(rq) ? `<div style="margin-top:4px;font-size:12px;color:#33415f;">${E(textoItensReq(rq))}</div>` : '') +
+      (rq.observacao ? `<div style="margin-top:4px;font-size:12.5px;color:#7a4b00;background:#fff6d6;border-radius:6px;padding:4px 8px;">📝 ${E(rq.observacao)}</div>` : '')
     ) : `<div style="color:#6b7a99;">Ainda não tem requisição — gere a requisição abaixo.</div>`;
   const corpoNota = linha('Empresa', E(empNota||'—'), reqDiffEmp) + linha('Placa', E(fmtPlaca(String(placa))), reqDiffPlaca) + linha('Prefixo', E(eq||'—'), reqDiffEq) + linha('Combustível', E(produto), reqDiffProd) +
       linha('Quantidade', `${qtd!=null?fmtNum(qtd,2):'—'} L`) + linha('Valor total', `${ptot!=null?fmtMoney(ptot):'—'}${punit!=null?` <span style="font-weight:600;">(${fmtMoney(punit)}/L)</span>`:''}`) +
@@ -12598,7 +12610,7 @@ if('serviceWorker' in navigator){
       equip: fmtPlaca(r.equipamento || (R && (R.equipamento || R.placa)) || ''),
       mot: nomePadrao(r.motorista || (R && (R.motoristaNome || R.motoristaEmail)) || ''),
       emp: empresaPadrao({equipamento: r.equipamento || (R && R.equipamento), empresa: r.empresa || (R && R.empresa)}),
-      posto: String(r.posto || (R && R.posto) || '').toUpperCase(), prod: r.produto || (R && R.produto) || '',
+      obs: (R && R.observacao) || '', posto: String(r.posto || (R && R.posto) || '').toUpperCase(), prod: r.produto || (R && R.produto) || '',
       km: Number(r.kmHor != null && r.kmHor !== '' ? r.kmHor : (R && !ehPend && !r.quantidade ? R.kmEsperado : '')) || 0, litros: Number(r.quantidade)||0, media: mediaDe(r, ehPend), valor: Number(r.precoTotal)||0,
       nf: r.nf || r.nfSugerido || '', obra: ehPend ? '' : obraDoReg(r)
     });
@@ -12634,7 +12646,7 @@ if('serviceWorker' in navigator){
       if(f.fim && (!l.data || l.data > f.fim)) return false;
       if(f.posto && String(l.posto||'').toUpperCase() !== f.posto) return false;
       if(comEtapa && etapaSel && l.etapa !== etapaSel) return false;
-      if(f.busca && ![l.num,l.equip,l.mot,l.emp,l.posto,l.prod,l.nf,l.data ? fmtDate(l.data) : '', ETAPAS[l.etapa].rot].join(' ').toUpperCase().includes(f.busca)) return false;
+      if(f.busca && ![l.num,l.equip,l.mot,l.emp,l.posto,l.prod,l.nf,l.obs,l.data ? fmtDate(l.data) : '', ETAPAS[l.etapa].rot].join(' ').toUpperCase().includes(f.busca)) return false;
       return true;
     });
   }
@@ -12685,7 +12697,7 @@ if('serviceWorker' in navigator){
     return `<label class="ap-f" style="flex:${larg||1} 1 ${larg?larg*60:110}px;"><span>${rot}</span><input type="text" data-f="${id}" value="${esc(val == null ? '' : val)}" autocomplete="off"></label>`;
   }
   function painel(l){
-    const info = `<div class="ap-det-info">${esc(l.mot)||'—'} · ${esc(l.equip)||'—'} · ${esc(l.emp)||'—'} · ${esc(l.prod)||'—'}${l.num ? ' · Req <b>'+esc(l.num)+'</b>' : ''}${l.obra ? ' · Obra '+esc(l.obra) : ''}</div>`;
+    const info = `<div class="ap-det-info">${esc(l.mot)||'—'} · ${esc(l.equip)||'—'} · ${esc(l.emp)||'—'} · ${esc(l.prod)||'—'}${l.num ? ' · Req <b>'+esc(l.num)+'</b>' : ''}${l.obra ? ' · Obra '+esc(l.obra) : ''}${l.obs ? '<br>📝 <b>Obs. da requisição:</b> '+esc(l.obs) : ''}</div>`;
     const ir = (aba, txt)=>`<button type="button" class="btn ghost" data-ir="${aba}" data-num="${esc(l.num)}">${txt}</button>`;
     if(l.tipo === 'req'){
       const aberta = l.reqStatus === 'aberta';
