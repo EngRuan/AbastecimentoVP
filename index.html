@@ -2694,7 +2694,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
 const APP_VERSION = 'v1.0.10';
-const BUILD_ID = '1794909012';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
+const BUILD_ID = '1794911029';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -11588,12 +11588,15 @@ async function impGravar(){
   box.innerHTML = `<h2 style="margin:0 0 8px;">⏳ Gravando…</h2><div id="imp-prog" style="font-size:14px;"></div><div style="font-size:12px;color:var(--gray);margin-top:8px;">Não fecha essa tela até terminar.</div>`;
   const resultados = [];
   let feitos = 0;
-  for(const {l} of alvo){
-    document.getElementById('imp-prog').textContent = `${feitos+1} de ${alvo.length}…`;
-    const r = await impEnviarLinha(tipo, l);
-    resultados.push({ l, ...r });
-    feitos++;
-  }
+  IMP_GRAVANDO = true; _mutEmCurso++;   // trava reenvio automático e pulls até acabar (evita duplicar lançamento e trocar a obra no meio)
+  try{
+    for(const {l} of alvo){
+      document.getElementById('imp-prog').textContent = `${feitos+1} de ${alvo.length}…`;
+      const r = await impEnviarLinha(tipo, l);
+      resultados.push({ l, ...r });
+      feitos++;
+    }
+  } finally { IMP_GRAVANDO = false; _mutEmCurso = Math.max(0, _mutEmCurso - 1); _mutSeq++; }
   try{ await pullFromSheetsSilencioso(); }catch(e){}
   const oks = resultados.filter(r=>r.ok), bad = resultados.filter(r=>!r.ok);
   const chave = tipo==='req' ? 'numero' : (tipo==='veic' ? 'equipamento' : (tipo==='lanc' ? 'equipamento' : 'nome'));
@@ -12062,7 +12065,14 @@ function outboxMarcar(oid, erro, motivo){
 }
 function outboxMotivoTexto(m){ return m === 'login' ? 'sem login do Google / sessão expirada' : (m === 'rede' ? 'sem conexão com o servidor' : 'recusado pelo servidor'); }
 const OUTBOX_RE_LOGIN = /login|token|sess[ãa]o|expir|autentic|credencial|n[ãa]o autoriz|entrar com/i;
+const OUTBOX_EMVOO = new Set();   // itens sendo enviados agora: o reenvio automático (a cada 60s) não pode mandar o mesmo de novo
+let IMP_GRAVANDO = false;          // importação em lote rodando: o reenvio automático e os pulls ficam quietos
 async function outboxEnviar(item){
+  if(OUTBOX_EMVOO.has(item.oid)) return { ok:false, motivo:'emvoo', msg:'Esse lançamento já está sendo enviado.' };
+  OUTBOX_EMVOO.add(item.oid);
+  try{ return await _outboxEnviar(item); } finally { OUTBOX_EMVOO.delete(item.oid); }
+}
+async function _outboxEnviar(item){
   if(!SYNC_URL || !ID_TOKEN){ outboxMarcar(item.oid, 'Sem login do Google', 'login'); return { ok:false, motivo:'login', msg:'Sem login do Google' }; }
   try{
     outboxMarcar(item.oid, '', ''); // marca que tentou (a resposta pode se perder)
@@ -12080,8 +12090,8 @@ async function outboxEnviar(item){
 }
 let OUTBOX_RODANDO = false;
 async function outboxTentar(forcar){
-  if(OUTBOX_RODANDO || !ID_TOKEN || !SYNC_URL || !USUARIO_ATUAL) return;
-  const itens = outboxLer().filter(i=>i.email === USUARIO_ATUAL.email && (forcar || i.motivo !== 'rejeitado'));
+  if(OUTBOX_RODANDO || IMP_GRAVANDO || !ID_TOKEN || !SYNC_URL || !USUARIO_ATUAL) return;
+  const itens = outboxLer().filter(i=>i.email === USUARIO_ATUAL.email && !OUTBOX_EMVOO.has(i.oid) && (forcar || i.motivo !== 'rejeitado'));
   if(!itens.length) return;
   OUTBOX_RODANDO = true; let ok = 0, falha = 0;
   try{
