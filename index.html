@@ -1194,13 +1194,12 @@ tr.al-sem td{background:#fff8e6;}
 
 #view-alugados .al-ctl{font-size:12px;table-layout:auto;}
 #view-alugados .al-ctl td,#view-alugados .al-ctl th{padding:5px 6px;}
-#view-alugados .al-ctl td:nth-child(3){min-width:0;max-width:260px;font-size:11px;word-break:break-word;}
-#view-alugados .al-ctl td:nth-child(6){min-width:0;max-width:140px;word-break:break-word;}
+#view-alugados .al-ctl td:nth-child(3){white-space:normal;overflow-wrap:anywhere;}
+#view-alugados .al-ctl td{vertical-align:middle;}
 @media print{
   #view-alugados{zoom:.78;}
   #view-alugados .card{box-shadow:none;border:0;padding:4px 0;break-inside:auto;}
   #view-alugados .al-ctl{font-size:10px;} #view-alugados .al-ctl tr{break-inside:avoid;}
-  #view-alugados .al-ctl td:nth-child(3){max-width:200px;}
   #view-alugados div[style*="overflow:auto"]{overflow:visible !important;}
   #view-alugados .al-graf{grid-template-columns:2fr 1fr;}
   #view-alugados *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
@@ -2694,7 +2693,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
 const APP_VERSION = 'v1.0.10';
-const BUILD_ID = '1794911029';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
+const BUILD_ID = '1794914800';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -13037,7 +13036,7 @@ if('serviceWorker' in navigator){
     return 'EQUIPAMENTO CADASTRADO';
   }
   function descricao(v){
-    return [v.marca, v.modelo].filter(Boolean).join(' ') + (v.ano ? ', ano ' + v.ano : '') + (v.placa ? ' · placa ' + fmtPlaca(v.placa) : '') + (v.serie ? ' · série ' + v.serie : '');
+    return [v.marca, v.modelo].filter(Boolean).join(' ') + (v.placa ? ' · ' + fmtPlaca(v.placa) : '');
   }
   function usoNoMes(eq, ini, fim){
     const ks = (Array.isArray(eq) ? eq : [eq]).map(chaveEquip).filter(Boolean);
@@ -13061,7 +13060,7 @@ if('serviceWorker' in navigator){
     const todos = (VEICULOS||[]).filter(v=>v.tipo === 'alugado').map(v=>{
       const med = medidorDoEquip(v.equipamento), u = usoNoMes([v.equipamento, v.placa], per.ini, per.fim), val = mensal(v);
       const uso = u.uso || 0;
-      return { prefixo: v.equipamento, desc: descricao(v), emp: String(v.fornecedor||'').trim().toUpperCase() || 'A INFORMAR', status: statusDe(v), plano: String(v.observacoes||'').trim(),
+      return { prefixo: v.equipamento, desc: descricao(v), emp: String(v.fornecedor||'').trim().toUpperCase() || 'A INFORMAR', status: statusDe(v), plano: '',
         med, ini: u.ini, fim: u.fim, horas: med === 'hora' ? uso : null, km: med === 'km' ? uso : null, valor: val, leitura: u.leitura, semUso: !desmob(v) && uso === 0,
         desmobEm: v.dataDesmobilizacao || '', motivo: v.motivoDesmobilizacao || '', obra: v.obra || '' };
     });
@@ -13083,7 +13082,7 @@ if('serviceWorker' in navigator){
           <div class="field"><label>Status</label><select id="al-status"><option value="">Todos</option><option>EQUIPAMENTO CADASTRADO</option><option>PENDENTE DE CADASTRO</option><option>DEVOLVIDO</option></select></div>
           <div class="field" style="min-width:200px;"><label>Buscar</label><input type="text" id="al-busca" placeholder="Prefixo, modelo, empresa..."></div>
         </div>
-        <div class="helper no-print" style="margin:8px 0 0;">Entra aqui todo veículo da Frota com tipo <b>Alugado</b>. Valor mensal, fornecedor, plano/ação (campo Observações) e devolução vêm do cadastro da Frota. O período vai do dia <b>21 do mês anterior ao dia 20</b> do mês escolhido. <b>Leitura inicial</b> = última leitura antes do período (ou a 1ª dele); <b>final</b> = maior leitura do período; <b>Horas/Km no mês</b> = a diferença entre as duas.</div>
+        <div class="helper no-print" style="margin:8px 0 0;">Entra aqui todo veículo da Frota com tipo <b>Alugado</b>. Valor mensal, fornecedor e devolução vêm do cadastro da Frota. O período vai do dia <b>21 do mês anterior ao dia 20</b> do mês escolhido. <b>Leitura inicial</b> = última leitura antes do período (ou a 1ª dele); <b>final</b> = maior leitura do período; <b>Horas/Km no mês</b> = a diferença entre as duas.</div>
       </div>
       <div id="al-corpo"></div>`;
     { const h = todayStr(), y = +h.slice(0,4), mo = +h.slice(5,7), d = +h.slice(8,10); const t = d >= 21 ? new Date(y, mo, 1) : new Date(y, mo-1, 1); $('al-mes').value = t.getFullYear() + '-' + String(t.getMonth()+1).padStart(2,'0'); }
@@ -13140,10 +13139,10 @@ if('serviceWorker' in navigator){
       <div class="card">
         <h3 class="al-h" style="margin-top:0;">Controle de equipamentos alugados</h3>
         <div style="overflow:auto;"><table class="al-tab al-ctl"><thead><tr>
-          <th>Item</th>${th('prefixo','Prefixo')}${th('desc','Equipamento')}${th('emp','Empresa')}${th('status','Status')}${th('plano','Plano / ação')}${th('ini','Leitura inicial','n')}${th('fim','Leitura final','n')}${th('horas','Horas no mês','n')}${th('km','Km no mês','n')}${th('valor','Valor mensal','n')}<th class="n">Custo / hora</th><th class="n">Custo / km</th>
+          <th>Item</th>${th('prefixo','Prefixo')}${th('desc','Equipamento')}${th('emp','Empresa')}${th('status','Status')}${th('ini','Leitura inicial','n')}${th('fim','Leitura final','n')}${th('horas','Horas no mês','n')}${th('km','Km no mês','n')}${th('valor','Valor mensal','n')}<th class="n">Custo / hora</th><th class="n">Custo / km</th>
         </tr></thead><tbody>
-        ${ord.map((l,i)=>`<tr class="${l.semUso?'al-sem':''}"><td>${i+1}</td><td><b>${esc(l.prefixo)}</b></td><td>${esc(l.desc)}</td><td>${esc(l.emp)}</td><td><span class="al-st" style="background:${COR[l.status]}22;color:${COR[l.status]};">${esc(l.status)}</span></td><td>${esc(l.plano)}${l.status==='DEVOLVIDO' && (l.desmobEm||l.motivo) ? ' · devolvido '+esc(l.desmobEm)+' '+esc(l.motivo) : ''}</td><td class="n">${l.ini != null ? fmtNum(l.ini,0) : '—'}</td><td class="n">${l.fim != null ? fmtNum(l.fim,0) : '—'}</td><td class="n">${l.horas ? fmtNum(l.horas,0) : '—'}</td><td class="n">${l.km ? fmtNum(l.km,0) : '—'}</td><td class="n">${l.valor ? fmtMoney(l.valor) : '—'}</td><td class="n">${l.horas && l.valor ? fmtMoney(l.valor/l.horas) : ''}</td><td class="n">${l.km && l.valor ? fmtNum(l.valor/l.km,3) : ''}</td></tr>`).join('') || '<tr><td colspan="13" class="helper">Nenhum veículo alugado encontrado.</td></tr>'}
-        </tbody><tfoot><tr><td colspan="10" style="text-align:right;"><b>Total</b></td><td class="n"><b>${fmtMoney(soma(linhas))}</b></td><td></td><td></td></tr></tfoot></table></div>
+        ${ord.map((l,i)=>`<tr class="${l.semUso?'al-sem':''}"><td>${i+1}</td><td><b>${esc(l.prefixo)}</b></td><td>${esc(l.desc)}</td><td>${esc(l.emp)}</td><td><span class="al-st" style="background:${COR[l.status]}22;color:${COR[l.status]};">${esc(l.status)}</span></td><td class="n">${l.ini != null ? fmtNum(l.ini,0) : '—'}</td><td class="n">${l.fim != null ? fmtNum(l.fim,0) : '—'}</td><td class="n">${l.horas ? fmtNum(l.horas,0) : '—'}</td><td class="n">${l.km ? fmtNum(l.km,0) : '—'}</td><td class="n">${l.valor ? fmtMoney(l.valor) : '—'}</td><td class="n">${l.horas && l.valor ? fmtMoney(l.valor/l.horas) : ''}</td><td class="n">${l.km && l.valor ? fmtNum(l.valor/l.km,3) : ''}</td></tr>`).join('') || '<tr><td colspan="12" class="helper">Nenhum veículo alugado encontrado.</td></tr>'}
+        </tbody><tfoot><tr><td colspan="9" style="text-align:right;"><b>Total</b></td><td class="n"><b>${fmtMoney(soma(linhas))}</b></td><td></td><td></td></tr></tfoot></table></div>
       </div>`;
     corpo.querySelectorAll('th[data-ord]').forEach(t=>t.addEventListener('click', ()=>{ const c = t.dataset.ord; if(ordC === c) ordD = -ordD; else { ordC = c; ordD = 1; } renderizar(); }));
   }
