@@ -1174,7 +1174,7 @@ body.carregando-obra main, body.carregando-obra .view{opacity:.55;transition:opa
 .al-tab td{padding:6px 8px;border-top:1px solid #e6ebf5;vertical-align:top;}
 .al-tab .n{text-align:right;white-space:nowrap;}
 .al-tab tfoot td{border-top:2px solid #c9d6ea;background:#f6f9ff;}
-.al-ctl td:nth-child(3),.al-ctl td:nth-child(6){min-width:220px;}
+
 tr.al-sem td{background:#fff8e6;}
 .al-st{border-radius:999px;padding:2px 9px;font-size:11.5px;font-weight:700;white-space:nowrap;}
 .al-graf{display:grid;grid-template-columns:2fr 1fr;gap:24px;}
@@ -1190,6 +1190,21 @@ tr.al-sem td{background:#fff8e6;}
 .al-donut span{position:relative;z-index:1;font-size:24px;font-weight:700;color:#002674;}
 .al-leg{font-size:12.5px;margin:3px 0;display:flex;gap:6px;align-items:center;}
 .al-leg i{width:11px;height:11px;border-radius:3px;display:inline-block;}
+
+
+#view-alugados .al-ctl{font-size:12px;table-layout:auto;}
+#view-alugados .al-ctl td,#view-alugados .al-ctl th{padding:5px 6px;}
+#view-alugados .al-ctl td:nth-child(3){min-width:0;max-width:260px;font-size:11px;word-break:break-word;}
+#view-alugados .al-ctl td:nth-child(6){min-width:0;max-width:140px;word-break:break-word;}
+@media print{
+  #view-alugados{zoom:.78;}
+  #view-alugados .card{box-shadow:none;border:0;padding:4px 0;break-inside:auto;}
+  #view-alugados .al-ctl{font-size:10px;} #view-alugados .al-ctl tr{break-inside:avoid;}
+  #view-alugados .al-ctl td:nth-child(3){max-width:200px;}
+  #view-alugados div[style*="overflow:auto"]{overflow:visible !important;}
+  #view-alugados .al-graf{grid-template-columns:2fr 1fr;}
+  #view-alugados *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+}
 
 </style>
 </head>
@@ -2679,7 +2694,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
 const APP_VERSION = 'v1.0.10';
-const BUILD_ID = '1794859235';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
+const BUILD_ID = '1794909012';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -13015,8 +13030,8 @@ if('serviceWorker' in navigator){
     return [v.marca, v.modelo].filter(Boolean).join(' ') + (v.ano ? ', ano ' + v.ano : '') + (v.placa ? ' · placa ' + fmtPlaca(v.placa) : '') + (v.serie ? ' · série ' + v.serie : '');
   }
   function usoNoMes(eq, ini, fim){
-    const k = chaveEquip(eq);
-    const leituras = (DB||[]).filter(r=>chaveEquip(r.equipamento) === k && Number(r.kmHor) > 0 && r.data).map(r=>({d:String(r.data).slice(0,10), k:Number(r.kmHor)})).sort((a,b)=>a.d.localeCompare(b.d));
+    const ks = (Array.isArray(eq) ? eq : [eq]).map(chaveEquip).filter(Boolean);
+    const leituras = (DB||[]).filter(r=>ks.indexOf(chaveEquip(r.equipamento)) > -1 && Number(r.kmHor) > 0 && r.data).map(r=>({d:String(r.data).slice(0,10), k:Number(r.kmHor)})).sort((a,b)=>a.d.localeCompare(b.d));
     const no = leituras.filter(x=>x.d >= ini && x.d <= fim), antes = leituras.filter(x=>x.d < ini);
     if(!no.length) return { uso: 0, leitura: antes.length ? antes[antes.length-1].k : null, ini: null, fim: null, semLeitura: true };
     const topo = Math.max.apply(null, no.map(x=>x.k));
@@ -13034,7 +13049,7 @@ if('serviceWorker' in navigator){
     const per = periodo();
     const forn = ($('al-forn')||{}).value || '', st = ($('al-status')||{}).value || '', q = (($('al-busca')||{}).value || '').trim().toUpperCase();
     const todos = (VEICULOS||[]).filter(v=>v.tipo === 'alugado').map(v=>{
-      const med = medidorDoEquip(v.equipamento), u = usoNoMes(v.equipamento, per.ini, per.fim), val = mensal(v);
+      const med = medidorDoEquip(v.equipamento), u = usoNoMes([v.equipamento, v.placa], per.ini, per.fim), val = mensal(v);
       const uso = u.uso || 0;
       return { prefixo: v.equipamento, desc: descricao(v), emp: String(v.fornecedor||'').trim().toUpperCase() || 'A INFORMAR', status: statusDe(v), plano: String(v.observacoes||'').trim(),
         med, ini: u.ini, fim: u.fim, horas: med === 'hora' ? uso : null, km: med === 'km' ? uso : null, valor: val, leitura: u.leitura, semUso: !desmob(v) && uso === 0,
@@ -13063,7 +13078,12 @@ if('serviceWorker' in navigator){
       <div id="al-corpo"></div>`;
     { const h = todayStr(), y = +h.slice(0,4), mo = +h.slice(5,7), d = +h.slice(8,10); const t = d >= 21 ? new Date(y, mo, 1) : new Date(y, mo-1, 1); $('al-mes').value = t.getFullYear() + '-' + String(t.getMonth()+1).padStart(2,'0'); }
     ['al-mes','al-forn','al-status','al-busca'].forEach(id=>{ $(id).addEventListener('input', renderizar); $(id).addEventListener('change', renderizar); });
-    $('al-print').addEventListener('click', ()=>window.print());
+    $('al-print').addEventListener('click', ()=>{
+      const vw = $('view-alugados'), st = document.createElement('style'); st.id = 'al-page'; st.textContent = '@page{size:A4 landscape;margin:8mm}';
+      document.head.appendChild(st); vw.classList.add('print-active');
+      const fim = ()=>{ vw.classList.remove('print-active'); const s = $('al-page'); if(s) s.remove(); window.removeEventListener('afterprint', fim); };
+      window.addEventListener('afterprint', fim); setTimeout(()=>window.print(), 50);
+    });
     $('al-xlsx').addEventListener('click', exportar);
   }
 
