@@ -2693,7 +2693,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
 const APP_VERSION = 'v1.0.10';
-const BUILD_ID = '1794914800';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
+const BUILD_ID = '1794996395';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -7202,8 +7202,8 @@ async function confirmarPendenteUI(id, nf, edicoes){
     PENDENTES = json.pendentes || PENDENTES.filter(p=>p.id!==id);
     renderListaPendentes();
     toast('Lançamento confirmado e enviado pra planilha.');
-    // atualiza os dados locais puxando de novo, já que um registro novo entrou direto no Sheets
-    pullFromSheetsSilencioso();
+    // um registro novo entrou direto no Sheets: atualiza os dados locais UMA vez, quando você parar de aprovar
+    pullDepoisDeAcao();
   }catch(err){
     console.error(err);
     toast('Falha ao confirmar: ' + err.message);
@@ -7252,7 +7252,7 @@ async function aprovarPendentesEmLote(){
     }catch(err){ console.error(err); falhas.push(`${rot}: ${err.message}`); }
   }
   renderListaPendentes();
-  try{ pullFromSheetsSilencioso(); }catch(_){}
+  try{ pullDepoisDeAcao(); }catch(_){}
   toast(`✅ ${feitos} aprovado(s)${falhas.length ? ' · ⚠️ ' + falhas.length + ' com pendência' : ''}.`);
   if(falhas.length) alert('Ficaram na lista (resolva e aprove de novo):\n\n' + falhas.join('\n'));
 }
@@ -7378,7 +7378,18 @@ function restaurarCampos(m){
   });
 }
 
-async function pullFromSheetsSilencioso(){
+/* Uma atualização por vez: se já tem uma puxando (a base toda é pesada), as outras pedidas esperam essa e
+   no máximo UMA nova roda depois. Antes cada aprovação disparava uma atualização completa e elas se
+   empilhavam, brigando com a próxima aprovação no servidor. */
+let _pullEmVoo = null, _pullDeNovo = false, _pullTimer = null;
+function pullFromSheetsSilencioso(){
+  if(_pullEmVoo){ _pullDeNovo = true; return _pullEmVoo; }
+  _pullEmVoo = Promise.resolve(_pullReal()).finally(()=>{ _pullEmVoo = null; if(_pullDeNovo){ _pullDeNovo = false; setTimeout(pullFromSheetsSilencioso, 1500); } });
+  return _pullEmVoo;
+}
+/* Depois de aprovar/rejeitar: espera a pessoa parar uns segundos e faz UMA atualização só (em vez de uma por clique). */
+function pullDepoisDeAcao(){ clearTimeout(_pullTimer); _pullTimer = setTimeout(()=>{ pullFromSheetsSilencioso(); }, 9000); }
+async function _pullReal(){
   if(!SYNC_URL || !ID_TOKEN) return;
   _ultimoPull = Date.now();
   const _meuSeq = ++_pullSeq, _obraNoPedido = OBRA_ATIVA, _mutNoPedido = _mutSeq;
@@ -7392,7 +7403,7 @@ async function pullFromSheetsSilencioso(){
     if(_meuSeq !== _pullSeq) return;   // já saiu um pull mais novo: este é velho
     // alguém gravou (ou ainda está gravando) enquanto este pull viajava: ele pode trazer o dado ANTIGO e "desfazer" a mudança na tela. Descarta e puxa de novo.
     if(_mutSeq !== _mutNoPedido || _mutEmCurso > 0){ setTimeout(pullFromSheetsSilencioso, 900); return; }
-    if(OBRA_ATIVA !== _obraNoPedido){ return pullFromSheetsSilencioso(); } // trocou de obra no meio: refaz já pra obra atual
+    if(OBRA_ATIVA !== _obraNoPedido){ return _pullReal(); } // trocou de obra no meio: refaz já pra obra atual
     const _snapCampos = snapshotCampos();
     DB = json.dados.map(sanitizeRecord);
     PERIODO_LIMITADO = !!json.periodoLimitado;
