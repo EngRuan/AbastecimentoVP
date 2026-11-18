@@ -2693,7 +2693,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
 const APP_VERSION = 'v1.0.10';
-const BUILD_ID = '1794996395';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
+const BUILD_ID = '1795002747';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -3588,6 +3588,13 @@ function initSeletorObra(){
   if(!sel) return;
   sel.addEventListener('change', async ()=>{
     OBRA_ATIVA = sel.value;
+    // filtros da obra anterior (NF, equipamento, "só com falha"...) não valem na obra nova: sem isso a tela da obra nova aparecia vazia
+    try{
+      Object.keys(MS_STATE).forEach(k=>{ if(MS_STATE[k] && MS_STATE[k].clear) MS_STATE[k].clear(); });
+      FILTRO_ALERTAS = false; FILTRO_SEM_EQUIPAMENTO = false;
+      ['f-data-ini','f-data-fim','lanc-search','bl-data-ini','bl-data-fim'].forEach(id=>{ const e = document.getElementById(id); if(e) e.value = ''; });
+      if(typeof updateMultiSelectToggleLabels === 'function') updateMultiSelectToggleLabels();
+    }catch(e){ console.warn(e); }
     try{ localStorage.setItem(OBRA_ATIVA_KEY, OBRA_ATIVA); }catch(e){}
     // troca na hora: mostra que está carregando a obra nova (sem precisar clicar em "Atualizar")
     document.body.classList.add('carregando-obra');
