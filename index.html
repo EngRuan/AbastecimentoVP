@@ -2693,7 +2693,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
 const APP_VERSION = 'v1.0.10';
-const BUILD_ID = '1795002747';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
+const BUILD_ID = '1795105892';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -3319,7 +3319,7 @@ async function autenticarComToken(idToken, silencioso){
     if(!String(ID_TOKEN).startsWith('SESSAO:')) iniciarRenovacaoAutomaticaDoToken(); // com sessão própria (30 dias) não precisa renovar nada no Google
     const _snapLogin = _uiRestaurado ? snapshotCampos() : null;
 
-    DB = (json.dados || []).map(sanitizeRecord);
+    DB = (json.dados || []).map(sanitizeRecord).filter(r=>!REMOVIDOS_PEND.has(String(r.id)));
     PERIODO_LIMITADO = !!json.periodoLimitado;
     SOLICITACOES = json.solicitacoes || [];
     USUARIOS = json.usuarios || [];
@@ -5742,22 +5742,42 @@ function exportarSisma(){
   const LANC_VISIVEIS = applyFilters('r'); // usa os filtros da própria aba Relatório
   if(!LANC_VISIVEIS.length){ toast('Nenhum lançamento nos filtros do relatório — nada pra exportar.'); return; }
   const linhas = ['dataabastecimento;hora;empresa;Especie;Equipe;KM;Hora;Ponto;Bomba;Combustivel;Quantidade;Valor Comb'];
-  LANC_VISIVEIS.forEach(r=>{
-    if(!r.data) return;
-    const [ano,mes,dia] = r.data.split('-');
-    const dataFmt = `${dia}/${mes}/${ano}`;
-    let horaFmt = '00:00:00';
-    // hora = a da requisição vinculada (quando o abastecimento tem requisição)
+  // 1) hora de verdade (quando existe): a da requisição vinculada, ou um horário real no registro.
+  //    "00:00:00" NÃO é hora de verdade (é só a data sem horário), então conta como sem hora.
+  const horaReal = r=>{
+    let h = null;
     if(r.requisicao){
       const rq = (REQUISICOES_EMITIDAS||[]).find(x=>String(x.numero) === String(r.requisicao).trim());
-      if(rq && rq.criadoEm){ const dq = new Date(rq.criadoEm); if(!isNaN(dq)) horaFmt = dq.toLocaleTimeString('pt-BR'); }
+      if(rq && rq.criadoEm){ const dq = new Date(rq.criadoEm); if(!isNaN(dq)) h = dq.toLocaleTimeString('pt-BR'); }
     }
-    // a data do arquivo é SEMPRE a do abastecimento (r.data); a hora só entra se o
-    // registro tiver horário de verdade (data-só vira 21:00 por fuso, então ignora)
     if(r.dataLancamento && /\d{2}:\d{2}/.test(String(r.dataLancamento))){
       const dt = new Date(r.dataLancamento);
-      if(!isNaN(dt)) horaFmt = dt.toLocaleTimeString('pt-BR');
+      if(!isNaN(dt)){ const t = dt.toLocaleTimeString('pt-BR'); if(t !== '00:00:00') h = t; }
     }
+    return (h && h !== '00:00:00') ? h : null;
+  };
+  const itens = LANC_VISIVEIS.filter(r=>r.data).map(r=>({ r, hora: horaReal(r) }));
+  // 2) dia a dia: quem não tem hora (ou repetiu a hora de outro do mesmo dia) ganha um horário próprio,
+  //    começando 07:00 e andando de 9 em 9 minutos, sem bater com nenhum outro do dia.
+  const porDia = {};
+  itens.forEach(it=>{ (porDia[it.r.data] = porDia[it.r.data] || []).push(it); });
+  let geradas = 0;
+  Object.keys(porDia).forEach(dia=>{
+    const lista = porDia[dia].sort((x,y)=> String(x.r.equipamento||'').localeCompare(String(y.r.equipamento||'')) || String(x.r.cupom||'').localeCompare(String(y.r.cupom||'')) || String(x.r.id||'').localeCompare(String(y.r.id||'')));
+    const usadas = new Set();
+    lista.forEach(it=>{ if(it.hora){ if(usadas.has(it.hora)) it.hora = null; else usadas.add(it.hora); } });
+    let min = 7*60;
+    lista.forEach(it=>{
+      if(it.hora) return;
+      let h;
+      do{ const m = Math.min(min, 23*60+59); h = String(Math.floor(m/60)).padStart(2,'0') + ':' + String(m%60).padStart(2,'0') + ':00'; min += 9; }while(usadas.has(h) && min < 24*60+9);
+      usadas.add(h); it.hora = h; geradas++;
+    });
+  });
+  itens.sort((x,y)=> x.r.data.localeCompare(y.r.data) || x.hora.localeCompare(y.hora));
+  itens.forEach(({r, hora: horaFmt})=>{
+    const [ano,mes,dia] = r.data.split('-');
+    const dataFmt = `${dia}/${mes}/${ano}`;
     const codigoProduto = CONFIG_SISMA.mapaProduto?.[(r.produto||'').toUpperCase()] || '';
     linhas.push([
       dataFmt, horaFmt, CONFIG_SISMA.empresa||'', CONFIG_SISMA.especie||'',
@@ -5772,7 +5792,7 @@ function exportarSisma(){
   a.href = url; a.download = `sisma_${todayStr()}.csv`;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  toast(`CSV do SISMA gerado com ${LANC_VISIVEIS.length} lançamento(s) — só o que está nos filtros do relatório.`);
+  toast(`CSV do SISMA gerado com ${itens.length} lançamento(s)${geradas ? ' — ' + geradas + ' sem horário real ganharam horário próprio (07:00 em diante, de 9 em 9 min)' : ''}.`);
 }
 
 function initUsuariosTab(){
@@ -7325,7 +7345,7 @@ async function carregarHistoricoCompletoUI(){
     const resp = await fetch(`${SYNC_URL}?action=pull&idToken=${encodeURIComponent(ID_TOKEN)}&completo=1`);
     const json = await parseJsonResponse(resp);
     if(json.status !== 'ok' || !Array.isArray(json.dados)){ toast(json.mensagem || 'Falha ao carregar histórico.'); return; }
-    DB = json.dados.map(sanitizeRecord);
+    DB = json.dados.map(sanitizeRecord).filter(r=>!REMOVIDOS_PEND.has(String(r.id)));
     HISTORICO_COMPLETO = true; try{ sessionStorage.setItem('hist_completo','1'); }catch(_e){} // as atualizações automáticas passam a trazer tudo também
     PERIODO_LIMITADO = !!json.periodoLimitado;
     AUDITORIA = json.auditoria || AUDITORIA;
@@ -7412,7 +7432,7 @@ async function _pullReal(){
     if(_mutSeq !== _mutNoPedido || _mutEmCurso > 0){ setTimeout(pullFromSheetsSilencioso, 900); return; }
     if(OBRA_ATIVA !== _obraNoPedido){ return _pullReal(); } // trocou de obra no meio: refaz já pra obra atual
     const _snapCampos = snapshotCampos();
-    DB = json.dados.map(sanitizeRecord);
+    DB = json.dados.map(sanitizeRecord).filter(r=>!REMOVIDOS_PEND.has(String(r.id)));
     PERIODO_LIMITADO = !!json.periodoLimitado;
     SOLICITACOES = json.solicitacoes || [];
     USUARIOS = json.usuarios || [];
@@ -7585,7 +7605,7 @@ async function restaurarDoCache(){
     const json = c.json;
     ID_TOKEN = tokenSalvo; USUARIO_ATUAL = json.usuario;
     if(c.historico){ HISTORICO_COMPLETO = true; }
-    DB = (json.dados || []).map(sanitizeRecord);
+    DB = (json.dados || []).map(sanitizeRecord).filter(r=>!REMOVIDOS_PEND.has(String(r.id)));
     PERIODO_LIMITADO = !!json.periodoLimitado;
     SOLICITACOES = json.solicitacoes || []; USUARIOS = json.usuarios || []; PENDENTES = json.pendentes || [];
     DIAS_BLOQUEADOS = json.diasBloqueados || DIAS_BLOQUEADOS; NFS_FECHADAS = json.nfsFechadas || NFS_FECHADAS;
@@ -9460,11 +9480,17 @@ async function deleteRecord(id){
   const ok = await confirmModal('Excluir lançamento', 'Essa ação não pode ser desfeita. Deseja excluir este registro?');
   if(!ok) return;
   DB = DB.filter(r=>r.id!==id);
+  REMOVIDOS_PEND.add(String(id)); salvarRemovidosPend();   // avisa o servidor (senão o registro volta na próxima atualização)
   recalcularTodasMedias();
   saveDB();
   populateFilterSelects();
   renderLancTable();
   toast('Registro excluído.');
+  try{
+    const r = await pushToSheets(false);
+    if(r && r.status === 'ok') toast('Registro excluído também na planilha.');
+    else toast('⚠️ Excluí aqui, mas não consegui apagar na planilha: ' + ((r && r.mensagem) || 'sem conexão') + ' Vai tentar de novo sozinho.');
+  }catch(e){ toast('⚠️ Excluí aqui, mas não consegui apagar na planilha agora. Vai tentar de novo sozinho.'); }
 }
 
 let FILTRO_SEM_EQUIPAMENTO = false; // toggle: mostrar só lançamentos sem equipamento preenchido
@@ -10739,6 +10765,13 @@ function updateSyncPill(){
 /* Só a MUDANÇA vai pro servidor. A cópia local é só pra mostrar: guardo uma foto de como cada
    registro estava na última vez que veio do servidor e mando apenas os que mudaram desde então.
    Assim, se outra pessoa mexeu em outro lançamento, o meu aparelho não "devolve" a versão velha dele. */
+/* Lançamentos excluídos aqui que ainda não foram apagados no Sheets. O push só manda o que MUDOU, então sem isso
+   a exclusão nunca chegava no servidor e o registro voltava na próxima atualização. Fica guardado (sobrevive a fechar o app)
+   até o servidor confirmar, e enquanto isso a atualização não traz o registro de volta pra tela. */
+const REMOVIDOS_KEY = 'ap_removidos_v1';
+const REMOVIDOS_PEND = new Set();
+try{ JSON.parse(localStorage.getItem(REMOVIDOS_KEY) || '[]').forEach(i=>REMOVIDOS_PEND.add(String(i))); }catch(e){}
+function salvarRemovidosPend(){ try{ localStorage.setItem(REMOVIDOS_KEY, JSON.stringify([...REMOVIDOS_PEND])); }catch(e){} }
 let SNAP_BASE = new Map(), SNAP_OK = false;
 function snapBase(){ SNAP_BASE = new Map(DB.map(r=>[String(r.id), JSON.stringify(r)])); SNAP_OK = true; }
 function registrosMudados(){
@@ -10749,13 +10782,14 @@ async function pushToSheets(mostrarToast){
   if(!SYNC_URL){ if(mostrarToast) toast('Configure a URL do Apps Script primeiro.'); return {status:'erro'}; }
   if(!ID_TOKEN){ if(mostrarToast) toast('Faça login com o Google primeiro.'); return {status:'erro'}; }
   const mudados = registrosMudados();
-  if(!mudados.length){ logSync('Nada mudou desde a última sincronização — nada a enviar.'); return { status:'ok', mensagem:'Nada a enviar.' }; }
-  logSync(`Enviando ${mudados.length} registro(s) alterado(s) para o Sheets...`);
+  const removidos = [...REMOVIDOS_PEND];
+  if(!mudados.length && !removidos.length){ logSync('Nada mudou desde a última sincronização — nada a enviar.'); return { status:'ok', mensagem:'Nada a enviar.' }; }
+  logSync(`Enviando ${mudados.length} registro(s) alterado(s)${removidos.length ? ' e ' + removidos.length + ' exclusão(ões)' : ''} para o Sheets...`);
   try{
     const resp = await fetch(SYNC_URL, {
       method:'POST',
       headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({ action:'push', dados: mudados, idToken: ID_TOKEN })
+      body: JSON.stringify({ action:'push', dados: mudados, removidos, idToken: ID_TOKEN })
     });
     const json = await parseJsonResponse(resp);
     if(json.limiteAtingido){
@@ -10769,6 +10803,7 @@ async function pushToSheets(mostrarToast){
     }
     logSync('Resposta do servidor: ' + (json.mensagem || 'ok'));
     if(SNAP_OK) mudados.forEach(r=>SNAP_BASE.set(String(r.id), JSON.stringify(r)));
+    removidos.forEach(id=>{ REMOVIDOS_PEND.delete(id); SNAP_BASE.delete(id); }); if(removidos.length) salvarRemovidosPend();
     if(mostrarToast) toast('Dados enviados ao Sheets.');
     return json;
   }catch(err){
@@ -10791,7 +10826,7 @@ async function pullFromSheets(){
     HISTORICO_COMPLETO = true; try{ sessionStorage.setItem('hist_completo','1'); }catch(_e){}
     const ok = await confirmModal('Puxar dados do Sheets', `Foram encontrados ${json.dados.length} registros no Sheets. Isso vai SUBSTITUIR os ${DB.length} registros locais. Continuar?`);
     if(!ok){ logSync('Importação cancelada pelo usuário.'); return; }
-    DB = json.dados.map(sanitizeRecord);
+    DB = json.dados.map(sanitizeRecord).filter(r=>!REMOVIDOS_PEND.has(String(r.id)));
     PERIODO_LIMITADO = !!json.periodoLimitado;
     SOLICITACOES = json.solicitacoes || [];
     USUARIOS = json.usuarios || [];
