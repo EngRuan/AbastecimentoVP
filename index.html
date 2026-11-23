@@ -2693,7 +2693,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
 const APP_VERSION = 'v1.0.10';
-const BUILD_ID = '1795105892';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
+const BUILD_ID = '1795428176';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -6621,6 +6621,32 @@ function extrairDadosNotaPdf(texto){
 
 function normReqNum(v){ return String(v == null ? '' : v).trim().replace(/^0+/,''); }
 function normPlaca(v){ return String(v == null ? '' : v).replace(/[^A-Za-z0-9]/g,'').toUpperCase(); }
+/* Confere os dados informados (planilha/nota do posto) com a requisição emitida. Número de requisição igual NÃO basta:
+   placa/equipamento, produto e motorista têm que bater, senão o cupom é de outra requisição (erro do posto). */
+function _toksNome(n){ return String(n||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z ]/g,' ').split(/\s+/).filter(t=>t.length>=3); }
+function _famProduto(p){ return String(p||'').toUpperCase().replace(/\s*S-?\d+/,'').replace(/\bCOMUM\b/,'').trim(); }
+function divergenciasReq(rq, d){
+  const out = [];
+  if(!rq) return out;
+  const eqReq = String(rq.equipamento||'').trim().toUpperCase();
+  const vReq = eqReq ? veiculoDoEquip(eqReq) : null;
+  const idsReq = new Set([normPlaca(eqReq), normPlaca(rq.placa), vReq ? normPlaca(vReq.placa) : '', vReq ? normPlaca(vReq.equipamento) : ''].filter(Boolean));
+  const idsInf = [d.equipamento, d.placa].map(x=>normPlaca(x)).filter(Boolean);
+  const vInf = d.equipamento ? veiculoDoEquip(String(d.equipamento).trim().toUpperCase()) : null;
+  if(vInf){ idsInf.push(normPlaca(vInf.equipamento)); if(vInf.placa) idsInf.push(normPlaca(vInf.placa)); }
+  if(idsReq.size && idsInf.length && !idsInf.some(x=>idsReq.has(x))){
+    out.push(`veículo/placa informado (${d.equipamento||d.placa}) ≠ da requisição (${rq.terceiro==='sim' ? (rq.placa||eqReq) : (eqReq + (vReq && vReq.placa ? ' · ' + vReq.placa : ''))})`);
+  }
+  if(d.produto && rq.produto && _famProduto(d.produto) !== _famProduto(rq.produto)){
+    out.push(`produto informado (${d.produto}) ≠ da requisição (${rq.produto})`);
+  }
+  const mReq = _toksNome(rq.motoristaNome || rq.motoristaEmail), mInf = _toksNome(d.motorista);
+  if(mReq.length && mInf.length && !mInf.some(t=>mReq.includes(t))){
+    out.push(`motorista informado (${d.motorista}) ≠ da requisição (${rq.motoristaNome||rq.motoristaEmail})`);
+  }
+  return out;
+}
+
 
 /* Cruza a nota com o que o sistema já tem: requisição emitida, lançamento
    pendente (o do motorista) e lançamentos já confirmados. */
@@ -6672,6 +6698,10 @@ function motivoRecusaNota(d, c){
     return `A requisição ${c.numReq} JÁ FOI LANÇADA em ${fmtDate(j.data)} (${j.equipamento||'—'}, ${fmtNum(j.quantidade,2)} L${j.nf ? ', NF '+j.nf : ''}). Cupom não aceito. Se for só corrigir km, data ou valor, use Conferência → ✏️ Editar.`;
   }
   if(c.reqEmitida && c.reqEmitida.status === 'cancelada') return `A requisição ${c.numReq} foi CANCELADA. Cupom não aceito.`;
+  if(c.reqEmitida){
+    const dv = divergenciasReq(c.reqEmitida, { equipamento: (typeof equipamentoDaNota==='function' ? equipamentoDaNota(d) : ''), placa: d.placa, produto: d.produto, motorista: d.motorista });
+    if(dv.length) return `A requisição ${c.numReq} NÃO CONFERE com a nota: ${dv.join('; ')}. Provável número de requisição errado no cupom do posto. Cupom não aceito.`;
+  }
   const rep_ = NOTAS_PDF_LIDAS.find(n=>n.cruz && n.cruz.numReq === c.numReq);
   if(rep_) return `A requisição ${c.numReq} já foi lida agora há pouco (${rep_.arquivo}). Cupom repetido, não aceito.`;
   return '';
@@ -7155,6 +7185,16 @@ function initNotaPdf(){
 }
 
 async function gerarRequisicaoUI(id, requisicaoManual){
+  if(requisicaoManual){
+    const nR = normReqNum(requisicaoManual), pd = (PENDENTES||[]).find(x=>String(x.id)===String(id));
+    const rqE = (REQUISICOES_EMITIDAS||[]).find(x=>normReqNum(x.numero) === nR);
+    const jaL = (DB||[]).find(r=>normReqNum(r.requisicao) === nR);
+    if(jaL){ toast(`⛔ A requisição ${nR} já foi lançada em ${fmtDate(jaL.data)} (${jaL.equipamento||'—'}). Confere o número.`); return; }
+    if(rqE && pd){
+      const dv = divergenciasReq(rqE, { equipamento: pd.equipamento, produto: pd.produto, motorista: pd.motorista });
+      if(dv.length){ toast(`⛔ Requisição ${nR} não confere com este lançamento: ${dv.join('; ')}.`); return; }
+    }
+  }
   try{
     const resp = await fetch(SYNC_URL, {
       method:'POST',
@@ -11073,6 +11113,9 @@ const IMP_CFG = {
       {k:'precoTotal', rot:'Valor total', alias:['valortotal','precototal','total','valor'], tipo:'num', larg:95},
       {k:'kmHor', rot:'Km/Hor.', alias:['km','kmhor','kmhorimetro','horimetro','hodometro','kmatual'], tipo:'num', larg:90},
       {k:'nf', rot:'NF mãe', alias:['nf','nfmae','notafiscal','nfmaefechamento','nnf'], larg:90},
+      {k:'equipamento', rot:'Equipamento/Placa', alias:['equipamento','placa','prefixo','veiculo'], larg:100, up:true},
+      {k:'produto', rot:'Produto', alias:['produto','combustivel'], larg:100, up:true},
+      {k:'motorista', rot:'Motorista', alias:['motorista','condutor'], larg:120, up:true},
     ],
     modelo: [{'Requisição':'3480','Data':'18/10/2026','Litros':'40,5','Preço unit.':'6,89','Valor total':'','Km/Hor.':'108531','NF mãe':'13714'}],
   },
@@ -11459,6 +11502,8 @@ function impValidarLinha(i){
     if(!rq){ l.st='erro'; l.msg='Requisição não encontrada (confere o número e a obra).'; return; }
     l.info = rq;
     if(rq.status !== 'aberta'){ l.st='erro'; l.msg = `Requisição já está "${rq.status}" — só dá pra marcar as abertas.`; return; }
+    { const dv = divergenciasReq(rq, { equipamento: v.equipamento, produto: v.produto ? (impNormProduto(v.produto)||v.produto) : '', motorista: v.motorista });
+      if(dv.length){ l.st='erro'; l.msg=`⛔ Requisição ${v.numero} não confere: ${dv.join('; ')}. Provável número errado no posto.`; return; } }
     const q = numBR(v.quantidade);
     if(!q || q<=0){ l.st='erro'; l.msg='Litros inválidos.'; return; }
     let total = numBR(v.precoTotal); const un = numBR(v.precoUnit);
@@ -11521,6 +11566,17 @@ function impValidarLanc(l){
   if(veic && veic.combustivelAutorizado && PRODUTOS_COMBUSTIVEL.has(prod)){
     const aut = String(veic.combustivelAutorizado).toUpperCase();
     if(aut !== 'QUALQUER' && aut !== 'QUALQUER UM' && !aut.includes(prod.replace(/ S-\d+/,''))) avisos.push(`Combustível autorizado do equipamento é ${aut}.`);
+  }
+  if(String(v.requisicao||'').trim()){
+    const nReq = normReqNum(v.requisicao);
+    const rqE = (REQUISICOES_EMITIDAS||[]).find(x=>normReqNum(x.numero) === nReq);
+    const jaL = (DB||[]).find(r=>normReqNum(r.requisicao) === nReq);
+    if(jaL){ l.st='erro'; l.msg=`⛔ A requisição ${nReq} JÁ FOI LANÇADA em ${fmtDate(jaL.data)} (${jaL.equipamento||'—'}, ${fmtNum(jaL.quantidade,1)} L). Número de requisição repetido — confere o cupom do posto.`; return; }
+    if(rqE){
+      if(rqE.status === 'cancelada'){ l.st='erro'; l.msg=`⛔ A requisição ${nReq} foi CANCELADA.`; return; }
+      const dv = divergenciasReq(rqE, { equipamento: v.equipamento, produto: prod, motorista: v.motorista });
+      if(dv.length){ l.st='erro'; l.msg=`⛔ Requisição ${nReq} não confere com os dados: ${dv.join('; ')}. Provável número de requisição errado no posto — corrija o número (ou apague o campo) e tente de novo.`; return; }
+    } else { avisos.push(`Requisição ${nReq} não existe no sistema.`); }
   }
   const q = numBR(v.quantidade);
   if(!q || q<=0){ l.st='erro'; l.msg='Litros inválidos.'; return; }
