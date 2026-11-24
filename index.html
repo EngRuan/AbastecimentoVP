@@ -1661,8 +1661,12 @@ tr.al-sem td{background:#fff8e6;}
             </div>
           </div>
           <div class="field">
-            <label>Km / Horímetro</label>
+            <label id="lbl-kmhor">Km / Horímetro</label>
             <input type="text" inputmode="decimal" id="l-kmhor" placeholder="Leitura atual">
+          </div>
+          <div class="field" id="field-horimetro" style="display:none;">
+            <label>Horímetro (horas)</label>
+            <input type="text" inputmode="decimal" id="l-horimetro" placeholder="Leitura atual em horas">
           </div>
         </div>
         <div class="calc-preview info" id="equip-info" style="display:none;"></div>
@@ -2236,9 +2240,9 @@ tr.al-sem td{background:#fff8e6;}
           <div class="field">
             <label>Medidor (para o SISMA)</label>
             <select id="v-medidor">
-              <option value="">Automático (placa = Km, sem placa = Horas)</option>
-              <option value="km">Km (hodômetro)</option>
+              <option value="">Km (hodômetro) — padrão</option>
               <option value="hora">Horas (horímetro)</option>
+              <option value="ambos">Km e Horas (os dois)</option>
             </select>
           </div>
           <div class="field">
@@ -2582,6 +2586,10 @@ tr.al-sem td{background:#fff8e6;}
           <label>Posto</label>
           <select id="req-filtro-posto"><option value="">Todos os postos</option></select>
         </div>
+        <div class="field">
+          <label>Empresa</label>
+          <select id="req-filtro-empresa"><option value="">Todas as empresas</option></select>
+        </div>
         <button type="button" class="btn ghost" id="req-limpar-filtros" style="align-self:flex-end;">Limpar filtros</button>
       </div>
       <div id="lista-requisicoes-admin"></div>
@@ -2689,7 +2697,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
 const APP_VERSION = 'v1.0.10';
-const BUILD_ID = '1795518927';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
+const BUILD_ID = '1795550734';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -2918,6 +2926,7 @@ function sanitizeRecord(r){
     empresa: toStrOrNull(r.empresa) || 'TRIPOLONI',
     equipamento: toStrOrNull(r.equipamento),
     kmHor: toNumOrNull(r.kmHor),
+    horimetro: toNumOrNull(r.horimetro),
     obsKm: toStrOrNull(r.obsKm),
     mediaKmL: toNumOrNull(r.mediaKmL),
     criadoPorEmail: toStrOrNull(r.criadoPorEmail),
@@ -3851,6 +3860,7 @@ async function enviarLancamentoMotorista(){
     precoUnit: numBR(puEl.value) || null,
     precoTotal: numBR(ptEl.value) || null,
     kmHor: isNaN(km) ? null : km,
+    horimetro: lerHorimetro(),
     nfSugerido: document.getElementById('l-nf').value.trim() || null,
     fotoUrlCupom: fotoUrlCupomAtual,
     fotoUrlRequisicao: fotoUrlRequisicaoAtual,
@@ -3947,6 +3957,7 @@ async function enviarLancamentoManualInterno(){
     precoUnit: numBR(document.getElementById('l-precounit').value) || null,
     precoTotal: numBR(document.getElementById('l-precototal').value) || null,
     kmHor: isNaN(km) ? null : km,
+    horimetro: lerHorimetro(),
     nfSugerido: document.getElementById('l-nf').value.trim() || null,
     cupom: (document.getElementById('l-cupom')?.value || '').trim() || null,
     requisicao: document.getElementById('l-requisicao').value.trim() || null,
@@ -4974,6 +4985,14 @@ function gerarPdfRequisicao(r){
 
 let REQ_RASC = {};            // dados já preenchidos (digitados ou vindos da planilha) por requisição
 let REQ_SEL = new Set();     // requisições marcadas pra "usada em lote"
+function empresaDeItem(x){ return String(x && x.empresa || '').trim().toUpperCase() || String(empresaPropriaNome()||'').trim().toUpperCase(); }
+function preencherSelectEmpresa(id, itens, rotuloTodas){
+  const sel = document.getElementById(id); if(!sel) return;
+  const atual = sel.value;
+  const emps = [...new Set((itens||[]).map(empresaDeItem).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  sel.innerHTML = `<option value="">${rotuloTodas}</option>` + emps.map(e=>`<option value="${escapeHtml(e)}">${escapeHtml(e)}</option>`).join('');
+  sel.value = emps.includes(atual) ? atual : '';
+}
 function renderListaRequisicoesAdmin(){
   const box = document.getElementById('lista-requisicoes-admin');
   if(!box) return;
@@ -4985,6 +5004,7 @@ function renderListaRequisicoesAdmin(){
     selPosto.innerHTML = '<option value="">Todos os postos</option>' + postos.map(p=>`<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
     selPosto.value = postos.includes(atualP) ? atualP : '';
   }
+  preencherSelectEmpresa('req-filtro-empresa', REQUISICOES_EMITIDAS, 'Todas as empresas');
   const busca = (document.getElementById('req-busca')?.value || '').trim().toUpperCase();
   const dataIni = document.getElementById('req-data-ini')?.value || '';
   const dataFim = document.getElementById('req-data-fim')?.value || '';
@@ -4995,6 +5015,8 @@ function renderListaRequisicoesAdmin(){
   if(dataFim) lista = lista.filter(r => { const d = _diaLocal(r); return d && d <= dataFim; });
   const postoSel = document.getElementById('req-filtro-posto')?.value || '';
   if(postoSel) lista = lista.filter(r => String(r.posto||'').trim().toUpperCase() === postoSel);
+  const empSel = document.getElementById('req-filtro-empresa')?.value || '';
+  if(empSel) lista = lista.filter(r => empresaDeItem(r) === empSel);
   if(busca){
     lista = lista.filter(r => {
       const dataFmt = r.criadoEm ? new Date(r.criadoEm).toLocaleDateString('pt-BR') : '';
@@ -5110,7 +5132,8 @@ function initRequisicoesTab(){
   document.getElementById('btn-req-add-item')?.addEventListener('click', ()=>addLinhaItem('req-itens'));
   document.getElementById('req-filtro-status').addEventListener('change', renderListaRequisicoesAdmin);
   document.getElementById('req-filtro-posto').addEventListener('change', ()=>{ document.getElementById('req-filtro-status').value = 'todas'; renderListaRequisicoesAdmin(); });
-  document.getElementById('req-limpar-filtros').addEventListener('click', ()=>{ ['req-busca','req-data-ini','req-data-fim','req-filtro-posto'].forEach(id=>{ const el = document.getElementById(id); if(el) el.value = ''; }); document.getElementById('req-filtro-status').value = 'aberta'; renderListaRequisicoesAdmin(); });
+  document.getElementById('req-filtro-empresa').addEventListener('change', ()=>{ document.getElementById('req-filtro-status').value = 'todas'; renderListaRequisicoesAdmin(); });
+  document.getElementById('req-limpar-filtros').addEventListener('click', ()=>{ ['req-busca','req-data-ini','req-data-fim','req-filtro-posto','req-filtro-empresa'].forEach(id=>{ const el = document.getElementById(id); if(el) el.value = ''; }); document.getElementById('req-filtro-status').value = 'aberta'; renderListaRequisicoesAdmin(); });
   document.getElementById('req-busca').addEventListener('input', (e)=>{
     // ao buscar, já muda pra "Todas" sozinho — senão uma requisição
     // cancelada nunca aparece na busca (o filtro "Só abertas" escondia
@@ -5721,11 +5744,29 @@ function veiculoDoEquip(eq){
 }
 /* 'km' ou 'hora'. Vale o que está no cadastro da Frota (campo Medidor);
    em "Automático": veículo com placa = km, máquina sem placa = horímetro. */
+function atualizarCampoHorimetro(){
+  const eq = (document.getElementById('l-equipamento')||{}).value || '';
+  const ambos = !!eq.trim() && medidorModo(eq.trim().toUpperCase()) === 'ambos';
+  const f = document.getElementById('field-horimetro'), inp = document.getElementById('l-horimetro'), lb = document.getElementById('lbl-kmhor');
+  if(!f) return;
+  f.style.display = ambos ? '' : 'none';
+  if(!ambos && inp) inp.value = '';
+  if(lb) lb.textContent = ambos ? 'Km (hodômetro)' : 'Km / Horímetro';
+}
+function lerHorimetro(){
+  const f = document.getElementById('field-horimetro'), inp = document.getElementById('l-horimetro');
+  if(!f || f.style.display === 'none' || !inp || !inp.value.trim()) return null;
+  const n = numBR(inp.value); return isNaN(n) ? null : n;
+}
+function medidorModo(eq){
+  const v = veiculoDoEquip(eq);
+  return (v && (v.medidor === 'hora' || v.medidor === 'ambos')) ? v.medidor : 'km';
+}
 function medidorDoEquip(eq){
   const v = veiculoDoEquip(eq);
+  if(v && v.medidor === 'ambos') return 'km'; // nos dois: a leitura principal (kmHor) é o Km; o horímetro fica no campo próprio
   if(v && (v.medidor === 'km' || v.medidor === 'hora')) return v.medidor;
-  if(v) return v.placa ? 'km' : 'hora';
-  return 'km';
+  return 'km'; // padrão: tudo é Km até o equipamento ser marcado como Horas no cadastro da Frota
 }
 /* "Valor Comb" = valor TOTAL do abastecimento (R$): o valor total do lançamento;
    se não veio, calcula litros × preço unitário. */
@@ -5749,6 +5790,27 @@ async function garantirHistoricoCompleto(){
     try{ renderLancTable(); renderDashboard(); atualizarBannerPeriodoLimitado(); }catch(_e){}
     return true;
   }catch(err){ console.error(err); toast('Falha ao carregar histórico: ' + err.message); return false; }
+}
+/* Código do combustível no SISMA. Procura o produto exato; se não tiver código, usa o da mesma família
+   (DIESEL, DIESEL S-10 e DIESEL S-500 são o mesmo combustível pro SISMA; GASOLINA COMUM = GASOLINA...). */
+function codigoProdutoSisma(produto){
+  const m = (CONFIG_SISMA && CONFIG_SISMA.mapaProduto) || {};
+  const p = String(produto||'').trim().toUpperCase();
+  if(m[p]) return m[p];
+  const fam = x=>String(x||'').toUpperCase().replace(/\s*S-?\d+/,'').replace(/\b(COMUM|ADITIVADA|ADITIVADO)\b/,'').trim();
+  const f = fam(p); if(!f) return '';
+  const chaves = Object.keys(m).filter(k=>m[k] && fam(k) === f);
+  if(!chaves.length) return '';
+  // prefere o S-10 quando houver mais de um diesel configurado
+  chaves.sort((a,b)=> (/S-?10/.test(b)?1:0) - (/S-?10/.test(a)?1:0));
+  return m[chaves[0]];
+}
+/* Bomba do SISMA por combustível: Diesel (qualquer tipo) = 3, Gasolina = 2; os demais usam a bomba padrão da configuração. */
+function bombaSisma(produto){
+  const p = String(produto||'').toUpperCase();
+  if(p.indexOf('DIESEL') === 0) return '3';
+  if(p.indexOf('GASOLINA') === 0) return '2';
+  return CONFIG_SISMA.bomba || '';
 }
 async function exportarSisma(){
   if(!(await garantirHistoricoCompleto())) return;   // meses antigos só existem na base se o histórico completo estiver carregado
@@ -5788,14 +5850,17 @@ async function exportarSisma(){
   let geradas = 0;
   const itens = LANC_VISIVEIS.filter(r=>r.data).map(r=>{ if(!reais.has(r.id)) geradas++; return { r, hora: segParaHms(horaSegDe.get(r.id) != null ? horaSegDe.get(r.id) : 7*3600) }; });
   itens.sort((x,y)=> x.r.data.localeCompare(y.r.data) || x.hora.localeCompare(y.hora));
+  const semCodigo = new Set(); let semLeitura = 0;
   itens.forEach(({r, hora: horaFmt})=>{
     const [ano,mes,dia] = r.data.split('-');
     const dataFmt = `${dia}/${mes}/${ano}`;
-    const codigoProduto = CONFIG_SISMA.mapaProduto?.[(r.produto||'').toUpperCase()] || '';
+    const codigoProduto = codigoProdutoSisma(r.produto);
+    if(!codigoProduto) semCodigo.add(String(r.produto||'(sem produto)').toUpperCase());
+    if(r.kmHor == null && !(medidorModo(r.equipamento)==='ambos' && r.horimetro != null)) semLeitura++;
     linhas.push([
       dataFmt, horaFmt, CONFIG_SISMA.empresa||'', CONFIG_SISMA.especie||'',
-      formatarEquipeSisma(r.equipamento), (medidorDoEquip(r.equipamento)==='km' ? (r.kmHor ?? '') : ''), (medidorDoEquip(r.equipamento)==='hora' ? (r.kmHor ?? '') : ''),
-      CONFIG_SISMA.ponto||'', CONFIG_SISMA.bomba||'', codigoProduto, r.quantidade ?? '', valorCombSisma(r)
+      formatarEquipeSisma(r.equipamento), (medidorModo(r.equipamento)!=='hora' ? (r.kmHor ?? '') : ''), (medidorModo(r.equipamento)==='hora' ? (r.kmHor ?? '') : (medidorModo(r.equipamento)==='ambos' ? (r.horimetro ?? '') : '')),
+      CONFIG_SISMA.ponto||'', bombaSisma(r.produto), codigoProduto, r.quantidade ?? '', valorCombSisma(r)
     ].join(';'));
   });
   const csv = linhas.join('\r\n');
@@ -5805,6 +5870,7 @@ async function exportarSisma(){
   a.href = url; a.download = `sisma_${todayStr()}.csv`;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
+  if(semCodigo.size) setTimeout(()=>toast(`⚠️ Combustível SEM CÓDIGO no SISMA: ${[...semCodigo].join(', ')}. Preencha em Configuração do SISMA e exporte de novo.`), 2500);
   toast(`CSV do SISMA gerado com ${itens.length} lançamento(s) — horário diferente em cada lançamento do dia (mínimo 1 s)${geradas ? ' · ' + geradas + ' sem hora real ganharam horário próprio' : ''}.`);
 }
 
@@ -6257,7 +6323,7 @@ function cartaoVisualPendente(p, np, rasc){
 }
 
 function limparFiltrosReqPend(){
-  ['pend-busca','pend-data-ini','pend-data-fim'].forEach(id=>{ const el = document.getElementById(id); if(el) el.value = ''; });
+  ['pend-busca','pend-data-ini','pend-data-fim','pend-filtro-empresa'].forEach(id=>{ const el = document.getElementById(id); if(el) el.value = ''; });
   renderListaPendentes();
 }
 function renderListaPendentes(){
@@ -6270,10 +6336,13 @@ function renderListaPendentes(){
   }
   // filtro PRÓPRIO desta lista (antes herdava a busca/período das requisições emitidas e escondia tudo sem a pessoa perceber)
   if(!document.getElementById('pend-busca')){
-    box.insertAdjacentHTML('beforebegin', `<div class="filters" id="pend-filtros" style="margin:0 0 10px;"><div class="field" style="min-width:240px;"><label>Buscar nos pendentes</label><input type="text" id="pend-busca" placeholder="Requisição, nome, equipamento, posto, data..."></div><div class="field"><label>De</label><input type="date" id="pend-data-ini"></div><div class="field"><label>Até</label><input type="date" id="pend-data-fim"></div><button type="button" class="btn ghost" id="pend-limpar" style="align-self:flex-end;">Limpar</button></div>`);
+    box.insertAdjacentHTML('beforebegin', `<div class="filters" id="pend-filtros" style="margin:0 0 10px;"><div class="field" style="min-width:240px;"><label>Buscar nos pendentes</label><input type="text" id="pend-busca" placeholder="Requisição, nome, equipamento, posto, data..."></div><div class="field"><label>De</label><input type="date" id="pend-data-ini"></div><div class="field"><label>Até</label><input type="date" id="pend-data-fim"></div><div class="field"><label>Empresa</label><select id="pend-filtro-empresa"><option value="">Todas as empresas</option></select></div><button type="button" class="btn ghost" id="pend-limpar" style="align-self:flex-end;">Limpar</button></div>`);
     ['pend-busca','pend-data-ini','pend-data-fim'].forEach(id=>document.getElementById(id).addEventListener('input', renderListaPendentes));
+    document.getElementById('pend-filtro-empresa').addEventListener('change', renderListaPendentes);
     document.getElementById('pend-limpar').addEventListener('click', limparFiltrosReqPend);
   }
+  preencherSelectEmpresa('pend-filtro-empresa', PENDENTES, 'Todas as empresas');
+  const empPend = document.getElementById('pend-filtro-empresa')?.value || '';
   const busca = (document.getElementById('pend-busca')?.value || '').trim().toUpperCase();
   const dIni = document.getElementById('pend-data-ini')?.value || '';
   const dFim = document.getElementById('pend-data-fim')?.value || '';
@@ -6282,11 +6351,12 @@ function renderListaPendentes(){
     if(dIni && (!d || d < dIni)) return false;
     if(dFim && (!d || d > dFim)) return false;
     if(window.AP_POSTO && String(p.posto||'').trim().toUpperCase() !== window.AP_POSTO) return false;
+    if(empPend && empresaDeItem(p) !== empPend) return false;
     if(!busca) return true;
     return [p.requisicao, p.motorista, p.email, p.equipamento, p.produto, p.posto, p.nfSugerido, p.empresa, d ? fmtDate(d) : ''].join(' ').toUpperCase().includes(busca);
   });
-  const filtroAtivo = !!(busca || dIni || dFim);
-  const descFiltro = [busca ? `busca "${busca}"` : '', dIni ? `de ${fmtDate(dIni)}` : '', dFim ? `até ${fmtDate(dFim)}` : ''].filter(Boolean).join(' · ');
+  const filtroAtivo = !!(busca || dIni || dFim || empPend);
+  const descFiltro = [busca ? `busca "${busca}"` : '', dIni ? `de ${fmtDate(dIni)}` : '', dFim ? `até ${fmtDate(dFim)}` : '', empPend ? `empresa ${empPend}` : ''].filter(Boolean).join(' · ');
   if(!visiveis.length){
     box.innerHTML = `<div class="helper" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">Nenhum lançamento pendente corresponde ao filtro (${PENDENTES.length} no total).${filtroAtivo ? ` <span>Filtro ativo: <b>${escapeHtml(descFiltro)}</b></span> <button type="button" class="btn" id="btn-limpar-filtro-pend">Limpar busca e datas</button>` : ''}</div>`;
     const bl = document.getElementById('btn-limpar-filtro-pend'); if(bl) bl.onclick = limparFiltrosReqPend;
@@ -8934,7 +9004,7 @@ function renderDashTable(rows){
       <td class="num">${fmtMoney(r.precoTotal)}</td>
       <td>${escapeHtml(r.motorista||'—')}</td>
       <td>${escapeHtml(r.equipamento||'—')}${r.visitanteDe ? ` <span class="tag" title="Veículo cadastrado na obra ${escapeHtml(r.visitanteDe)}">visitante de ${escapeHtml(r.visitanteDe)}</span>` : ''}</td>
-      <td class="num">${r.kmHor!=null?fmtNum(r.kmHor,0):'—'}</td>
+      <td class="num">${r.kmHor!=null?fmtNum(r.kmHor,0):'—'}${r.horimetro!=null?`<br><small style="color:var(--gray);">${fmtNum(r.horimetro,0)} h</small>`:''}</td>
       <td class="num">${r.mediaKmL!=null?fmtNum(r.mediaKmL,2):'—'}</td>
     </tr>`).join('') || `<tr><td colspan="9" class="empty-state">Nenhum registro para os filtros selecionados.</td></tr>`;
 }
@@ -9168,6 +9238,9 @@ function initFormLancamento(){
   [qtd, punit].forEach(el=>el.addEventListener('input', autoTotal));
   [kmhor, produto, equip, dataInp].forEach(el=>el.addEventListener('input', updateCalcPreview));
   equip.addEventListener('input', updateEquipInfo);
+  equip.addEventListener('input', atualizarCampoHorimetro);
+  equip.addEventListener('change', atualizarCampoHorimetro);
+  { const fm = document.getElementById('form-lanc'); if(fm) fm.addEventListener('reset', ()=> setTimeout(atualizarCampoHorimetro, 0)); }
   // se a pessoa digitar a PLACA direto no campo (em vez do código VP),
   // troca sozinho assim que ela sai do campo — mesma lógica que já usa
   // na leitura de cupom, só que agora vale pra digitação manual também
@@ -9336,6 +9409,7 @@ function initFormLancamento(){
       empresa: empresaFixaDoEquip(equip.value) || document.getElementById('l-empresa').value.trim().toUpperCase() || empresaPropriaNome(),
       equipamento: equip.value.trim().toUpperCase() || null,
       kmHor: isNaN(km) ? null : km,
+      horimetro: lerHorimetro(),
       obsKm: null,
       mediaKmL: null,
       criadoPorEmail: (registroAnterior && registroAnterior.criadoPorEmail) || (USUARIO_ATUAL ? USUARIO_ATUAL.email : null),
@@ -9517,6 +9591,7 @@ function editRecord(id){
   document.getElementById('l-empresa').value = r.empresa || '';
   document.getElementById('l-kmhor').value = numParaInput(r.kmHor);
   document.getElementById('l-equipamento').dispatchEvent(new Event('input'));
+  { const hi = document.getElementById('l-horimetro'); if(hi && document.getElementById('field-horimetro').style.display !== 'none') hi.value = numParaInput(r.horimetro); }
   const wrapLm = document.getElementById('card-lanc-manual');
   if(wrapLm && document.getElementById('form-lanc').closest('#card-lanc-manual')){
     ativarTab('aprovacoes'); wrapLm.classList.remove('colapsado');
@@ -10231,7 +10306,7 @@ function exportXlsx(){
     'Nº': seq.get(r.id), 'Data': r.data, 'Data Lançamento': r.dataLancamento, 'NF': r.nf, 'Posto': r.posto, 'Requisição': r.requisicao,
     'Produto': r.produto, 'Unidade': r.unidade, 'Quantidade': r.quantidade,
     'Preço Unit.': r.precoUnit, 'Preço Total': r.precoTotal, 'Motorista': r.motorista,
-    'Empresa': r.empresa, 'Equipamento': r.equipamento, 'Km/Hor.': r.kmHor, 'Média Km/L': r.mediaKmL
+    'Empresa': r.empresa, 'Equipamento': r.equipamento, 'Km/Hor.': r.kmHor, 'Horímetro': r.horimetro ?? '', 'Média Km/L': r.mediaKmL
   }));
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
