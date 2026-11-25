@@ -2473,7 +2473,7 @@ tr.al-sem td{background:#fff8e6;}
       <div class="filters" style="margin-top:16px;">
         <div class="field" style="min-width:420px;flex:1;">
           <label>URL do Web App (Apps Script)</label>
-          <input type="text" id="sync-url" placeholder="https://script.google.com/macros/s/AAAAA.../exec">
+          <input type="text" id="sync-url" name="sync-url-sistema" autocomplete="off" placeholder="https://script.google.com/macros/s/AAAAA.../exec">
         </div>
         <div class="field">
           <button class="btn" id="btn-sync-save-url" type="button">Conectar</button>
@@ -2549,7 +2549,7 @@ tr.al-sem td{background:#fff8e6;}
         </div>
         <div class="field wide">
           <label>📝 Observação <span style="font-weight:400;color:var(--gray);">(opcional — aparece na lista, na Conferência e no PDF)</span></label>
-          <input type="text" id="req-observacao" maxlength="300" placeholder="Ex.: abastecer só 30 L · tanque auxiliar · autorizado por fulano">
+          <input type="text" id="req-observacao" name="obs-requisicao-interna" autocomplete="off" maxlength="300" placeholder="Ex.: abastecer só 30 L · tanque auxiliar · autorizado por fulano">
         </div>
         <div class="field wide">
           <label>Itens adicionais <span style="font-weight:400;color:var(--gray);">(2º combustível, óleo, filtro... — opcional)</span></label>
@@ -2697,7 +2697,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
 const APP_VERSION = 'v1.0.10';
-const BUILD_ID = '1795550734';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
+const BUILD_ID = '1795604335';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -2733,6 +2733,15 @@ let PERIODO_LIMITADO = false; // true quando o servidor só mandou os últimos 6
 
 const USUARIO_CACHE_KEY = 'tripoloni_usuario_v1';
 
+/* Trava de segurança: o que aparece na tela é SEMPRE só da obra escolhida no seletor, mesmo que venha dado de outra obra
+   (cache antigo, resposta atrasada, importação em outra obra...). Obra vazia = "Todas as obras" (sem filtro). */
+function _obraDaTela(json){ return String((json && json.obraAtiva !== undefined) ? json.obraAtiva : OBRA_ATIVA || '').trim(); }
+function naObraDaTela(x, json){
+  const ob = _obraDaTela(json); if(!ob) return true;
+  const lista = String((x && x.obra) || '422').split(/[,;]/).map(o=>o.trim().replace(/\.0+$/,'').toUpperCase()).filter(Boolean);
+  return lista.length ? lista.includes(ob.toUpperCase()) : ob === '422';
+}
+function soDaObraTela(lista, json){ return (lista||[]).filter(x=>naObraDaTela(x, json)); }
 let DB = [];           // array of records
 let SYNC_URL = '';
 /* Obra ativa (seletor do topo): tudo que o servidor devolve já vem filtrado
@@ -3324,7 +3333,7 @@ async function autenticarComToken(idToken, silencioso){
     if(!String(ID_TOKEN).startsWith('SESSAO:')) iniciarRenovacaoAutomaticaDoToken(); // com sessão própria (30 dias) não precisa renovar nada no Google
     const _snapLogin = _uiRestaurado ? snapshotCampos() : null;
 
-    DB = (json.dados || []).map(sanitizeRecord).filter(r=>!REMOVIDOS_PEND.has(String(r.id)));
+    DB = (json.dados || []).map(sanitizeRecord).filter(r=>!REMOVIDOS_PEND.has(String(r.id)) && naObraDaTela(r, json));
     PERIODO_LIMITADO = !!json.periodoLimitado;
     SOLICITACOES = json.solicitacoes || [];
     USUARIOS = json.usuarios || [];
@@ -3339,7 +3348,7 @@ async function autenticarComToken(idToken, silencioso){
     capturarObras(json);
     CATALOGO_PERMISSOES = json.catalogoPermissoes || CATALOGO_PERMISSOES;
     AUDITORIA = json.auditoria || [];
-    VEICULOS = json.veiculos || [];
+    VEICULOS = soDaObraTela(json.veiculos, json);
     MAPA_PLACAS = json.mapaPlacas || [];
     POSTOS = json.postos || [];
     EMPRESAS = json.empresas || [];
@@ -4608,6 +4617,11 @@ function parseItensReq(r){
   if(Array.isArray(r.itens)) return r.itens;
   try{ const v = JSON.parse(r.itens); return Array.isArray(v) ? v : []; }catch(e){ return []; }
 }
+/* Observação de requisição nunca pode ser um link (o autopreenchimento do navegador às vezes joga a URL do sistema ali). */
+function limparObs(t){
+  const x = String(t == null ? '' : t).trim();
+  return /script\.google\.com\/macros|^https?:\/\/\S+$/i.test(x) ? '' : x;
+}
 function textoItensReq(r){
   return parseItensReq(r).map(it=>`${it.descricao}${it.quantidade != null ? ' — ' + fmtNum(it.quantidade, 1) + ' ' + (it.unidade || '') : ''}`.trim()).join(' · ');
 }
@@ -4717,7 +4731,7 @@ async function emitirRequisicaoUIInterno(){
     if(!resolverTravaRequisicao(chk, dados, 'Emitir a requisição')) return;
   }
   dados.itens = lerItensEditor('req-itens');
-  dados.observacao = (document.getElementById('req-observacao').value || '').trim();
+  dados.observacao = limparObs(document.getElementById('req-observacao').value || '');
 
   try{
     const resp = await fetch(SYNC_URL, {
@@ -4783,7 +4797,7 @@ function abrirEdicaoRequisicao(id){
       <div class="field"><label>Km/Hor esperado</label><input type="text" inputmode="decimal" id="er-km" value="${escapeHtml(String(r.kmEsperado||''))}"></div>
     </div>
     <label style="font-size:12px;font-weight:700;display:block;margin-top:10px;">📝 Observação</label>
-    <input type="text" id="er-obs" maxlength="300" value="${escapeHtml(String(r.observacao||''))}" placeholder="Opcional" style="width:100%;">
+    <input type="text" id="er-obs" name="obs-edicao-interna" autocomplete="off" maxlength="300" value="${escapeHtml(limparObs(r.observacao))}" placeholder="Opcional" style="width:100%;">
     <label style="font-size:12px;font-weight:700;display:block;margin-top:10px;">Itens adicionais (2º combustível, óleo, filtro...)</label>
     <div id="er-itens"></div>
     <button type="button" class="btn ghost" id="er-add-item">➕ Adicionar item</button>
@@ -4802,7 +4816,7 @@ function abrirEdicaoRequisicao(id){
       posto: document.getElementById('er-posto').value,
       kmEsperado: document.getElementById('er-km').value.trim(),
       itens: lerItensEditor('er-itens'),
-      observacao: document.getElementById('er-obs').value.trim(),
+      observacao: limparObs(document.getElementById('er-obs').value),
     };
     if(!ehTerceiro){
       dados.equipamento = document.getElementById('er-equip').value;
@@ -4933,7 +4947,7 @@ function gerarPdfRequisicao(r){
   campos.push(['PRODUTO', r.produto || 'ETANOL']);
   campos.push(['POSTO AUTORIZADO', r.posto || '—']);
   if(r.kmEsperado) campos.push(['KM/HORÍMETRO ESPERADO', r.kmEsperado]);
-  if(r.observacao) campos.push(['OBSERVAÇÃO', r.observacao]);
+  if(limparObs(r.observacao)) campos.push(['OBSERVAÇÃO', limparObs(r.observacao)]);
   // controle: quem emitiu/autorizou e quem imprimiu — pra saber quem cobrar se houver erro
   const _nomeDe = em => { const e = String(em||'').toLowerCase(); const u = (USUARIOS||[]).find(x=>x.email === e); return u ? String(u.nome||'').toUpperCase() : (em || ''); };
   campos.push(['EMITIDA / AUTORIZADA POR', _nomeDe(r.criadoPorEmail) || '—']);
@@ -5043,7 +5057,7 @@ function renderListaRequisicoesAdmin(){
           ${r.status==='aberta' ? `<input type="checkbox" data-req-sel="${escapeHtml(r.id)}" ${REQ_SEL.has(r.id)?'checked':''} title="Selecionar pra marcar como usada em lote" style="margin-right:6px;">` : ''}<b>Nº ${escapeHtml(String(r.numero))}</b>${rc.quantidade?' <span class="tag" title="Dados preenchidos (planilha/lote)">📥 preenchida</span>':''} — ${escapeHtml(nomePadrao(r.motoristaNome||r.motoristaEmail))} · ${identificador}${r.posto?' · '+escapeHtml(r.posto):''}
           <br><span style="color:var(--gray);">📅 ${dataEmitida}${quemEmitiu ? ' · emitida por ' + escapeHtml(quemEmitiu) : ''} · ${escapeHtml(r.produto||'ETANOL')}${r.kmEsperado?' · km '+escapeHtml(String(r.kmEsperado)):''} · ${NOMES_STATUS[r.status]||r.status}${r.usadaEm?' em '+new Date(r.usadaEm).toLocaleString('pt-BR'):''}</span>
           ${textoItensReq(r) ? `<br><span style="color:var(--gray);">➕ ${escapeHtml(textoItensReq(r))}</span>` : ''}
-          ${r.observacao ? `<br><span style="color:#7a4b00;">📝 ${escapeHtml(r.observacao)}</span>` : ''}
+          ${limparObs(r.observacao) ? `<br><span style="color:#7a4b00;">📝 ${escapeHtml(limparObs(r.observacao))}</span>` : ''}
         </div>
         <div class="btn-row">
           ${r.status==='aberta' ? `<button class="btn secondary" data-editar-req="${escapeHtml(r.id)}">✏️ Editar</button>` : ''}
@@ -5782,7 +5796,7 @@ async function garantirHistoricoCompleto(){
     const resp = await fetch(`${SYNC_URL}?action=pull&idToken=${encodeURIComponent(ID_TOKEN)}&completo=1`);
     const json = await parseJsonResponse(resp);
     if(json.status !== 'ok' || !Array.isArray(json.dados)){ toast(json.mensagem || 'Não consegui carregar o histórico completo.'); return false; }
-    DB = json.dados.map(sanitizeRecord).filter(r=>!REMOVIDOS_PEND.has(String(r.id)));
+    DB = json.dados.map(sanitizeRecord).filter(r=>!REMOVIDOS_PEND.has(String(r.id)) && naObraDaTela(r, json));
     HISTORICO_COMPLETO = true; try{ sessionStorage.setItem('hist_completo','1'); }catch(_e){}
     PERIODO_LIMITADO = !!json.periodoLimitado;
     AUDITORIA = json.auditoria || AUDITORIA;
@@ -6292,7 +6306,7 @@ function cartaoVisualPendente(p, np, rasc){
       linha('Empresa', E(empReq||'—'), reqDiffEmp) + linha('Placa', E(fmtPlaca(String(reqPlaca))), reqDiffPlaca) + linha('Prefixo', E(reqEq||'—'), reqDiffEq) + linha('Combustível', E(String(rq.produto||'—')), reqDiffProd) +
       linha('Km esperado', kmReq) + (rq.posto ? linha('Posto', E(String(rq.posto))) : '') +
       (textoItensReq(rq) ? `<div style="margin-top:4px;font-size:12px;color:#33415f;">${E(textoItensReq(rq))}</div>` : '') +
-      (rq.observacao ? `<div style="margin-top:4px;font-size:12.5px;color:#7a4b00;background:#fff6d6;border-radius:6px;padding:4px 8px;">📝 ${E(rq.observacao)}</div>` : '')
+      (limparObs(rq.observacao) ? `<div style="margin-top:4px;font-size:12.5px;color:#7a4b00;background:#fff6d6;border-radius:6px;padding:4px 8px;">📝 ${E(limparObs(rq.observacao))}</div>` : '')
     ) : `<div style="color:#6b7a99;">Ainda não tem requisição — gere a requisição abaixo.</div>`;
   const corpoNota = linha('Empresa', E(empNota||'—'), reqDiffEmp) + linha('Placa', E(fmtPlaca(String(placa))), reqDiffPlaca) + linha('Prefixo', E(eq||'—'), reqDiffEq) + linha('Combustível', E(produto), reqDiffProd) +
       linha('Quantidade', `${qtd!=null?fmtNum(qtd,2):'—'} L`) + linha('Valor total', `${ptot!=null?fmtMoney(ptot):'—'}${punit!=null?` <span style="font-weight:600;">(${fmtMoney(punit)}/L)</span>`:''}`) +
@@ -7468,7 +7482,7 @@ async function carregarHistoricoCompletoUI(){
     const resp = await fetch(`${SYNC_URL}?action=pull&idToken=${encodeURIComponent(ID_TOKEN)}&completo=1`);
     const json = await parseJsonResponse(resp);
     if(json.status !== 'ok' || !Array.isArray(json.dados)){ toast(json.mensagem || 'Falha ao carregar histórico.'); return; }
-    DB = json.dados.map(sanitizeRecord).filter(r=>!REMOVIDOS_PEND.has(String(r.id)));
+    DB = json.dados.map(sanitizeRecord).filter(r=>!REMOVIDOS_PEND.has(String(r.id)) && naObraDaTela(r, json));
     HISTORICO_COMPLETO = true; try{ sessionStorage.setItem('hist_completo','1'); }catch(_e){} // as atualizações automáticas passam a trazer tudo também
     PERIODO_LIMITADO = !!json.periodoLimitado;
     AUDITORIA = json.auditoria || AUDITORIA;
@@ -7555,7 +7569,7 @@ async function _pullReal(){
     if(_mutSeq !== _mutNoPedido || _mutEmCurso > 0){ setTimeout(pullFromSheetsSilencioso, 900); return; }
     if(OBRA_ATIVA !== _obraNoPedido){ return _pullReal(); } // trocou de obra no meio: refaz já pra obra atual
     const _snapCampos = snapshotCampos();
-    DB = json.dados.map(sanitizeRecord).filter(r=>!REMOVIDOS_PEND.has(String(r.id)));
+    DB = json.dados.map(sanitizeRecord).filter(r=>!REMOVIDOS_PEND.has(String(r.id)) && naObraDaTela(r, json));
     PERIODO_LIMITADO = !!json.periodoLimitado;
     SOLICITACOES = json.solicitacoes || [];
     USUARIOS = json.usuarios || [];
@@ -7570,7 +7584,7 @@ async function _pullReal(){
     capturarObras(json);
     CATALOGO_PERMISSOES = json.catalogoPermissoes || CATALOGO_PERMISSOES;
     AUDITORIA = json.auditoria || AUDITORIA;
-    VEICULOS = json.veiculos || VEICULOS;
+    VEICULOS = json.veiculos ? soDaObraTela(json.veiculos, json) : VEICULOS;
     MAPA_PLACAS = json.mapaPlacas || MAPA_PLACAS;
     POSTOS = json.postos || POSTOS;
     EMPRESAS = json.empresas || EMPRESAS;
@@ -7724,11 +7738,12 @@ async function restaurarDoCache(){
   const c = await cacheLer();
   if(!c || !c.json || !c.json.usuario || Date.now() - c.em > 7*24*3600*1000) return;
   if(ID_TOKEN || USUARIO_ATUAL) return; // o login já terminou antes
+  { let esc = null; try{ esc = localStorage.getItem(OBRA_ATIVA_KEY); }catch(e){} if(esc !== null && c.obra !== undefined && String(c.obra||'') !== String(esc||'')) return; } // cache é de OUTRA obra: não mostra
   try{
     const json = c.json;
     ID_TOKEN = tokenSalvo; USUARIO_ATUAL = json.usuario;
     if(c.historico){ HISTORICO_COMPLETO = true; }
-    DB = (json.dados || []).map(sanitizeRecord).filter(r=>!REMOVIDOS_PEND.has(String(r.id)));
+    DB = (json.dados || []).map(sanitizeRecord).filter(r=>!REMOVIDOS_PEND.has(String(r.id)) && naObraDaTela(r, json));
     PERIODO_LIMITADO = !!json.periodoLimitado;
     SOLICITACOES = json.solicitacoes || []; USUARIOS = json.usuarios || []; PENDENTES = json.pendentes || [];
     DIAS_BLOQUEADOS = json.diasBloqueados || DIAS_BLOQUEADOS; NFS_FECHADAS = json.nfsFechadas || NFS_FECHADAS;
@@ -7737,7 +7752,7 @@ async function restaurarDoCache(){
     CONFIG_SISMA = json.configSisma || CONFIG_SISMA; PERMISSOES = json.permissoes || PERMISSOES;
     capturarObras(json);
     CATALOGO_PERMISSOES = json.catalogoPermissoes || CATALOGO_PERMISSOES; AUDITORIA = json.auditoria || [];
-    VEICULOS = json.veiculos || []; MAPA_PLACAS = json.mapaPlacas || []; POSTOS = json.postos || []; EMPRESAS = json.empresas || [];
+    VEICULOS = soDaObraTela(json.veiculos, json); MAPA_PLACAS = json.mapaPlacas || []; POSTOS = json.postos || []; EMPRESAS = json.empresas || [];
     HISTORICO_MOBILIZACAO = json.historicoMobilizacao || []; REQUISICOES_EMITIDAS = json.requisicoesEmitidas || [];
     recalcularTodasMedias(); snapBase();
     document.getElementById('login-overlay').style.display = 'none';
@@ -10954,7 +10969,7 @@ async function pullFromSheets(){
     HISTORICO_COMPLETO = true; try{ sessionStorage.setItem('hist_completo','1'); }catch(_e){}
     const ok = await confirmModal('Puxar dados do Sheets', `Foram encontrados ${json.dados.length} registros no Sheets. Isso vai SUBSTITUIR os ${DB.length} registros locais. Continuar?`);
     if(!ok){ logSync('Importação cancelada pelo usuário.'); return; }
-    DB = json.dados.map(sanitizeRecord).filter(r=>!REMOVIDOS_PEND.has(String(r.id)));
+    DB = json.dados.map(sanitizeRecord).filter(r=>!REMOVIDOS_PEND.has(String(r.id)) && naObraDaTela(r, json));
     PERIODO_LIMITADO = !!json.periodoLimitado;
     SOLICITACOES = json.solicitacoes || [];
     USUARIOS = json.usuarios || [];
@@ -10969,7 +10984,7 @@ async function pullFromSheets(){
     capturarObras(json);
     CATALOGO_PERMISSOES = json.catalogoPermissoes || CATALOGO_PERMISSOES;
     AUDITORIA = json.auditoria || AUDITORIA;
-    VEICULOS = json.veiculos || VEICULOS;
+    VEICULOS = json.veiculos ? soDaObraTela(json.veiculos, json) : VEICULOS;
     MAPA_PLACAS = json.mapaPlacas || MAPA_PLACAS;
     POSTOS = json.postos || POSTOS;
     EMPRESAS = json.empresas || EMPRESAS;
@@ -12863,7 +12878,7 @@ if('serviceWorker' in navigator){
       equip: fmtPlaca(r.equipamento || (R && (R.equipamento || R.placa)) || ''),
       mot: nomePadrao(r.motorista || (R && (R.motoristaNome || R.motoristaEmail)) || ''),
       emp: empresaPadrao({equipamento: r.equipamento || (R && R.equipamento), empresa: r.empresa || (R && R.empresa)}),
-      obs: (R && R.observacao) || '', posto: String(r.posto || (R && R.posto) || '').toUpperCase(), prod: r.produto || (R && R.produto) || '',
+      obs: limparObs(R && R.observacao), posto: String(r.posto || (R && R.posto) || '').toUpperCase(), prod: r.produto || (R && R.produto) || '',
       km: Number(r.kmHor != null && r.kmHor !== '' ? r.kmHor : (R && !ehPend && !r.quantidade ? R.kmEsperado : '')) || 0, litros: Number(r.quantidade)||0, media: mediaDe(r, ehPend), valor: Number(r.precoTotal)||0,
       nf: r.nf || r.nfSugerido || '', obra: ehPend ? '' : obraDoReg(r)
     });
