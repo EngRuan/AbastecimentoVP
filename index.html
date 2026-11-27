@@ -2544,8 +2544,12 @@ tr.al-sem td{background:#fff8e6;}
           <input type="text" id="req-posto-externo" placeholder="Digita o nome do posto">
         </div>
         <div class="field">
-          <label>Km/Hor esperado (opcional)</label>
+          <label>Km esperado (opcional)</label>
           <input type="text" inputmode="decimal" id="req-km-esperado" placeholder="Vem sugerido pela última leitura">
+        </div>
+        <div class="field">
+          <label>Horímetro esperado (opcional)</label>
+          <input type="text" inputmode="decimal" id="req-hor-esperado" placeholder="Horas — só pra quem tem horímetro">
         </div>
         <div class="field wide">
           <label>📝 Observação <span style="font-weight:400;color:var(--gray);">(opcional — aparece na lista, na Conferência e no PDF)</span></label>
@@ -2697,7 +2701,7 @@ const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbwwiCWYERRKp4C
 // conferir na hora se o site já atualizou de verdade depois de subir um
 // zip novo (aparece no canto superior esquerdo, embaixo do título)
 const APP_VERSION = 'v1.0.10';
-const BUILD_ID = '1795604335';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
+const BUILD_ID = '1795800274';   // carimbado a cada empacotamento: é ele que dispara a auto-atualização (a versão exibida pode continuar igual)
 
 /* Rede de segurança: se algum erro de código acontecer, em vez de deixar a tela
    em branco aparece uma faixa vermelha com o motivo e botões pra recarregar. */
@@ -3764,6 +3768,10 @@ function renderSelecaoRequisicaoMotorista(){
         // "alterou_km_requisicao")
         const kmEl = document.getElementById('l-kmhor');
         if(kmEl){ const ult = maiorKmConhecido(req.equipamento); const base = Math.max(Number(req.kmEsperado)||0, ult===null?0:ult); if(base){ kmEl.value = base; kmEl.dispatchEvent(new Event('input')); } }
+        if(req.horimetroEsperado){
+          if(medidorModo(req.equipamento) === 'hora' && kmEl){ kmEl.value = req.horimetroEsperado; kmEl.dispatchEvent(new Event('input')); }
+          else { try{ atualizarCampoHorimetro(); }catch(_e){} const hEl = document.getElementById('l-horimetro'); if(hEl && document.getElementById('field-horimetro').style.display !== 'none') hEl.value = req.horimetroEsperado; }
+        }
       }
       renderSelecaoRequisicaoMotorista();
     });
@@ -4700,6 +4708,7 @@ async function emitirRequisicaoUIInterno(){
   const postoSel = document.getElementById('req-posto').value;
   const posto = (postoSel === '__externo__' ? document.getElementById('req-posto-externo').value.trim() : postoSel).toUpperCase();
   const kmEsperado = document.getElementById('req-km-esperado').value.trim();
+  const horimetroEsperado = (document.getElementById('req-hor-esperado').value || '').trim();
   if(!posto){ toast('Escolhe o posto (ou digita o nome, se for externo).'); return; }
 
   // se o link "veículo sem cadastro" estiver ativo, usa o texto livre
@@ -4714,15 +4723,15 @@ async function emitirRequisicaoUIInterno(){
     const empresa = empresaReq;
     const placa = document.getElementById('req-placa').value.trim();
     if(!motoristaNomeLivre || !empresa || !placa){ toast('Pra terceiro, preenche nome, empresa e placa.'); return; }
-    dados = { terceiro:true, motoristaNomeLivre, empresa, placa: fmtPlaca(placa), produto, posto, kmEsperado, obra: OBRA_ATIVA || '' };
+    dados = { terceiro:true, motoristaNomeLivre, empresa, placa: fmtPlaca(placa), produto, posto, kmEsperado, horimetroEsperado, obra: OBRA_ATIVA || '' };
   } else if(document.getElementById('req-motorista-livre').dataset.modo === 'sem-cadastro'){
     const motoristaNomeLivre = document.getElementById('req-motorista-livre').value.trim();
     if(!motoristaNomeLivre || !equipamentoEscolhido){ toast('Escolhe o nome e o equipamento.'); return; }
-    dados = { semCadastro:true, motoristaNomeLivre, equipamento:equipamentoEscolhido, produto, posto, kmEsperado, obra: obraParaNovo(equipamentoEscolhido) };
+    dados = { semCadastro:true, motoristaNomeLivre, equipamento:equipamentoEscolhido, produto, posto, kmEsperado, horimetroEsperado, obra: obraParaNovo(equipamentoEscolhido) };
   } else {
     const motoristaEmail = document.getElementById('req-motorista').value;
     if(!motoristaEmail || !equipamentoEscolhido){ toast('Escolhe o motorista e o equipamento.'); return; }
-    dados = { motoristaEmail, equipamento:equipamentoEscolhido, produto, posto, kmEsperado, obra: obraParaNovo(equipamentoEscolhido) };
+    dados = { motoristaEmail, equipamento:equipamentoEscolhido, produto, posto, kmEsperado, horimetroEsperado, obra: obraParaNovo(equipamentoEscolhido) };
   }
 
   // travas: Km irregular e equipamento errado pro motorista
@@ -4750,6 +4759,7 @@ async function emitirRequisicaoUIInterno(){
     document.getElementById('req-posto-externo').value = '';
     document.getElementById('req-posto-externo-wrap').style.display = 'none';
     document.getElementById('req-km-esperado').value = '';
+    document.getElementById('req-hor-esperado').value = '';
     document.getElementById('req-observacao').value = '';
     renderItensEditor('req-itens', []);
     if(ehTerceiro){
@@ -4794,7 +4804,8 @@ function abrirEdicaoRequisicao(id){
       <div class="field"><label>Produto</label><select id="er-produto">${produtos.map(p=>`<option ${String(r.produto||'ETANOL').toUpperCase()===p?'selected':''}>${escapeHtml(p)}</option>`).join('')}</select></div>
       <div class="field"><label>Posto</label><select id="er-posto">${postos.map(p=>`<option ${String(r.posto||'').toUpperCase()===String(p).toUpperCase()?'selected':''}>${escapeHtml(p)}</option>`).join('')}</select></div>
       ${ehTerceiro ? '' : `<div class="field"><label>Equipamento</label><select id="er-equip">${equips.map(e=>`<option ${r.equipamento===e?'selected':''}>${escapeHtml(e)}</option>`).join('')}</select></div>`}
-      <div class="field"><label>Km/Hor esperado</label><input type="text" inputmode="decimal" id="er-km" value="${escapeHtml(String(r.kmEsperado||''))}"></div>
+      <div class="field"><label>Km esperado</label><input type="text" inputmode="decimal" id="er-km" value="${escapeHtml(String(r.kmEsperado||''))}"></div>
+      <div class="field"><label>Horímetro esperado</label><input type="text" inputmode="decimal" id="er-hor" value="${escapeHtml(String(r.horimetroEsperado||''))}"></div>
     </div>
     <label style="font-size:12px;font-weight:700;display:block;margin-top:10px;">📝 Observação</label>
     <input type="text" id="er-obs" name="obs-edicao-interna" autocomplete="off" maxlength="300" value="${escapeHtml(limparObs(r.observacao))}" placeholder="Opcional" style="width:100%;">
@@ -4815,6 +4826,7 @@ function abrirEdicaoRequisicao(id){
       produto: document.getElementById('er-produto').value,
       posto: document.getElementById('er-posto').value,
       kmEsperado: document.getElementById('er-km').value.trim(),
+      horimetroEsperado: document.getElementById('er-hor').value.trim(),
       itens: lerItensEditor('er-itens'),
       observacao: limparObs(document.getElementById('er-obs').value),
     };
@@ -4946,7 +4958,8 @@ function gerarPdfRequisicao(r){
   if(r.terceiro) campos.push(['EMPRESA', r.empresa]);
   campos.push(['PRODUTO', r.produto || 'ETANOL']);
   campos.push(['POSTO AUTORIZADO', r.posto || '—']);
-  if(r.kmEsperado) campos.push(['KM/HORÍMETRO ESPERADO', r.kmEsperado]);
+  if(r.kmEsperado) campos.push(['KM ESPERADO', r.kmEsperado]);
+  if(r.horimetroEsperado) campos.push(['HORÍMETRO ESPERADO', r.horimetroEsperado]);
   if(limparObs(r.observacao)) campos.push(['OBSERVAÇÃO', limparObs(r.observacao)]);
   // controle: quem emitiu/autorizou e quem imprimiu — pra saber quem cobrar se houver erro
   const _nomeDe = em => { const e = String(em||'').toLowerCase(); const u = (USUARIOS||[]).find(x=>x.email === e); return u ? String(u.nome||'').toUpperCase() : (em || ''); };
@@ -5055,7 +5068,7 @@ function renderListaRequisicoesAdmin(){
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
         <div class="info">
           ${r.status==='aberta' ? `<input type="checkbox" data-req-sel="${escapeHtml(r.id)}" ${REQ_SEL.has(r.id)?'checked':''} title="Selecionar pra marcar como usada em lote" style="margin-right:6px;">` : ''}<b>Nº ${escapeHtml(String(r.numero))}</b>${rc.quantidade?' <span class="tag" title="Dados preenchidos (planilha/lote)">📥 preenchida</span>':''} — ${escapeHtml(nomePadrao(r.motoristaNome||r.motoristaEmail))} · ${identificador}${r.posto?' · '+escapeHtml(r.posto):''}
-          <br><span style="color:var(--gray);">📅 ${dataEmitida}${quemEmitiu ? ' · emitida por ' + escapeHtml(quemEmitiu) : ''} · ${escapeHtml(r.produto||'ETANOL')}${r.kmEsperado?' · km '+escapeHtml(String(r.kmEsperado)):''} · ${NOMES_STATUS[r.status]||r.status}${r.usadaEm?' em '+new Date(r.usadaEm).toLocaleString('pt-BR'):''}</span>
+          <br><span style="color:var(--gray);">📅 ${dataEmitida}${quemEmitiu ? ' · emitida por ' + escapeHtml(quemEmitiu) : ''} · ${escapeHtml(r.produto||'ETANOL')}${r.kmEsperado?' · km '+escapeHtml(String(r.kmEsperado)):''}${r.horimetroEsperado?' · ⏱️ '+escapeHtml(String(r.horimetroEsperado))+' h':''} · ${NOMES_STATUS[r.status]||r.status}${r.usadaEm?' em '+new Date(r.usadaEm).toLocaleString('pt-BR'):''}</span>
           ${textoItensReq(r) ? `<br><span style="color:var(--gray);">➕ ${escapeHtml(textoItensReq(r))}</span>` : ''}
           ${limparObs(r.observacao) ? `<br><span style="color:#7a4b00;">📝 ${escapeHtml(limparObs(r.observacao))}</span>` : ''}
         </div>
